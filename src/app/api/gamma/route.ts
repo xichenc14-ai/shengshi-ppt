@@ -99,9 +99,26 @@ export async function POST(request: NextRequest) {
     // 获取 additionalInstructions
     const instructions = (INSTRUCTION_TEMPLATES as any)[finalTone] || INSTRUCTION_TEMPLATES.professional;
 
+    // 构建 inputText（如果用户输入较短，自动增强为结构化 Markdown）
+    let finalInputText = inputText.trim();
+    if (finalInputText.length < 100) {
+      // 短主题 → 自动扩展为带分页的 Markdown，帮助 Gamma 生成更好的结构
+      finalInputText = `# ${finalInputText}\n\n---\n`;
+    } else if (!finalInputText.includes('---')) {
+      // 较长内容但没有分页符 → 按段落自动加分页
+      finalInputText = finalInputText
+        .split(/\n\n+/)
+        .filter((p: string) => p.trim())
+        .map((p: string) => p.trim())
+        .join('\n\n---\n\n');
+      if (!finalInputText.startsWith('#')) {
+        finalInputText = `# ${finalInputText}`;
+      }
+    }
+
     // 构建 Gamma API 请求体
     const gammaPayload: Record<string, any> = {
-      inputText: inputText.trim(),
+      inputText: finalInputText,
       textMode,
       format,
       numCards,
