@@ -1,13 +1,12 @@
+// 纯前端 PPTX 导出（浏览器端执行，不依赖服务端）
 import PptxGenJS from 'pptxgenjs';
 import { Presentation, Template, templates } from './types';
 
-// 根据templateId获取模板
 function getTemplate(templateId: string): Template {
   return templates.find(t => t.id === templateId) || templates[0];
 }
 
-// 导出PPTX
-export async function exportToPPTX(presentation: Presentation): Promise<Blob> {
+export async function exportToPPTXClient(presentation: Presentation): Promise<Blob> {
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_16x9';
   pptx.author = '省事PPT';
@@ -31,8 +30,7 @@ export async function exportToPPTX(presentation: Presentation): Promise<Blob> {
     }
   });
 
-  const buffer = await pptx.write({ outputType: 'nodebuffer' }) as Buffer;
-  return new Blob([new Uint8Array(buffer)], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+  return await pptx.write({ outputType: 'blob' }) as Blob;
 }
 
 function addTitleSlide(
@@ -58,7 +56,6 @@ function addTitleSlide(
     });
   }
 
-  // 装饰线
   slideObj.addShape(pptx.ShapeType.rect, {
     x: 3.5, y: 4.5, w: 3, h: 0.04,
     fill: { color: template.colors.accent },
@@ -74,26 +71,22 @@ function addContentSlide(
 ) {
   slideObj.background = { color: template.colors.background };
 
-  // 顶部色带
   slideObj.addShape(pptx.ShapeType.rect, {
     x: 0, y: 0, w: '100%', h: 0.8,
     fill: { color: template.colors.primary },
   });
 
-  // 页码
   slideObj.addText(`${index + 1}`, {
     x: 8.8, y: 0.15, w: 0.8, h: 0.5,
     fontSize: 14, color: 'FFFFFF', align: 'right',
   });
 
-  // 标题
   slideObj.addText(slide.title, {
     x: 0.8, y: 1.2, w: 8.4, h: 0.8,
     fontSize: 28, fontFace: template.font,
     color: template.colors.primary, bold: true,
   });
 
-  // 内容
   if (slide.content && slide.content.length > 0) {
     const contentRows = slide.content.map((item: string) => ({
       text: item,

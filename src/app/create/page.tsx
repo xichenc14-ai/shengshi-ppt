@@ -64,33 +64,64 @@ function CreatePageInner() {
     }
   }, [topic, slideCount, selectedTemplate, presentation]);
 
-  // 导出PPTX
+  // 导出PPTX（纯前端，使用 pptxgenjs writeFile 自动处理浏览器下载）
   const handleExport = useCallback(async () => {
     if (!presentation) return;
 
     setExporting(true);
     try {
-      const response = await fetch('/api/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ presentation }),
+      const PptxGenJS = (await import('pptxgenjs')).default;
+      const { templates } = await import('@/lib/types');
+      const pptx = new PptxGenJS();
+      pptx.layout = 'LAYOUT_16x9';
+      pptx.author = '省事PPT';
+      pptx.title = presentation.title;
+
+      const template = templates.find(t => t.id === presentation.templateId) || templates[0];
+      const c = template.colors;
+
+      presentation.slides.forEach((slide, index) => {
+        const s = pptx.addSlide();
+        if (slide.type === 'title' || slide.type === 'end') {
+          s.background = { color: c.primary };
+          s.addText(slide.title, {
+            x: 1, y: slide.type === 'title' ? 1.8 : 2, w: 8, h: 1.5,
+            fontSize: slide.type === 'title' ? 36 : 40,
+            color: 'FFFFFF', bold: true, align: 'center', valign: 'middle',
+          });
+          if (slide.subtitle) {
+            s.addText(slide.subtitle, {
+              x: 1, y: 3.5, w: 8, h: 0.8,
+              fontSize: 18, color: 'FFFFFF', align: 'center', valign: 'middle',
+            });
+          }
+        } else {
+          s.background = { color: c.background };
+          s.addShape(pptx.ShapeType.rect, {
+            x: 0, y: 0, w: '100%', h: 0.8, fill: { color: c.primary },
+          });
+          s.addText(String(index + 1), {
+            x: 8.8, y: 0.15, w: 0.8, h: 0.5,
+            fontSize: 14, color: 'FFFFFF', align: 'right',
+          });
+          s.addText(slide.title, {
+            x: 0.8, y: 1.2, w: 8.4, h: 0.8,
+            fontSize: 28, color: c.primary, bold: true,
+          });
+          if (slide.content && slide.content.length > 0) {
+            const rows = slide.content.map((item: string) => ({
+              text: item,
+              options: { fontSize: 18, color: c.text, bullet: { code: '2022', color: c.secondary }, paraSpaceAfter: 12 },
+            }));
+            s.addText(rows, { x: 1.2, y: 2.3, w: 7.8, h: 4, valign: 'top', lineSpacing: 28 });
+          }
+        }
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || '导出失败');
-      }
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${presentation.title || 'presentation'}.pptx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const filename = (presentation.title || 'presentation').replace(/[^\u4e00-\u9fa5a-zA-Z0-9_-]/g, '_');
+      await pptx.writeFile({ fileName: `${filename}.pptx` });
     } catch (err: any) {
+      console.error('Export error:', err);
       setError(err.message || '导出失败');
     } finally {
       setExporting(false);

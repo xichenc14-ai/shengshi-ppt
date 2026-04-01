@@ -14,11 +14,16 @@ export async function POST(request: NextRequest) {
     }
 
     const blob = await exportToPPTX(presentation);
+    const buffer = Buffer.from(await blob.arrayBuffer());
+    const filename = (presentation.title || 'presentation').replace(/[^\u4e00-\u9fa5a-zA-Z0-9_-]/g, '_');
 
-    return new NextResponse(blob, {
+    return new NextResponse(buffer, {
+      status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'Content-Disposition': `attachment; filename="${encodeURIComponent(presentation.title || 'presentation')}.pptx"`,
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}.pptx`,
+        'Content-Length': buffer.length.toString(),
+        'Cache-Control': 'no-cache',
       },
     });
   } catch (error: any) {
