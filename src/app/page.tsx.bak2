@@ -1,0 +1,302 @@
+'use client';
+
+import React, { useState, useCallback, useRef } from 'react';
+import Link from 'next/link';
+
+/* ==================== 配置数据 ==================== */
+
+const GAMMA_THEMES = [
+  { id: 'auto', name: '自动匹配', desc: 'AI智能选择', icon: '🤖' },
+  { id: 'consultant', name: '商务汇报', desc: '专业简洁', icon: '💼' },
+  { id: 'founder', name: '路演融资', desc: '现代极简', icon: '🚀' },
+  { id: 'icebreaker', name: '培训课件', desc: '友好清晰', icon: '📚' },
+  { id: 'electric', name: '创意方案', desc: '大胆未来', icon: '💡' },
+  { id: 'chisel', name: '教育课件', desc: '温暖大地', icon: '🎓' },
+  { id: 'gleam', name: '数据分析', desc: '科技高对比', icon: '📊' },
+  { id: 'blues', name: '年度总结', desc: '高端蓝金', icon: '🏆' },
+  { id: 'aurora', name: '产品发布', desc: '渐变震撼', icon: '🛸' },
+  { id: 'ashrose', name: '美妆时尚', desc: '柔和梦幻', icon: '💄' },
+  { id: 'finesse', name: '生活方式', desc: '优雅精致', icon: '🌿' },
+  { id: 'default-light', name: '简约白', desc: '干净通用', icon: '⬜' },
+  { id: 'default-dark', name: '暗夜黑', desc: '深色专业', icon: '⬛' },
+];
+
+const GAMMA_STYLES = [
+  { id: 'professional', name: '专业商务', desc: '正式严谨', tone: 'professional' },
+  { id: 'casual', name: '轻松友好', desc: '亲切活泼', tone: 'casual' },
+  { id: 'creative', name: '创意活泼', desc: '大胆丰富', tone: 'creative' },
+  { id: 'bold', name: '大胆科技', desc: '未来冲击', tone: 'bold' },
+  { id: 'elegant', name: '优雅高级', desc: '精致质感', tone: 'professional' },
+  { id: 'warm', name: '温馨自然', desc: '温暖亲和', tone: 'casual' },
+  { id: 'academic', name: '学术严谨', desc: '规范数据', tone: 'professional' },
+  { id: 'playful', name: '活泼趣味', desc: '年轻有趣', tone: 'casual' },
+];
+
+const IMAGE_MODES = [
+  { id: 'auto', name: '自动匹配', desc: '智能（不含AI生图）', locked: false },
+  { id: 'none', name: '无图纯净', desc: '纯文字+图标', locked: false },
+  { id: 'web', name: '精选配图', desc: '商用免费图', locked: false },
+  { id: 'ai', name: 'AI定制图', desc: '高质量配图', locked: true },
+  { id: 'ai-pro', name: 'AI高级图', desc: '顶级AI配图', locked: true },
+];
+
+const GEN_MODES = [
+  { id: 'easy', name: '省心智能', icon: '✨', desc: 'AI全自动，一步到位' },
+  { id: 'generate', name: 'AI创作', icon: '🤖', desc: '从零生成完整内容' },
+  { id: 'condense', name: '智能摘要', icon: '📝', desc: '提炼文档为要点' },
+  { id: 'preserve', name: '原文排版', icon: '📄', desc: '保留原文美化排版' },
+];
+
+interface UploadedFile { name: string; type: string; size: number; content?: string; }
+
+export default function Home() {
+  // 省心模式状态
+  const [easyFiles, setEasyFiles] = useState<UploadedFile[]>([]);
+  const [easyDragging, setEasyDragging] = useState(false);
+  const [easyTopic, setEasyTopic] = useState('');
+  const efRef = useRef<HTMLInputElement>(null);
+
+  // 专业模式状态
+  const [proTopic, setProTopic] = useState('');
+  const [proFiles, setProFiles] = useState<UploadedFile[]>([]);
+  const [pages, setPages] = useState<'auto' | number>('auto');
+  const [gm, setGm] = useState('easy');
+  const [theme, setTheme] = useState('auto');
+  const [style, setStyle] = useState('professional');
+  const [imgMode, setImgMode] = useState('auto');
+  const pfRef = useRef<HTMLInputElement>(null);
+
+  // 通用状态
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState<{ title: string; slides: any[]; dlUrl: string } | null>(null);
+  const [doneMode, setDoneMode] = useState<'easy' | 'pro'>('easy');
+
+  const processFiles = useCallback(async (files: FileList | File[]) => {
+    const r: UploadedFile[] = [];
+    for (const file of Array.from(files)) {
+      const i: UploadedFile = { name: file.name, type: file.type, size: file.size };
+      if (file.type === 'text/plain' || /\.(md|txt|csv)$/.test(file.name)) i.content = await file.text();
+      r.push(i);
+    }
+    return r;
+  }, []);
+
+  const onEasyDrop = useCallback(async (e: React.DragEvent) => { e.preventDefault(); setEasyDragging(false); if (e.dataTransfer.files.length > 0) { const f = await processFiles(e.dataTransfer.files); setEasyFiles(p => [...p, ...f]); } }, [processFiles]);
+  const onEasyFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files?.length) { const f = await processFiles(e.target.files); setEasyFiles(p => [...p, ...f]); } e.target.value = ''; }, [processFiles]);
+  const onProFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files?.length) { const f = await processFiles(e.target.files); setProFiles(p => [...p, ...f]); } e.target.value = ''; }, [processFiles]);
+  const rmFile = useCallback((l: 'e' | 'p', i: number) => { (l === 'e' ? setEasyFiles : setProFiles)(p => p.filter((_, j) => j !== i)); }, []);
+  const fmtS = (b: number) => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
+
+  const collectEasyText = () => { const p: string[] = []; easyFiles.forEach(f => { p.push(f.content ? `[${f.name}]\n${f.content}` : `[${f.name}]`); }); if (easyTopic.trim()) p.push(easyTopic.trim()); return p.join('\n\n'); };
+  const collectProText = () => { const p: string[] = []; proFiles.forEach(f => { p.push(f.content ? `[${f.name}]\n${f.content}` : `[${f.name}]`); }); if (proTopic.trim()) p.push(proTopic.trim()); return p.join('\n\n'); };
+
+  const poll = useCallback(async (id: string) => {
+    for (let i = 0; i < 48; i++) { await new Promise(r => setTimeout(r, 5000)); try { const r = await fetch(`/api/gamma?id=${id}`); if (!r.ok) continue; const d = await r.json(); if (d.status === 'completed') return d; if (d.status === 'failed') throw new Error('PPT生成失败'); } catch (e: any) { if (e.message?.includes('失败')) throw e; } }
+    throw new Error('PPT生成超时');
+  }, []);
+
+  const generate = useCallback(async (inputText: string, auto: boolean, tm: string, sc: number | 'auto', th?: string, tn?: string, im?: string) => {
+    setLoading(true); setError(''); setResult(null);
+    try {
+      const numC = sc === 'auto' ? 10 : sc;
+      const oRes = await fetch('/api/outline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ inputText, slideCount: numC, textMode: auto ? 'generate' : tm, auto }) });
+      if (!oRes.ok) { const d = await oRes.json(); throw new Error(d.error || '大纲生成失败'); }
+      const od = await oRes.json();
+      setLoading(false);
+      if (auto || tm === 'easy') {
+        setLoading(true); setError('');
+        const md = buildMd(od.title, od.slides || []);
+        const gRes = await fetch('/api/gamma', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ inputText: md, textMode: auto ? 'generate' : tm, format: 'presentation', numCards: (od.slides || []).length, exportAs: 'pptx', themeId: th || od.themeId || undefined, tone: tn || od.tone || 'professional', imageMode: im || od.imageMode || 'auto' }) });
+        if (!gRes.ok) throw new Error('PPT生成失败');
+        const gd = await gRes.json();
+        if (gd.generationId) { const r = await poll(gd.generationId); setResult({ title: od.title, slides: od.slides || [], dlUrl: r.exportUrl || '' }); }
+      } else {
+        const d = await oRes.json();
+        setResult({ title: d.title, slides: d.slides || [], dlUrl: '' });
+      }
+    } catch (e: any) { setError(e.message || '生成失败'); setLoading(false); }
+  }, [poll]);
+
+  const handleEasy = () => { if (easyFiles.length === 0 && !easyTopic.trim()) return; generate(collectEasyText(), true, 'generate', 'auto'); };
+  const handlePro = () => { if (!collectProText().trim()) return; if (gm === 'easy') { generate(collectProText(), true, 'generate', pages, theme === 'auto' ? undefined : theme, GAMMA_STYLES.find(s => s.id === style)?.tone, imgMode === 'auto' ? undefined : imgMode); } else { generate(collectProText(), false, gm, pages); } };
+
+  const reset = () => { setLoading(false); setError(''); setResult(null); setEasyFiles([]); setEasyTopic(''); setProTopic(''); setProFiles([]); };
+
+  const resultOutline = result?.slides || [];
+
+  return (
+    <div className="min-h-screen bg-[#fafbfc]">
+      {/* 导航 */}
+      <nav className="bg-white/80 backdrop-blur-xl border-b border-gray-100/80 px-8 py-3 flex items-center justify-between sticky top-0 z-50">
+        <Link href="/" className="flex items-center gap-2.5 group">
+          <div className="w-8 h-8 bg-gradient-to-br from-violet-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-violet-200/50"><span className="text-white text-sm font-bold">P</span></div>
+          <span className="text-lg font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">省心PPT</span>
+        </Link>
+        {result && <button onClick={reset} className="text-sm text-gray-400 hover:text-gray-700 transition-colors">← 新建</button>}
+      </nav>
+
+      <div className="max-w-6xl mx-auto px-6 py-6">
+        {!result ? (
+          /* ===== 输入区 ===== */
+          <div className="animate-fade-in">
+            {/* Hero */}
+            <div className="text-center mb-10">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-violet-50 text-violet-600 rounded-full text-sm font-medium mb-6">
+                <span>✨</span><span>AI驱动 · 一键生成专业PPT</span>
+              </div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-3">拖文件进来，或输入主题，搞定PPT</h1>
+              <p className="text-gray-400 text-sm">支持文档、表格、截图等任意格式</p>
+            </div>
+
+            {/* 两栏布局 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* ===== 省心模式 ===== */}
+              <div className="bg-white rounded-3xl shadow-sm shadow-gray-100/50 border border-gray-100 p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">😎</span>
+                  <h2 className="text-base font-bold text-gray-800">省心模式</h2>
+                </div>
+                <div onDragOver={e => { e.preventDefault(); setEasyDragging(true); }} onDragLeave={() => setEDrag(false)} onDrop={onEasyDrop} onClick={() => efRef.current?.click()} className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200 ${easyDragging ? 'border-violet-400 bg-violet-50/50' : 'border-gray-200 hover:border-violet-300 hover:bg-gray-50/50'}`}>
+                  <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 flex items-center justify-center text-xl">📎</div>
+                  <p className="text-gray-600 font-medium text-sm">拖拽文件到这里</p>
+                  <p className="text-gray-400 text-xs mt-1">或点击选择文件</p>
+                </div>
+                <input ref={efRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={onEasyFile} className="hidden" />
+                <textarea value={easyTopic} onChange={e => setEasyTopic(e.target.value)} placeholder="（可选）补充说明你的需求..." className="w-full mt-4 px-4 py-3 rounded-xl bg-gray-50/80 border border-gray-200 focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white outline-none resize-none transition-all text-sm text-gray-700 placeholder:text-gray-300" rows={2} />
+                {easyFiles.length > 0 && (<div className="mt-4 space-y-2">{easyFiles.map((f, i) => (<div key={i} className="flex items-center gap-3 px-3 py-2.5 bg-gray-50/80 rounded-xl group"><span className="text-base">{f.type.startsWith('image/') ? '🖼️' : /\.(xls|csv)/.test(f.name) ? '📊' : /\.(doc|pdf|ppt)/.test(f.name) ? '📄' : '📝'}</span><span className="flex-1 text-sm text-gray-700 truncate">{f.name}</span><span className="text-xs text-gray-400">{fmtS(f.size)}</span><button onClick={e => { e.stopPropagation(); rmFile('e', i); }} className="text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all text-xs">✕</button></div>))}</div>)}
+                <button onClick={handleEasy} disabled={easyFiles.length === 0 && !easyTopic.trim()} className="w-full mt-5 py-3.5 bg-gradient-to-r from-violet-500 to-blue-600 text-white rounded-2xl font-semibold text-sm hover:shadow-lg hover:shadow-violet-200/60 transition-all disabled:opacity-40 disabled:cursor-not-allowed">🚀 一键生成PPT</button>
+                {error && <div className="mt-4 px-4 py-3 bg-red-50 text-red-500 rounded-xl text-sm">❌ {error}</div>}
+              </div>
+
+              {/* ===== 专业模式 ===== */}
+              <div className="bg-white rounded-3xl shadow-sm shadow-gray-100/50 border border-gray-100 p-6 space-y-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">⚙️</span>
+                  <h2 className="text-base font-bold text-gray-800">专业模式</h2>
+                </div>
+                <textarea value={proTopic} onChange={e => setProTopic(e.target.value)} placeholder="输入PPT主题或粘贴完整内容..." className="w-full px-4 py-3 rounded-xl bg-gray-50/80 border border-gray-200 focus:border-violet-400 focus:ring-2 focus:ring-violet-100 focus:bg-white outline-none resize-none transition-all text-sm text-gray-700 placeholder:text-gray-300" rows={4} />
+                <div className="flex items-center gap-3">
+                  <input ref={pfRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={onProFile} className="hidden" />
+                  <button onClick={() => pfRef.current?.click()} className="px-3.5 py-2 text-xs font-medium text-gray-500 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors">📎 上传附件</button>
+                  {proFiles.length > 0 && <div className="flex gap-1.5 flex-wrap">{proFiles.map((f, i) => (<span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-violet-50 text-violet-700 text-xs rounded-lg font-medium">{f.name}<button onClick={() => rmFile('p', i)} className="hover:text-red-500 ml-0.5">×</button></span>))}</div>}
+                </div>
+
+                {/* 生成模式 */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-2.5 block uppercase tracking-wider">生成模式</label>
+                  <div className="grid grid-cols-4 gap-2">{GEN_MODES.map(m => (<button key={m.id} onClick={() => setGm(m.id)} className={`p-3 rounded-xl border-2 transition-all text-left ${gm === m.id ? 'border-violet-500 bg-violet-50/80' : 'border-gray-100 hover:border-gray-200'}`}><div className="text-lg mb-0.5">{m.icon}</div><div className={`text-xs font-semibold ${gm === m.id ? 'text-violet-700' : 'text-gray-700'}`}>{m.name}</div><div className="text-[10px] text-gray-400 mt-0.5 leading-tight">{m.desc}</div></button>))}</div>
+                </div>
+
+                {/* 参数面板 */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider w-12">页数</label>
+                    <button onClick={() => setPages('auto')} className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${pages === 'auto' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>自动</button>
+                    {pages !== 'auto' && <><input type="number" min={3} max={30} value={pages} onChange={e => setPages(Math.max(3, Math.min(30, Number(e.target.value))))} className="w-14 px-2 py-1.5 border border-gray-200 rounded-lg text-center text-xs focus:border-violet-400 outline-none" /><span className="text-xs text-gray-400 ml-1">页</span></>}
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2 block">主题风格</label>
+                    <div className="grid grid-cols-5 gap-1.5">{GAMMA_THEMES.map(t => (<button key={t.id} onClick={() => setTheme(t.id)} className={`p-2 rounded-lg border-2 transition-all text-left ${theme === t.id ? 'border-violet-500 bg-violet-50/80' : 'border-gray-100 hover:border-gray-200'}`}><div className="text-[11px] font-medium text-gray-800 truncate">{t.icon} {t.name}</div></button>))}</div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2 block">语气风格</label>
+                    <div className="grid grid-cols-4 gap-1.5">{GAMMA_STYLES.map(s => (<button key={s.id} onClick={() => setStyle(s.id)} className={`p-2.5 rounded-lg border-2 transition-all text-left ${style === s.id ? 'border-violet-500 bg-violet-50/80' : 'border-gray-100 hover:border-gray-200'}`}><div className="text-[11px] font-semibold text-gray-800">{s.name}</div><div className="text-[10px] text-gray-400">{s.desc}</div></button>))}</div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2 block">配图方式</label>
+                    <div className="grid grid-cols-5 gap-1.5">{IMAGE_MODES.map(m => (
+                      <button key={m.id} onClick={() => m.locked ? undefined : setImgMode(m.id)} className={`relative p-2 rounded-lg border-2 transition-all text-left ${m.locked ? 'border-gray-100 bg-gray-50/50 opacity-50 cursor-not-allowed' : imgMode === m.id ? 'border-violet-500 bg-violet-50/80' : 'border-gray-100 hover:border-gray-200 cursor-pointer'}`}>
+                        {m.locked && <span className="absolute -top-1.5 -right-1 text-[8px] bg-amber-400 text-white px-1 py-0.5 rounded-full font-bold shadow-sm">VIP</span>}
+                        <div className="text-[11px] font-semibold text-gray-800">{m.name}</div>
+                        <div className="text-[10px] text-gray-400 leading-tight">{m.desc}</div>
+                      </button>
+                    ))}</div>
+                  </div>
+                </div>
+
+                <button onClick={handlePro} disabled={loading || !collectProText().trim()} className="w-full py-3.5 bg-gradient-to-r from-violet-500 to-blue-600 text-white rounded-2xl font-semibold text-sm hover:shadow-lg hover:shadow-violet-200/60 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                  {gm === 'easy' ? '🚀 一键生成PPT' : '📋 生成大纲'}
+                </button>
+                {error && <div className="px-4 py-3 bg-red-50 text-red-500 rounded-xl text-sm">❌ {error}</div>}
+              </div>
+            </div>
+
+            {/* Loading */}
+            {loading && (
+              <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-50">
+                <div className="text-center animate-fade-in">
+                  <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-full border-4 border-violet-300 border-t-violet-500 animate-spin" />
+                  </div>
+                  <p className="text-lg font-semibold text-gray-800 mb-1">正在为你生成PPT</p>
+                  <p className="text-sm text-gray-400">请稍候...</p>
+                  <div className="mt-6 flex items-center justify-center gap-6 text-xs text-gray-300">
+                    <span>📝 分析需求</span><span className="text-violet-400">→</span><span>🎨 生成内容</span><span className="text-violet-400">→</span><span>📄 渲染PPT</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ===== 结果页 ===== */}
+            {result && !loading && (
+              <div className="animate-fade-in max-w-3xl mx-auto pt-12 text-center">
+                <div className="text-5xl mb-4">🎉</div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">PPT 已生成！</h2>
+                <p className="text-gray-400 mb-8">{result.title} · {resultOutline.length} 页</p>
+
+                {/* 大纲概览 */}
+                {resultOutline.length > 0 && (
+                  <div className="bg-white rounded-3xl shadow-sm shadow-gray-100/50 border border-gray-100 p-6 mb-6 text-left">
+                    <h3 className="text-sm font-semibold text-gray-800 mb-3">📄 内容大纲</h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      {resultOutline.map((item, i) => (
+                        <div key={item.id} className="flex items-start gap-2 px-3 py-2.5 bg-gray-50/80 rounded-xl">
+                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-violet-100 text-violet-600 text-[10px] font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-gray-800 truncate">{item.title}</div>
+                            <div className="text-[10px] text-gray-400 truncate">{item.content?.slice(0, 2).join(' · ')}{item.content?.length > 2 ? ` · +${item.content.length - 2}` : ''}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 操作按钮 */}
+                <div className="flex items-center justify-center gap-4">
+                  {result.dlUrl && (
+                    <a href={result.dlUrl} download className="inline-flex items-center gap-2 px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-2xl font-semibold text-sm hover:shadow-lg hover:shadow-green-200/60 transition-all">
+                      📥 下载PPT文件
+                    </a>
+                  )}
+                  <button onClick={reset} className="px-6 py-3.5 text-gray-500 hover:text-gray-700 text-sm font-medium transition-colors">
+                    继续创建
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+      {/* Footer */}
+      <footer className="border-t border-gray-100 mt-auto py-5 text-center text-sm text-gray-400">
+        省心PPT · AI驱动的PPT生成器 · Powered by GLM‑5
+      </footer>
+    </div>
+  );
+}
+
+function buildMd(title: string, slides: any[]): string {
+  const p: string[] = [];
+  p.push(`# ${title}\n`);
+  for (let i = 0; i < slides.length; i++) {
+    const s = slides[i];
+    p.push('---\n');
+    if (i === slides.length - 1 && (/感谢|谢谢|总结/.test(s.title))) { p.push(`# ${s.title}\n`); if (s.content?.length) p.push(`> ${s.content.join('；')}\n`); continue; }
+    if (i === 1 && (/目录|概览/.test(s.title))) { p.push(`## ${s.title}\n\n`); s.content?.forEach((c, ci) => { p.push(`${ci + 1}. **${c.trim()}**\n`); }); continue; }
+    p.push(`## ${s.title}\n\n`);
+    if (s.content?.length) { if (s.content.length <= 4) { for (const pt of s.content) { if (pt.trim()) p.push(`- **${pt.trim()}**\n\n`); } } else { for (const pt of s.content) { if (pt.trim()) p.push(`### ${pt.trim()}\n\n`); } } }
+    if (s.notes) p.push(`> ${s.notes}\n`);
+  }
+  return p.join('\n');
+}
