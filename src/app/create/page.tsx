@@ -73,6 +73,7 @@ function CreatePageInner() {
   const [inputText, setInputText] = useState(initialTopic);
   const [proFiles, setProFiles] = useState<UploadedFile[]>([]);
   const [slideCount, setSlideCount] = useState<'auto' | number>('auto');
+  const [textMode, setTextMode] = useState<'generate' | 'condense' | 'preserve'>('generate');
   const [selectedTheme, setSelectedTheme] = useState('auto');
   const [selectedStyle, setSelectedStyle] = useState('professional');
   const [selectedImageMode, setSelectedImageMode] = useState('auto');
@@ -84,6 +85,7 @@ function CreatePageInner() {
 
   // Gamma 结果
   const [gammaExportUrl, setGammaExportUrl] = useState<string | null>(null);
+  const [gammaPreviewUrl, setGammaPreviewUrl] = useState<string | null>(null);
 
   // Refs
   const easyFileRef = useRef<HTMLInputElement>(null);
@@ -175,11 +177,11 @@ function CreatePageInner() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           inputText: gammaMarkdown,
-          textMode: 'preserve',
           format: 'presentation',
           numCards: (outlineData.slides || []).length,
           exportAs: 'pptx',
           scene: 'biz',
+          textMode: 'generate',  // 省心模式总是用 generate
         }),
       });
 
@@ -224,7 +226,7 @@ function CreatePageInner() {
       const res = await fetch('/api/outline', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputText: fullText, slideCount: numCards }),
+        body: JSON.stringify({ inputText: fullText, slideCount: numCards, textMode }),
       });
 
       if (!res.ok) {
@@ -260,7 +262,7 @@ function CreatePageInner() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           inputText: gammaMarkdown,
-          textMode: 'preserve',
+          textMode: textMode,  // 专业模式按用户选择
           format: 'presentation',
           numCards: outline.length,
           exportAs: 'pptx',
@@ -304,6 +306,7 @@ function CreatePageInner() {
 
         if (data.status === 'completed') {
           setGammaExportUrl(data.exportUrl || null);
+          setGammaPreviewUrl(data.gammaUrl || null);
           setProgress('PPT 生成完成！');
           return;
         }
@@ -347,6 +350,7 @@ function CreatePageInner() {
   const handleReset = useCallback(() => {
     setStep('input');
     setGammaExportUrl(null);
+    setGammaPreviewUrl(null);
     setError('');
     setProgress('');
     setOutline([]);
@@ -578,6 +582,49 @@ function CreatePageInner() {
                     </div>
                   </div>
 
+                  {/* PPT模式选择 */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">PPT生成模式</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <button
+                        onClick={() => setTextMode('generate')}
+                        className={`p-4 rounded-xl border-2 transition-all text-left ${
+                          textMode === 'generate'
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="text-xl mb-1">✨</div>
+                        <div className={`text-sm font-semibold ${textMode === 'generate' ? 'text-blue-700' : 'text-gray-800'}`}>AI创作</div>
+                        <div className="text-xs text-gray-400 mt-1">AI根据主题全新生成内容</div>
+                      </button>
+                      <button
+                        onClick={() => setTextMode('condense')}
+                        className={`p-4 rounded-xl border-2 transition-all text-left ${
+                          textMode === 'condense'
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="text-xl mb-1">📝</div>
+                        <div className={`text-sm font-semibold ${textMode === 'condense' ? 'text-blue-700' : 'text-gray-800'}`}>智能摘要</div>
+                        <div className="text-xs text-gray-400 mt-1">AI浓缩文档为PPT要点</div>
+                      </button>
+                      <button
+                        onClick={() => setTextMode('preserve')}
+                        className={`p-4 rounded-xl border-2 transition-all text-left ${
+                          textMode === 'preserve'
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="text-xl mb-1">📄</div>
+                        <div className={`text-sm font-semibold ${textMode === 'preserve' ? 'text-blue-700' : 'text-gray-800'}`}>原文排版</div>
+                        <div className="text-xs text-gray-400 mt-1">保留原文，只做排版美化</div>
+                      </button>
+                    </div>
+                  </div>
+
                   {/* 主题选择 */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">主题风格</label>
@@ -783,40 +830,86 @@ function CreatePageInner() {
 
         {/* ==================== DONE STEP ==================== */}
         {step === 'done' && (
-          <div className="flex items-center justify-center min-h-[60vh] animate-fade-in">
-            <div className="text-center max-w-md">
-              <div className="text-5xl mb-4">🎉</div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">PPT 生成完成！</h2>
-              <p className="text-gray-500 mb-8">
-                {pageMode === 'easy'
-                  ? `已根据 ${easyFiles.length} 个文件自动生成`
-                  : `共 ${outline.length} 页`
-                }
-              </p>
-
-              {gammaExportUrl ? (
-                <a
-                  href={gammaExportUrl}
-                  download
-                  className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-semibold text-lg hover:shadow-lg transition-all"
-                >
-                  📥 下载PPT
-                </a>
-              ) : (
-                <div className="p-4 bg-yellow-50 text-yellow-700 rounded-xl">
-                  ⚠️ PPT 已生成但下载链接暂不可用，请稍后重试
+          <div className="animate-fade-in">
+            {/* 顶部操作栏 */}
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🎉</span>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">PPT 生成完成！</h2>
+                  <p className="text-sm text-gray-500">
+                    {pageMode === 'easy'
+                      ? `基于 ${easyFiles.length} 个文件自动生成`
+                      : `共 ${outline.length} 页`}
+                  </p>
                 </div>
-              )}
-
-              <div className="mt-6 flex gap-4 justify-center">
+              </div>
+              <div className="flex items-center gap-3">
+                {gammaExportUrl && (
+                  <a
+                    href={gammaExportUrl}
+                    download
+                    className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg font-semibold text-sm hover:shadow-lg transition-all flex items-center gap-2"
+                  >
+                    📥 下载PPT
+                  </a>
+                )}
                 <button
                   onClick={handleReset}
-                  className="px-6 py-2 text-gray-600 hover:text-gray-800 text-sm font-medium"
+                  className="px-4 py-2.5 text-gray-600 hover:text-gray-800 text-sm font-medium bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                 >
                   继续创建
                 </button>
               </div>
             </div>
+
+            {/* 内容区域 */}
+            {gammaExportUrl ? (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+                {/* 大纲概览 */}
+                <div className="mb-6">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">{outlineTitle}</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {outline.map((item, i) => (
+                      <div key={item.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 text-xs font-bold flex items-center justify-center">
+                            {i + 1}
+                          </span>
+                          <span className="text-sm font-semibold text-gray-800 truncate">{item.title}</span>
+                        </div>
+                        <div className="text-xs text-gray-400 pl-7">
+                          {item.content?.slice(0, 2).join(' · ') || '-'}
+                          {item.content?.length > 2 && ` · +${item.content.length - 2}`}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 下载提示 */}
+                <div className="text-center py-8 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-100">
+                  <div className="text-4xl mb-3">📥</div>
+                  <p className="text-gray-700 font-medium mb-1">PPT 已生成完毕</p>
+                  <p className="text-sm text-gray-500 mb-4">下载后可用 PowerPoint、WPS 等软件打开编辑</p>
+                  {gammaExportUrl && (
+                    <a
+                      href={gammaExportUrl}
+                      download
+                      className="inline-flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all"
+                    >
+                      📥 下载PPT文件
+                    </a>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center rounded-2xl bg-white border border-gray-200 py-20">
+                <div className="text-center p-4 bg-yellow-50 rounded-xl">
+                  ⚠️ PPT 已生成但获取结果失败，请重试
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -828,7 +921,7 @@ function CreatePageInner() {
 function buildGammaMarkdown(title: string, slides: OutlineItem[]): string {
   const parts: string[] = [];
 
-  // 封面
+  // 封面（# 触发封面布局）
   parts.push(`# ${title}\n`);
 
   for (let i = 0; i < slides.length; i++) {
@@ -836,8 +929,8 @@ function buildGammaMarkdown(title: string, slides: OutlineItem[]): string {
     parts.push('---');
     parts.push('');
 
-    // 如果是最后一页，生成结尾
-    if (i === slides.length - 1 && (slide.title.includes('感谢') || slide.title.includes('谢谢') || slide.title.includes('Thank'))) {
+    // 最后一页：结尾页
+    if (i === slides.length - 1 && (slide.title.includes('感谢') || slide.title.includes('谢谢') || slide.title.includes('Thank') || slide.title.includes('总结'))) {
       parts.push(`# ${slide.title}`);
       parts.push('');
       if (slide.content?.length) {
@@ -846,21 +939,45 @@ function buildGammaMarkdown(title: string, slides: OutlineItem[]): string {
       continue;
     }
 
-    // 标题
+    // 第二页：目录页（用有序列表触发时间轴/流程布局）
+    if (i === 1 && (slide.title.includes('目录') || slide.title.includes('概览') || slide.title.includes('Overview'))) {
+      parts.push(`## ${slide.title}`);
+      parts.push('');
+      if (slide.content?.length) {
+        // 有序列表触发时间轴布局
+        slide.content.forEach((item, idx) => {
+          parts.push(`${idx + 1}. **${item.trim()}**`);
+        });
+        parts.push('');
+      }
+      continue;
+    }
+
+    // 内容页
     parts.push(`## ${slide.title}`);
     parts.push('');
 
-    // 内容
     if (slide.content?.length) {
-      for (const point of slide.content) {
-        if (point.trim()) {
-          parts.push(`### ${point.trim()}`);
-          parts.push('');
+      // 3个或4个要点 → 用 - **标题** 触发卡片布局
+      if (slide.content.length <= 4) {
+        for (const point of slide.content) {
+          if (point.trim()) {
+            parts.push(`- **${point.trim()}**`);
+            parts.push('');
+          }
+        }
+      } else {
+        // 超过4个要点 → 用 ### 触发大文本，每项一个
+        for (const point of slide.content) {
+          if (point.trim()) {
+            parts.push(`### ${point.trim()}`);
+            parts.push('');
+          }
         }
       }
     }
 
-    // 备注
+    // 演讲者备注（> 触发备注区域）
     if (slide.notes) {
       parts.push(`> ${slide.notes}`);
       parts.push('');
