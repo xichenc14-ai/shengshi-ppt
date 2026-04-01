@@ -23,18 +23,23 @@ const GAMMA_THEMES = [
 
 // Gamma 风格预设
 const GAMMA_STYLES = [
-  { id: 'professional', name: '💼 专业商务', tone: 'professional' },
-  { id: 'casual', name: '😊 轻松友好', tone: 'casual' },
-  { id: 'creative', name: '🎨 创意活泼', tone: 'creative' },
-  { id: 'bold', name: '🚀 大胆科技', tone: 'bold' },
+  { id: 'professional', name: '💼 专业商务', desc: '正式、严谨、汇报', tone: 'professional' },
+  { id: 'casual', name: '😊 轻松友好', desc: '亲切、活泼、培训', tone: 'casual' },
+  { id: 'creative', name: '🎨 创意活泼', desc: '大胆、丰富、方案', tone: 'creative' },
+  { id: 'bold', name: '🚀 大胆科技', desc: '未来感、冲击力', tone: 'bold' },
+  { id: 'elegant', name: '✨ 优雅高级', desc: '精致、质感、品牌', tone: 'professional' },
+  { id: 'warm', name: '🌞 温馨自然', desc: '温暖、亲和、生活', tone: 'casual' },
+  { id: 'academic', name: '🎓 学术严谨', desc: '规范、数据驱动', tone: 'professional' },
+  { id: 'playful', name: '🎈 活泼趣味', desc: '年轻、有趣、校园', tone: 'casual' },
 ];
 
-// 图片模式
+// 图片模式（基于技术部研究成果的分级体系）
 const IMAGE_MODES = [
-  { id: 'auto', name: '自动', desc: '根据场景自动决定' },
-  { id: 'none', name: '无图片', desc: '纯文字+图标，加载快' },
-  { id: 'web', name: '免费配图', desc: '自动搜索商用免费图' },
-  { id: 'ai', name: 'AI生成', desc: 'AI生成高质量配图' },
+  { id: 'auto', name: '🤖 自动匹配', desc: '根据场景自动选择（不含AI生图）', locked: false },
+  { id: 'none', name: '📄 无图纯净', desc: '纯文字+图标+色块，加载最快', locked: false },
+  { id: 'web', name: '🖼️ 网图/主题图', desc: '自动搜索商用免费配图', locked: false },
+  { id: 'ai', name: '🎨 AI定制图', desc: 'AI生成高质量配图（2 credits/图）', locked: true },
+  { id: 'ai-pro', name: '💎 AI高级图', desc: '顶级AI配图（20 credits/图）', locked: true },
 ];
 
 type PageMode = 'easy' | 'pro';
@@ -82,6 +87,11 @@ function CreatePageInner() {
   const [outline, setOutline] = useState<OutlineItem[]>([]);
   const [outlineTitle, setOutlineTitle] = useState('');
   const [editingOutlineId, setEditingOutlineId] = useState<string | null>(null);
+
+  // AI 推荐的主题配置（省心模式自动用，专业模式可选覆盖）
+  const [aiThemeId, setAiThemeId] = useState<string | null>(null);
+  const [aiTone, setAiTone] = useState<string | null>(null);
+  const [aiImageMode, setAiImageMode] = useState<string | null>(null);
 
   // Gamma 结果
   const [gammaExportUrl, setGammaExportUrl] = useState<string | null>(null);
@@ -168,7 +178,12 @@ function CreatePageInner() {
       setOutlineTitle(outlineData.title || 'PPT');
       setOutline(outlineData.slides || []);
 
-      // Step 2: 构建 Gamma Markdown 并直接生成
+      // 保存 AI 推荐的主题配置
+      if (outlineData.themeId) setAiThemeId(outlineData.themeId);
+      if (outlineData.tone) setAiTone(outlineData.tone);
+      if (outlineData.imageMode) setAiImageMode(outlineData.imageMode);
+
+      // Step 2: 构建 Gamma Markdown 并直接生成（使用AI推荐的主题配置）
       setProgress('正在生成PPT...');
       const gammaMarkdown = buildGammaMarkdown(outlineData.title, outlineData.slides || []);
 
@@ -180,14 +195,16 @@ function CreatePageInner() {
           format: 'presentation',
           numCards: (outlineData.slides || []).length,
           exportAs: 'pptx',
-          scene: 'biz',
-          textMode: 'generate',  // 省心模式总是用 generate
+          textMode: 'generate',
+          themeId: outlineData.themeId || undefined,
+          tone: outlineData.tone || undefined,
+          imageMode: outlineData.imageMode || 'auto',
         }),
       });
 
       if (!gammaRes.ok) {
         const data = await gammaRes.json();
-        throw new Error(data.error || 'Gamma 调用失败');
+        throw new Error(data.error || 'PPT生成失败');
       }
 
       const gammaData = await gammaRes.json();
@@ -237,6 +254,12 @@ function CreatePageInner() {
       const data = await res.json();
       setOutlineTitle(data.title || 'PPT');
       setOutline(data.slides || []);
+
+      // 用 AI 推荐的主题配置预填（用户仍可修改）
+      if (data.themeId) setSelectedTheme(data.themeId);
+      if (data.tone) setSelectedStyle(data.tone);
+      if (data.imageMode) setSelectedImageMode(data.imageMode);
+
       setStep('outline');
     } catch (err: any) {
       setError(err.message || '大纲生成失败');
@@ -274,7 +297,7 @@ function CreatePageInner() {
 
       if (!gammaRes.ok) {
         const data = await gammaRes.json();
-        throw new Error(data.error || 'Gamma 调用失败');
+        throw new Error(data.error || 'PPT生成失败');
       }
 
       const gammaData = await gammaRes.json();
@@ -297,7 +320,7 @@ function CreatePageInner() {
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise(r => setTimeout(r, 5000));
       const pct = Math.round(((i + 1) / maxAttempts) * 100);
-      setProgress(`Gamma 生成中... ${pct}%`);
+      setProgress(`省事PPT生成中... ${pct}%`);
 
       try {
         const res = await fetch(`/api/gamma?id=${generationId}`);
@@ -311,14 +334,14 @@ function CreatePageInner() {
           return;
         }
         if (data.status === 'failed') {
-          throw new Error(data.error || 'Gamma 生成失败');
+          throw new Error(data.error || 'PPT生成失败');
         }
       } catch (err: any) {
         if (err.message?.includes('生成失败')) throw err;
         continue;
       }
     }
-    throw new Error('Gamma 生成超时，请重试');
+    throw new Error('PPT生成超时，请重试，请重试');
   }, []);
 
   // ===== 大纲编辑 =====
@@ -649,18 +672,19 @@ function CreatePageInner() {
                   {/* 语气风格 */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">语气风格</label>
-                    <div className="flex gap-2">
+                    <div className="grid grid-cols-4 gap-2">
                       {GAMMA_STYLES.map(s => (
                         <button
                           key={s.id}
                           onClick={() => setSelectedStyle(s.id)}
-                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                          className={`p-3 rounded-xl border-2 transition-all text-left ${
                             selectedStyle === s.id
-                              ? 'bg-blue-500 text-white'
-                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:border-gray-300'
                           }`}
                         >
-                          {s.name}
+                          <div className="text-sm font-semibold text-gray-800">{s.name}</div>
+                          <div className="text-[10px] text-gray-400 mt-0.5">{s.desc}</div>
                         </button>
                       ))}
                     </div>
@@ -669,18 +693,25 @@ function CreatePageInner() {
                   {/* 图片模式 */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">配图方式</label>
-                    <div className="flex gap-2">
+                    <div className="grid grid-cols-5 gap-2">
                       {IMAGE_MODES.map(m => (
                         <button
                           key={m.id}
-                          onClick={() => setSelectedImageMode(m.id)}
-                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                            selectedImageMode === m.id
-                              ? 'bg-blue-500 text-white'
-                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          onClick={() => m.locked ? undefined : setSelectedImageMode(m.id)}
+                          className={`relative p-3 rounded-xl border-2 transition-all text-left ${
+                            m.locked
+                              ? 'border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed'
+                              : selectedImageMode === m.id
+                                ? 'border-blue-500 bg-blue-50'
+                                : 'border-gray-200 hover:border-gray-300 cursor-pointer'
                           }`}
+                          title={m.locked ? '会员功能' : undefined}
                         >
-                          {m.name}
+                          {m.locked && (
+                            <span className="absolute top-1 right-1 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">VIP</span>
+                          )}
+                          <div className="text-sm font-semibold text-gray-800">{m.name}</div>
+                          <div className="text-[10px] text-gray-400 mt-0.5 leading-tight">{m.desc}</div>
                         </button>
                       ))}
                     </div>
@@ -830,86 +861,78 @@ function CreatePageInner() {
 
         {/* ==================== DONE STEP ==================== */}
         {step === 'done' && (
-          <div className="animate-fade-in">
+          <div className="animate-fade-in h-screen flex flex-col">
             {/* 顶部操作栏 */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
-                <span className="text-2xl">🎉</span>
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900">PPT 生成完成！</h2>
-                  <p className="text-sm text-gray-500">
-                    {pageMode === 'easy'
-                      ? `基于 ${easyFiles.length} 个文件自动生成`
-                      : `共 ${outline.length} 页`}
-                  </p>
-                </div>
+                <Link href="/" className="flex items-center gap-2">
+                  <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                    <span className="text-white text-xs font-bold">P</span>
+                  </div>
+                  <span className="font-bold text-gray-800">省事PPT</span>
+                </Link>
+                <span className="text-gray-300">|</span>
+                <span className="text-sm text-gray-500">{outlineTitle}</span>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setStep('outline'); setGammaExportUrl(null); setGammaPreviewUrl(null); }}
+                  className="px-3 py-2 text-gray-600 hover:text-gray-800 text-sm font-medium transition-colors"
+                >
+                  ← 返回编辑大纲
+                </button>
                 {gammaExportUrl && (
                   <a
                     href={gammaExportUrl}
                     download
-                    className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg font-semibold text-sm hover:shadow-lg transition-all flex items-center gap-2"
+                    className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg font-semibold text-sm hover:shadow-lg transition-all flex items-center gap-2"
                   >
                     📥 下载PPT
                   </a>
                 )}
                 <button
                   onClick={handleReset}
-                  className="px-4 py-2.5 text-gray-600 hover:text-gray-800 text-sm font-medium bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="px-3 py-2 text-gray-500 hover:text-gray-700 text-sm transition-colors"
                 >
-                  继续创建
+                  新建
                 </button>
               </div>
             </div>
 
-            {/* 内容区域 */}
-            {gammaExportUrl ? (
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
-                {/* 大纲概览 */}
-                <div className="mb-6">
-                  <h3 className="text-lg font-bold text-gray-900 mb-4">{outlineTitle}</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {outline.map((item, i) => (
-                      <div key={item.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 text-xs font-bold flex items-center justify-center">
-                            {i + 1}
-                          </span>
-                          <span className="text-sm font-semibold text-gray-800 truncate">{item.title}</span>
-                        </div>
-                        <div className="text-xs text-gray-400 pl-7">
-                          {item.content?.slice(0, 2).join(' · ') || '-'}
-                          {item.content?.length > 2 && ` · +${item.content.length - 2}`}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 下载提示 */}
-                <div className="text-center py-8 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-100">
-                  <div className="text-4xl mb-3">📥</div>
-                  <p className="text-gray-700 font-medium mb-1">PPT 已生成完毕</p>
-                  <p className="text-sm text-gray-500 mb-4">下载后可用 PowerPoint、WPS 等软件打开编辑</p>
-                  {gammaExportUrl && (
+            {/* 预览区域 */}
+            <div className="flex-1 bg-gray-100">
+              {gammaPreviewUrl ? (
+                <iframe
+                  src={`/api/preview?url=${encodeURIComponent(gammaPreviewUrl)}`}
+                  className="w-full h-full border-0"
+                  title="PPT在线预览"
+                  allow="fullscreen"
+                />
+              ) : gammaExportUrl ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center bg-white rounded-2xl shadow-sm border border-gray-200 p-12 max-w-md">
+                    <div className="text-5xl mb-4">📄</div>
+                    <h3 className="text-lg font-bold text-gray-900 mb-2">PPT 已生成完毕！</h3>
+                    <p className="text-sm text-gray-500 mb-6">
+                      在线预览暂不可用，请下载后查看
+                    </p>
                     <a
                       href={gammaExportUrl}
                       download
-                      className="inline-flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all"
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all"
                     >
                       📥 下载PPT文件
                     </a>
-                  )}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center rounded-2xl bg-white border border-gray-200 py-20">
-                <div className="text-center p-4 bg-yellow-50 rounded-xl">
-                  ⚠️ PPT 已生成但获取结果失败，请重试
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center p-4 bg-yellow-50 rounded-xl">
+                    ⚠️ PPT 生成失败，请重试
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
       </div>
