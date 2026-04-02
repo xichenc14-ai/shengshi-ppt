@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { callGLM } from '@/lib/glm-client';
+import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
 
 const SCENE_THEME_MAP: Record<string, { themeId: string; tone: string; imageMode: string }> = {
   '商务汇报': { themeId: 'consultant', tone: 'professional', imageMode: 'noImages' },
@@ -21,7 +23,7 @@ async function searchTopic(topic: string): Promise<string> {
     // 提取关键词用于搜索
     const keywords = topic.replace(/[，、|,、]/g, ' ').split(/\s+/).filter(w => w.length >= 2).slice(0, 5);
     const searchQuery = keywords.join(' ');
-    
+
     const res = await fetch('https://www.google.com/search', {
       method: 'POST',
       headers: {
@@ -54,23 +56,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '请输入内容' }, { status: 400 });
     }
 
-    const apiKey = process.env.MYDAMOXING_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'AI 服务未配置' }, { status: 500 });
+    // Rate limiting
+    const ip = request.headers.get('x-forwarded-for') || 'unknown';
+    const { allowed, remaining } = rateLimit(`outline:${ip}`, getRateLimitConfig('/api/outline'));
+    if (!allowed) {
+      return NextResponse.json({ error: '请求过于频繁，请稍后再试' }, { status: 429 });
     }
 
     const numCards = slideCount || 10;
 
-    // ===== 第一步：搜索主题关键词，获取真实信息 =====
-    console.log('[Outline] Searching topic:', inputText.substring(0, 50));
-    const searchContext = await searchTopic(inputText.trim());
-    console.log('[Outline] Search results:', searchContext.substring(0, 200));
+    // ===== 搜索策略 =====
+    // generate 模式：先让 AI 生成大纲，AI 自己判断是否需要搜索（通过 needSearch 字段）
+    // condense/preserve 模式：用户已有内容，不需要搜索
 
-    // ===== 第二步：基于搜索结果生成大纲 =====
-    const searchSection = searchContext
-      ? `\n\n--- 以下是关于「${inputText.substring(0, 50)}」的真实信息（来自搜索结果）：\n${searchContext}`
-      : '';
+    // ===== 调用 GLM API =====
+    async function callAI(systemPrompt: string, userPrompt: string, taskType: 'outline' | 'search_judge' = 'outline'): Promise<any> {
+      const content = await callGLM(systemPrompt, userPrompt, taskType);
+      let cleaned = content.trim();
+      if (cleaned.startsWith('```')) cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+      try {
+        return JSON.parse(cleaned);
+      } catch (e) {
+        console.error('JSON parse error:', e, content);
+        throw new Error('大纲格式解析失败');
+      }
+    }
 
+    // ===== 构建 prompts =====
     const modePrompts: Record<string, string> = {
       generate: `你是一个专业的PPT内容策划师。用户会给一个主题，你需要从零生成完整的PPT大纲。
 
@@ -78,9 +90,14 @@ export async function POST(request: NextRequest) {
 - 如果用户提到的是品牌/公司/产品，你必须保留其真实名称和核心信息
 - 不要将用户主题替换为你理解的普通概念
 
+如果你对用户提到的某个品牌、公司、产品、项目、人名等专有名词不够了解，请在JSON输出的最外层加一个字段 "needSearch": true。如果你已经了解这个主题，不需要搜索，则不加这个字段或设为 false。
+
+注意：只有在你确实不认识或不了解某个专有名词时才标记 needSearch: true。对于常见的主题（如"年终总结"、"产品发布"等通用主题），不需要搜索。
+
 严格输出JSON，不要用markdown代码块包裹：
 {
   "title": "PPT主标题",
+  "needSearch": false,
   "scene": "场景类型",
   "themeId": "Gamma主题ID",
   "tone": "professional/casual/creative/bold",
@@ -135,52 +152,35 @@ export async function POST(request: NextRequest) {
     };
 
     const systemPrompt = modePrompts[textMode] || modePrompts.generate;
-    const userPrompt = auto
-      ? `请分析以下素材，自动识别需求并生成PPT大纲：\n\n${inputText}${searchSection}`
-      : `请根据以下内容生成PPT大纲（${numCards}页）：\n\n${inputText}${searchSection}`;
+    const baseUserPrompt = auto
+      ? `请分析以下素材，自动识别需求并生成PPT大纲：\n\n${inputText}`
+      : `请根据以下内容生成PPT大纲（${numCards}页）：\n\n${inputText}`;
 
-    // 带重试
-    let response: Response | undefined;
-    let lastError = '';
-    for (let attempt = 0; attempt < 3; attempt++) {
-      response = await fetch('https://mydamoxing.cn/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'glm-5-turbo',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.7,
-          max_tokens: 8192,
-        }),
-      });
-      if (response.ok) break;
-      lastError = `${response.status} ${await response.text()}`;
-      console.warn(`GLM attempt ${attempt + 1} failed: ${lastError}`);
-      if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+    // ===== 第一次调用：生成大纲 =====
+    let parsed = await callAI(systemPrompt, baseUserPrompt);
+
+    // ===== generate 模式：检查 AI 是否标记需要搜索 =====
+    if (textMode === 'generate' && parsed.needSearch) {
+      console.log('[Outline] AI requested search for:', inputText.substring(0, 50));
+      const searchContext = await searchTopic(inputText.trim());
+      if (searchContext) {
+        console.log('[Outline] Search results:', searchContext.substring(0, 200));
+        const searchSection = `\n\n--- 以下是关于「${inputText.substring(0, 50)}」的参考信息（来自搜索结果，用于补充知识）：\n${searchContext}`;
+        // 第二次调用：去掉 needSearch 指令，加上搜索结果
+        const searchPrompt = systemPrompt.replace(
+          /如果你对用户提到的某个品牌、公司、产品、项目、人名等专有名词不够了解，请在JSON输出的最外层加一个字段 "needSearch": true。如果你已经了解这个主题，不需要搜索，则不加这个字段或设为 false。\n\n注意：只有在你确实不认识或不了解某个专有名词时才标记 needSearch: true。对于常见的主题（如"年终总结"、"产品发布"等通用主题），不需要搜索。\n\n/,
+          ''
+        ).replace(
+          /  "needSearch": false,\n/,
+          ''
+        );
+        parsed = await callAI(searchPrompt, baseUserPrompt + searchSection, 'outline');
+      } else {
+        console.log('[Outline] Search returned empty, using first result');
+      }
     }
 
-    if (!response || !response.ok) throw new Error(`AI调用失败: ${lastError}`);
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) throw new Error('AI返回内容为空');
-
-    let parsed: any;
-    try {
-      let cleaned = content.trim();
-      if (cleaned.startsWith('```')) cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-      parsed = JSON.parse(cleaned);
-    } catch (e) {
-      console.error('JSON parse error:', e, content);
-      throw new Error('大纲格式解析失败');
-    }
-
+    // ===== 构建返回结果 =====
     const fullText = `${parsed.title || ''} ${(parsed.slides || []).map((s: any) => s.title).join(' ')}`.toLowerCase();
     const detectedScene = parsed.scene || detectScene(fullText);
     const sceneConfig = SCENE_THEME_MAP[detectedScene] || SCENE_THEME_MAP['通用'];
