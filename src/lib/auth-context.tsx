@@ -13,19 +13,29 @@ export interface UserInfo {
   is_active?: boolean;
 }
 
+interface PaymentPlan {
+  id: string;
+  name: string;
+  price: string;
+  billing?: string;
+  reason?: string;
+  neededCredits?: number;
+  currentCredits?: number;
+}
+
 interface AuthContextType {
   user: UserInfo | null;
   loading: boolean;
   showLogin: boolean;
   showPayment: boolean;
-  paymentPlan: { id: string; name: string; price: string } | null;
+  paymentPlan: PaymentPlan | null;
   login: (user: UserInfo) => void;
   logout: () => void;
   updateCredits: (credits: number) => void;
   updateUser: (data: Partial<UserInfo>) => void;
   openLogin: () => void;
   closeLogin: () => void;
-  openPayment: (plan: { id: string; name: string; price: string }) => void;
+  openPayment: (plan: PaymentPlan) => void;
   closePayment: () => void;
 }
 
@@ -36,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [showLogin, setShowLogin] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
-  const [paymentPlan, setPaymentPlan] = useState<{ id: string; name: string; price: string } | null>(null);
+  const [paymentPlan, setPaymentPlan] = useState<PaymentPlan | null>(null);
 
   useEffect(() => {
     try {
@@ -77,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const openLogin = useCallback(() => setShowLogin(true), []);
   const closeLogin = useCallback(() => setShowLogin(false), []);
-  const openPayment = useCallback((plan: { id: string; name: string; price: string }) => {
+  const openPayment = useCallback((plan: PaymentPlan) => {
     setPaymentPlan(plan);
     setShowPayment(true);
   }, []);

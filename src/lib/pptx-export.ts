@@ -6,11 +6,11 @@ function getTemplate(templateId: string): Template {
   return templates.find(t => t.id === templateId) || templates[0];
 }
 
-// 导出PPTX
-export async function exportToPPTX(presentation: Presentation): Promise<Blob> {
+// 导出PPTX（支持水印）
+export async function exportToPPTX(presentation: Presentation, addWatermark: boolean = false): Promise<Blob> {
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_16x9';
-  pptx.author = '省事PPT';
+  pptx.author = '省心PPT';
   pptx.title = presentation.title;
 
   const template = getTemplate(presentation.templateId);
@@ -20,13 +20,13 @@ export async function exportToPPTX(presentation: Presentation): Promise<Blob> {
 
     switch (slide.type) {
       case 'title':
-        addTitleSlide(slideObj, slide, template, pptx);
+        addTitleSlide(slideObj, slide, template, pptx, addWatermark);
         break;
       case 'end':
-        addEndSlide(slideObj, slide, template, pptx);
+        addEndSlide(slideObj, slide, template, pptx, addWatermark);
         break;
       default:
-        addContentSlide(slideObj, slide, template, index, pptx);
+        addContentSlide(slideObj, slide, template, index, pptx, addWatermark);
         break;
     }
   });
@@ -35,11 +35,27 @@ export async function exportToPPTX(presentation: Presentation): Promise<Blob> {
   return new Blob([new Uint8Array(buffer)], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
 }
 
+// 添加水印（斜向半透明文字，覆盖整个页面）
+function addWatermarkToSlide(slideObj: any, pptx: PptxGenJS) {
+  slideObj.addText('省心PPT', {
+    x: 0, y: 0, w: '100%', h: '100%',
+    fontSize: 42,
+    fontFace: 'Arial',
+    color: 'D1D5DB',
+    transparency: 70,
+    bold: true,
+    rotate: -30,
+    align: 'center',
+    valign: 'middle',
+  });
+}
+
 function addTitleSlide(
   slideObj: any,
   slide: { title: string; subtitle?: string },
   template: Template,
-  pptx: PptxGenJS
+  pptx: PptxGenJS,
+  addWatermark: boolean = false
 ) {
   slideObj.background = { color: template.colors.primary };
 
@@ -63,6 +79,8 @@ function addTitleSlide(
     x: 3.5, y: 4.5, w: 3, h: 0.04,
     fill: { color: template.colors.accent },
   });
+
+  if (addWatermark) addWatermarkToSlide(slideObj, pptx);
 }
 
 function addContentSlide(
@@ -70,7 +88,8 @@ function addContentSlide(
   slide: { title: string; content: string[] },
   template: Template,
   index: number,
-  pptx: PptxGenJS
+  pptx: PptxGenJS,
+  addWatermark: boolean = false
 ) {
   slideObj.background = { color: template.colors.background };
 
@@ -111,13 +130,16 @@ function addContentSlide(
       valign: 'top', lineSpacing: 28,
     });
   }
+
+  if (addWatermark) addWatermarkToSlide(slideObj, pptx);
 }
 
 function addEndSlide(
   slideObj: any,
   slide: { title: string; subtitle?: string },
   template: Template,
-  pptx: PptxGenJS
+  pptx: PptxGenJS,
+  addWatermark: boolean = false
 ) {
   slideObj.background = { color: template.colors.primary };
 
@@ -139,4 +161,6 @@ function addEndSlide(
     x: 3.5, y: 3.2, w: 3, h: 0.04,
     fill: { color: template.colors.accent },
   });
+
+  if (addWatermark) addWatermarkToSlide(slideObj, pptx);
 }

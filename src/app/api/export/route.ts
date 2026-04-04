@@ -4,7 +4,8 @@ import { Presentation } from '@/lib/types';
 
 export async function POST(request: NextRequest) {
   try {
-    const { presentation } = await request.json() as { presentation: Presentation };
+    const body = await request.json();
+    const { presentation, addWatermark = false } = body as { presentation: Presentation; addWatermark?: boolean };
 
     if (!presentation || !presentation.slides) {
       return NextResponse.json(
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const blob = await exportToPPTX(presentation);
+    const blob = await exportToPPTX(presentation, addWatermark);
     const buffer = Buffer.from(await blob.arrayBuffer());
     const filename = (presentation.title || 'presentation').replace(/[^\u4e00-\u9fa5a-zA-Z0-9_-]/g, '_');
 

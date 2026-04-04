@@ -161,6 +161,53 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // ===== 账号密码登录（测试用） =====
+    if (action === 'password_login') {
+      const { username, password } = body;
+      if (!username || !password) {
+        return NextResponse.json({ error: '请输入用户名和密码' }, { status: 400 });
+      }
+      // 硬编码测试账号
+      if (username !== 'xichen' || password !== '123456') {
+        return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
+      }
+
+      // 查询 supabase users 表中 phone='xichen' 的用户
+      const { data: users } = await sb
+        .from('users')
+        .select('id,phone,nickname,credits,plan_type,is_active')
+        .eq('phone', 'xichen');
+
+      if (users && users.length > 0) {
+        const u = users[0];
+        await sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', u.id);
+        return NextResponse.json({
+          user: { id: u.id, phone: u.phone, nickname: u.nickname || 'xichen', credits: u.credits, plan_type: u.plan_type, has_subscription: u.plan_type !== 'free', is_new: false },
+        });
+      }
+
+      // 不存在则创建
+      const { data: newUser, error: insErr } = await sb
+        .from('users')
+        .insert({ phone: 'xichen', credits: 9999, plan_type: 'pro', nickname: 'xichen', is_active: true })
+        .select()
+        .single();
+
+      if (insErr || !newUser) {
+        console.error('Insert error:', insErr);
+        return NextResponse.json({ error: '创建用户失败' }, { status: 500 });
+      }
+
+      await sb.from('credit_transactions').insert({
+        user_id: newUser.id, amount: 9999, balance_after: 9999,
+        type: 'signup_gift', description: '测试账号赠送9999积分',
+      });
+
+      return NextResponse.json({
+        user: { id: newUser.id, phone: newUser.phone, nickname: newUser.nickname, credits: newUser.credits, plan_type: newUser.plan_type, is_active: true, has_subscription: true, is_new: true },
+      });
+    }
+
     // ===== 更新用户资料 =====
     if (action === 'update_profile') {
       const { userId, nickname } = body;

@@ -45,7 +45,7 @@ function buildMd(title: string, slides: any[]): string {
 }
 
 export default function Home() {
-  const { user, showLogin, showPayment, paymentPlan } = useAuth();
+  const { user, showLogin, showPayment, paymentPlan, openPayment } = useAuth();
   const router = useRouter();
 
   // Landing page vs generate flow
@@ -170,7 +170,22 @@ export default function Home() {
       });
       const deductData = await deductRes.json();
       if (!deductRes.ok || deductData.error) {
-        throw new Error(deductData.error === '积分不足' ? `积分不足！需要${deductData.needed}积分` : deductData.error || '积分扣除失败');
+        if (deductData.error === '积分不足') {
+          // Open payment modal instead of throwing error
+          setLoading(false);
+          setPhase('outline');
+          openPayment({
+            id: 'basic',
+            name: '积分不足，请充值',
+            price: '¥9.9/月',
+            billing: 'monthly',
+            reason: '积分不足，无法生成PPT',
+            neededCredits: deductData.needed,
+            currentCredits: deductData.balance,
+          });
+          return;
+        }
+        throw new Error(deductData.error || '积分扣除失败');
       }
       // Update credits locally
       const updatedUser = { ...user, credits: deductData.balance };
@@ -286,7 +301,14 @@ export default function Home() {
   };
 
   const addSlide = () => setEditedSlides(prev => [...prev, { id: `new-${Date.now()}`, title: '新幻灯片', content: [] }]);
-  const removeSlide = (idx: number) => setEditedSlides(prev => prev.filter((_, i) => i !== idx));
+  const removeSlide = (idx: number) => {
+    if (idx < 2) {
+      alert('封面页和目录页不可删除');
+      return;
+    }
+    if (!window.confirm(`确定要删除第 ${idx + 1} 页「${editedSlides[idx].title}」吗？`)) return;
+    setEditedSlides(prev => prev.filter((_, i) => i !== idx));
+  };
   const moveSlide = (idx: number, dir: -1 | 1) => {
     const newIdx = idx + dir;
     if (newIdx < 0 || newIdx >= editedSlides.length) return;
@@ -369,12 +391,29 @@ export default function Home() {
 
                   <div className="border-t border-gray-100 my-4" />
 
-                  {/* Pro mode toggle */}
-                  <button onClick={() => setShowPro(true)} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-[#5B4FE9] transition-colors">
-                    ⚙️ <span>专业模式</span>
-                    <span className="text-[10px]">自定义参数</span>
-                    <span>▸</span>
-                  </button>
+                  {/* Mode toggle */}
+                  <div className="flex gap-2 mt-1">
+                    <button
+                      onClick={() => setShowPro(false)}
+                      className={`flex-1 py-2.5 rounded-xl border text-center transition-all text-sm font-medium ${
+                        !showPro
+                          ? 'border-[#5B4FE9] bg-[#F5F3FF] text-[#4338CA] shadow-sm'
+                          : 'border-gray-200 text-gray-400 hover:border-gray-300'
+                      }`}
+                    >
+                      ✨ 省心模式
+                    </button>
+                    <button
+                      onClick={() => setShowPro(true)}
+                      className={`flex-1 py-2.5 rounded-xl border text-center transition-all text-sm font-medium ${
+                        showPro
+                          ? 'border-[#5B4FE9] bg-[#F5F3FF] text-[#4338CA] shadow-sm'
+                          : 'border-gray-200 text-gray-400 hover:border-gray-300'
+                      }`}
+                    >
+                      {showPro ? '⚙️ 收起' : '⚙️ 专业模式'}
+                    </button>
+                  </div>
 
                   {error && <div className="mt-3 px-3 py-2 bg-red-50 text-red-500 rounded-lg text-xs">❌ {error}</div>}
                 </div>
@@ -405,7 +444,7 @@ export default function Home() {
                               className="w-full mt-1 text-xs text-gray-500 bg-gray-50 rounded-lg px-2.5 py-1.5 border border-transparent focus:border-[#5B4FE9] outline-none resize-none" />
                           )}
                         </div>
-                        <div className="flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex-shrink-0 flex items-center gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                           <button onClick={() => moveSlide(idx, -1)} className="w-6 h-6 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 text-[10px]">↑</button>
                           <button onClick={() => moveSlide(idx, 1)} className="w-6 h-6 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 text-[10px]">↓</button>
                           <button onClick={() => removeSlide(idx)} className="w-6 h-6 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 text-[10px]">✕</button>
@@ -424,7 +463,7 @@ export default function Home() {
           {/* Floating button */}
           {!loading && (
             <FloatingButton
-              label={phase === 'input' ? '生成' : '确认'}
+              label={phase === 'input' ? '省心生成' : '确认生成'}
               icon={phase === 'input' ? '✨' : '🚀'}
               onClick={phase === 'input' ? generateOutline : confirmAndGenerate}
               disabled={phase === 'input' && !hasInput}

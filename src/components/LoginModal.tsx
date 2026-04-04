@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 
-const LOGIN_TABS = ['wechat', 'phone'] as const;
+const LOGIN_TABS = ['wechat', 'account', 'phone'] as const;
 
 interface LoginModalProps {
   open: boolean;
@@ -20,6 +20,10 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [wechatHint, setWechatHint] = useState(false);
+  // Account login state
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const codeRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Countdown timer
@@ -82,6 +86,24 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
     setLoading(false);
   };
 
+  // Account password login
+  const handleAccountLogin = async () => {
+    if (!username.trim()) { setError('请输入用户名'); return; }
+    if (!password.trim()) { setError('请输入密码'); return; }
+    setLoading(true); setError('');
+    try {
+      const res = await fetch('/api/user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'password_login', username, password }),
+      });
+      const data = await res.json();
+      if (data.error) { setError(data.error); setLoading(false); return; }
+      if (data.user) login(data.user);
+    } catch { setError('登录失败'); }
+    setLoading(false);
+  };
+
   const handleCodeInput = (index: number, value: string) => {
     if (!/^\d*$/.test(value)) return;
     const newCode = [...code];
@@ -104,6 +126,9 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
     setCountdown(0);
     setCodeSent(false);
     setError('');
+    setUsername('');
+    setPassword('');
+    setShowPassword(false);
   };
 
   if (!open) return null;
@@ -122,18 +147,15 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
 
         {/* Tabs */}
         <div className="px-6 flex gap-1 bg-gray-100 mx-6 rounded-xl p-1 mb-5">
-          <button
-            onClick={() => setTab('wechat')}
-            className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${tab === 'wechat' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'}`}
-          >
-            微信登录
-          </button>
-          <button
-            onClick={() => setTab('phone')}
-            className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${tab === 'phone' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'}`}
-          >
-            手机号登录
-          </button>
+          {LOGIN_TABS.map(t => (
+            <button
+              key={t}
+              onClick={() => { setTab(t); setError(''); }}
+              className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'}`}
+            >
+              {t === 'wechat' ? '微信登录' : t === 'account' ? '账号登录' : '手机号登录'}
+            </button>
+          ))}
         </div>
 
         <div className="px-6 pb-6">
@@ -151,7 +173,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
               {wechatHint && (
                 <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl animate-fade-in">
                   <p className="text-xs text-amber-700">📱 微信登录功能即将上线，敬请期待！</p>
-                  <p className="text-[10px] text-amber-500 mt-1">目前请使用手机号登录</p>
+                  <p className="text-[10px] text-amber-500 mt-1">目前请使用账号或手机号登录</p>
                 </div>
               )}
 
@@ -161,12 +183,57 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                 <div className="flex-1 h-px bg-gray-200" />
               </div>
 
+              <div className="mt-4 flex items-center justify-center gap-4">
+                <button onClick={() => setTab('account')} className="text-xs text-[#5B4FE9] hover:underline">使用账号登录</button>
+                <button onClick={() => setTab('phone')} className="text-xs text-[#5B4FE9] hover:underline">使用手机号登录</button>
+              </div>
+            </div>
+          )}
+
+          {/* Account login */}
+          {tab === 'account' && (
+            <div>
+              {/* Username input */}
+              <div className="relative mb-4">
+                <input
+                  type="text"
+                  value={username}
+                  onChange={e => { setUsername(e.target.value); setError(''); }}
+                  placeholder="请输入用户名"
+                  className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] outline-none text-sm transition-all"
+                  onKeyDown={e => { if (e.key === 'Enter') handleAccountLogin(); }}
+                />
+              </div>
+
+              {/* Password input */}
+              <div className="relative mb-4">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => { setPassword(e.target.value); setError(''); }}
+                  placeholder="请输入密码"
+                  className="w-full px-4 py-3 pr-12 rounded-xl bg-gray-50 border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] outline-none text-sm transition-all"
+                  onKeyDown={e => { if (e.key === 'Enter') handleAccountLogin(); }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs px-1"
+                >
+                  {showPassword ? '🙈' : '👁️'}
+                </button>
+              </div>
+
+              {/* Account login button */}
               <button
-                onClick={() => setTab('phone')}
-                className="mt-4 text-xs text-[#5B4FE9] hover:underline"
+                onClick={handleAccountLogin}
+                disabled={!username.trim() || !password.trim() || loading}
+                className="w-full py-3 bg-[#5B4FE9] text-white rounded-xl text-sm font-semibold hover:bg-[#4F46E5] transition-colors disabled:opacity-40"
               >
-                使用手机号登录
+                {loading ? '...' : '登录'}
               </button>
+
+              {error && <p className="text-center text-xs text-red-500 mt-3">{error}</p>}
             </div>
           )}
 

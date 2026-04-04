@@ -19,17 +19,21 @@ export async function POST(req: NextRequest) {
 
     // 创建订单
     if (action === 'create_order' || !action) {
-      const { planId, payMethod, userId } = body;
+      const { planId, payMethod, userId, billing = 'monthly' } = body;
 
       if (!planId) return NextResponse.json({ error: '请选择套餐' }, { status: 400 });
 
-      const PLAN_PRICES: Record<string, { name: string; amount: number }> = {
-        basic: { name: '基础版', amount: 19 },
-        pro: { name: '专业版', amount: 49 },
+      const PLAN_PRICES: Record<string, { name: string; monthly: number; annual: number }> = {
+        basic: { name: '基础版', monthly: 9.9, annual: 99 },
+        pro: { name: '专业版', monthly: 19.9, annual: 199 },
       };
 
       const plan = PLAN_PRICES[planId];
       if (!plan) return NextResponse.json({ error: '套餐不存在' }, { status: 400 });
+
+      const isAnnual = billing === 'annual';
+      const amount = isAnnual ? plan.annual : plan.monthly;
+      const billingLabel = isAnnual ? '年付' : '月付';
 
       const orderNo = Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
 
@@ -39,11 +43,11 @@ export async function POST(req: NextRequest) {
           user_id: userId || '00000000-0000-0000-000000000000',
           order_no: orderNo,
           product_type: 'subscription',
-          product_name: plan.name,
-          amount: plan.amount * 100, // 分为单位
+          product_name: `${plan.name}（${billingLabel}）`,
+          amount: Math.round(amount * 100), // 分为单位
           status: 'pending',
           pay_method: payMethod || 'wechat',
-          metadata: { planId, payMethod },
+          metadata: { planId, payMethod, billing },
           expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
         })
         .select()
@@ -53,10 +57,10 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         order_no: orderNo,
-        amount: plan.amount,
-        product_name: plan.name,
+        amount,
+        product_name: `${plan.name}（${billingLabel}）`,
+        billing,
         status: 'pending',
-        // TODO: 接入真实支付后返回支付参数（prepay_id / qr_code_url 等）
         message: '支付功能即将上线',
       });
     }

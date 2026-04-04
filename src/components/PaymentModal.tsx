@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 interface PaymentModalProps {
   open: boolean;
   onClose: () => void;
-  plan: { id: string; name: string; price: string } | null;
+  plan: { id: string; name: string; price: string; billing?: string; reason?: string; neededCredits?: number; currentCredits?: number } | null;
 }
 
 export default function PaymentModal({ open, onClose, plan }: PaymentModalProps) {
@@ -20,7 +20,7 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
       const res = await fetch('/api/payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId: plan.id, payMethod }),
+        body: JSON.stringify({ planId: plan.id, payMethod, billing: plan.billing || 'monthly' }),
       });
       const data = await res.json();
       if (data.order_no) {
@@ -36,13 +36,23 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
 
   return (
     <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-[400px] max-w-[90vw] animate-modal-in" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-[400px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
         <div className="p-6">
           {/* Header */}
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-base font-bold text-gray-900">开通套餐</h3>
             <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400">✕</button>
           </div>
+
+          {/* Insufficient credits notice */}
+          {plan.reason && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+              <p className="text-xs text-amber-700 font-medium">⚡ {plan.reason}</p>
+              {plan.neededCredits && plan.currentCredits !== undefined && (
+                <p className="text-[10px] text-amber-500 mt-1">当前积分：{plan.currentCredits}，需要：{plan.neededCredits}，差额：{plan.neededCredits - plan.currentCredits}</p>
+              )}
+            </div>
+          )}
 
           {/* Plan info */}
           <div className="bg-[#F5F3FF] rounded-xl p-4 mb-5">
