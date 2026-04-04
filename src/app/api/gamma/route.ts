@@ -14,6 +14,7 @@ const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource
   data: { themeId: 'gleam', tone: 'professional', imageSource: 'noImages' },
   annual: { themeId: 'blues', tone: 'professional', imageSource: 'webFreeToUseCommercially' },
   launch: { themeId: 'aurora', tone: 'bold', imageSource: 'aiGenerated' },
+  traditional: { themeId: 'chisel', tone: 'traditional', imageSource: 'aiGenerated' },
 };
 
 // additionalInstructions 模板（基于技术部验证的 v2.0 模板）
@@ -50,6 +51,17 @@ const INSTRUCTION_TEMPLATES = {
 4. 配图风格：futuristic, technology, modern, sleek, dark blue accent
 5. 使用无衬线字体风格
 6. 整体风格高端科技感`,
+  traditional: `用中文生成PPT。要求：
+1. 全局正文使用大文本，不要小号字
+2. 整体风格为中国风/古典风格，使用中国传统文化元素（如：祥云纹、水墨、古典边框、印章等装饰）
+3. 配色方案以红色、金色、墨色、米白色为主，体现中国传统文化美学
+4. 标题使用大号加粗字体，正文使用宋体或楷体风格
+5. 封面页和结尾页要有中国风装饰元素（如祥云、山水、窗棂等）
+6. 配图风格：Chinese traditional, ink wash, classical Chinese art, elegant calligraphy
+7. 图片搜索关键词使用"中国风"、"国画"、"中国传统文化"、"水墨画"、"古典元素"
+8. 不要使用卡通、扁平化、3D等现代风格
+9. 保持演讲者备注
+10. 整体风格统一，典雅大气`,
 };
 
 // 创建 Gamma 生成任务
@@ -100,7 +112,9 @@ export async function POST(request: NextRequest) {
       imageOptions = { source: sceneConfig.imageSource };
       if (sceneConfig.imageSource === 'aiGenerated') {
         imageOptions.model = 'flux-kontext-fast';
-        imageOptions.style = 'Minimalist, clean background, negative space, professional';
+        imageOptions.style = scene === 'traditional'
+          ? 'Chinese traditional, ink wash, classical Chinese art, elegant calligraphy, red and gold accent, white background'
+          : 'Minimalist, clean background, negative space, professional';
       }
     }
 

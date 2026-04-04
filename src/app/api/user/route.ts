@@ -161,6 +161,25 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // ===== 更新用户资料 =====
+    if (action === 'update_profile') {
+      const { userId, nickname } = body;
+      if (!userId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+
+      const updates: Record<string, any> = { last_login_at: new Date().toISOString() };
+      if (nickname) updates.nickname = nickname;
+
+      const { data: updated, error: updErr } = await sb
+        .from('users')
+        .update(updates)
+        .eq('id', userId)
+        .select('id,phone,nickname,credits,plan_type')
+        .single();
+
+      if (updErr || !updated) return NextResponse.json({ error: '更新失败' }, { status: 500 });
+      return NextResponse.json({ user: updated });
+    }
+
     // ===== 扣积分 =====
     if (action === 'deduct') {
       const { userId, mode, numPages } = body;

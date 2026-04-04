@@ -1,795 +1,32 @@
 'use client';
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useAuth } from '@/lib/auth-context';
+import { useRouter } from 'next/navigation';
 
-/* ==================== 配置数据 ==================== */
+import Navbar from '@/components/Navbar';
+import HeroSection from '@/components/HeroSection';
+import SceneCards from '@/components/SceneCards';
+import FeaturesSection from '@/components/FeaturesSection';
+import ProcessSection from '@/components/ProcessSection';
+import PricingSection from '@/components/PricingSection';
+import TestimonialSection from '@/components/TestimonialSection';
+import FAQSection from '@/components/FAQSection';
+import Footer from '@/components/Footer';
+import ProPanel from '@/components/ProPanel';
+import LoginModal from '@/components/LoginModal';
+import PaymentModal from '@/components/PaymentModal';
+import StreamingOutline from '@/components/StreamingOutline';
+import GenerationProgress from '@/components/GenerationProgress';
+import FloatingButton from '@/components/FloatingButton';
+import SkeletonCard from '@/components/SkeletonCard';
 
-// 生成模式（精简为4个）
-const GEN_MODES = [
-  { id: 'easy', name: '省心智能', icon: '✨', desc: 'AI全自动，一步到位' },
-  { id: 'generate', name: 'AI创作', icon: '🤖', desc: '从零生成完整内容' },
-  { id: 'condense', name: '智能摘要', icon: '📝', desc: '提炼文档为要点' },
-  { id: 'preserve', name: '原文排版', icon: '📄', desc: '保留原文美化排版' },
-];
+/* ==================== Config ==================== */
 
-// 主题色系预设（8个，用色块展示）
-const THEME_COLORS = [
-  { id: 'auto', name: '智能匹配', colors: ['#8B5CF6', '#A78BFA', '#C4B5FD'] },
-  { id: 'business-blue', name: '商务蓝', colors: ['#3B82F6', '#60A5FA', '#93C5FD'] },
-  { id: 'roadshow-purple', name: '路演紫', colors: ['#8B5CF6', '#A855F7', '#C084FC'] },
-  { id: 'creative-orange', name: '创意橙', colors: ['#F97316', '#FB923C', '#FDBA74'] },
-  { id: 'earth-brown', name: '大地棕', colors: ['#92400E', '#B45309', '#D97706'] },
-  { id: 'premium-gold', name: '高级金', colors: ['#D97706', '#F59E0B', '#FBBF24'] },
-  { id: 'tech-cyan', name: '科技青', colors: ['#06B6D4', '#22D3EE', '#67E8F9'] },
-  { id: 'minimal-white', name: '极简白', colors: ['#E5E7EB', '#F3F4F6', '#F9FAFB'] },
-];
-
-// 语气风格（精简为3个）
-const TONE_STYLES = [
-  { id: 'professional', name: '专业商务', icon: '💼' },
-  { id: 'casual', name: '轻松友好', icon: '😊' },
-  { id: 'creative', name: '创意活泼', icon: '🎨' },
-];
-
-// 配图方式（精简为3个）
-const IMAGE_MODES = [
-  { id: 'auto', name: '自动', desc: '智能配图' },
-  { id: 'none', name: '无图', desc: '纯文字' },
-  { id: 'web', name: '精选', desc: '商用图' },
-];
-
-// 场景展示（6个）
-const SCENARIOS = [
-  { icon: '💼', title: '工作汇报', desc: '周报、月报、季度总结，一键生成专业汇报', color: 'from-[#5B4FE9] to-[#4F46E5]' },
-  { icon: '🚀', title: '商业路演', desc: '融资BP、产品推介，打动投资人', color: 'from-[#5B4FE9] to-[#8B5CF6]' },
-  { icon: '🎓', title: '教学课件', desc: '课程大纲、培训材料，老师的好帮手', color: 'from-emerald-500 to-teal-600' },
-  { icon: '📊', title: '数据分析', desc: '数据报告、趋势分析，让数据会说话', color: 'from-orange-500 to-red-500' },
-  { icon: '🛍️', title: '营销策划', desc: '活动方案、品牌提案，创意满分', color: 'from-pink-500 to-rose-600' },
-  { icon: '📝', title: '毕业答辩', desc: '论文答辩、课题汇报，顺利过关', color: 'from-[#5B4FE9] to-[#4F46E5]' },
-];
+const GEN_MODES_MAP: Record<string, string> = { generate: 'generate', condense: 'condense', preserve: 'preserve' };
 
 type UploadedFile = { name: string; type: string; size: number; content?: string };
-
-export default function Home() {
-  // 输入状态（共享）
-  const [files, setFiles] = useState<UploadedFile[]>([]);
-  const [topic, setTopic] = useState('');
-  const [dragging, setDragging] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  // 专业模式状态
-  const [showPro, setShowPro] = useState(false);
-  const [genMode, setGenMode] = useState('easy');
-  const [themeColor, setThemeColor] = useState('auto');
-  const [tone, setTone] = useState('professional');
-  const [pages, setPages] = useState<'auto' | number>('auto');
-  const [imgMode, setImgMode] = useState('auto');
-
-  // 通用状态
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [step, setStep] = useState(0);
-  const [stepText, setStepText] = useState('');
-  const [result, setResult] = useState<{ title: string; slides: any[]; dlUrl: string } | null>(null);
-
-  // 用户状态
-  const [showLogin, setShowLogin] = useState(false);
-  const [loginPhone, setLoginPhone] = useState('');
-  const [loginLoading, setLoginLoading] = useState(false);
-  const [loginError, setLoginError] = useState('');
-  const [user, setUser] = useState<{ id: string; phone: string; nickname: string; credits: number; plan_type: string; is_new: boolean } | null>(null);
-
-  // 文件处理
-  const processFiles = useCallback(async (filesList: FileList | File[]) => {
-    const r: UploadedFile[] = [];
-    for (const file of Array.from(filesList)) {
-      const i: UploadedFile = { name: file.name, type: file.type, size: file.size };
-      if (file.type === 'text/plain' || /\.(md|txt|csv)$/.test(file.name)) i.content = await file.text();
-      r.push(i);
-    }
-    return r;
-  }, []);
-
-  const onDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
-    if (e.dataTransfer.files.length > 0) {
-      const f = await processFiles(e.dataTransfer.files);
-      setFiles(p => [...p, ...f]);
-    }
-  }, [processFiles]);
-
-  const onFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.length) {
-      const f = await processFiles(e.target.files);
-      setFiles(p => [...p, ...f]);
-    }
-    e.target.value = '';
-  }, [processFiles]);
-
-  const removeFile = useCallback((index: number) => {
-    setFiles(p => p.filter((_, i) => i !== index));
-  }, []);
-
-  const fmtSize = (b: number) => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
-
-  const collectText = () => {
-    const p: string[] = [];
-    files.forEach(f => {
-      p.push(f.content ? `[${f.name}]\n${f.content}` : `[${f.name}]`);
-    });
-    if (topic.trim()) p.push(topic.trim());
-    return p.join('\n\n');
-  };
-
-  // 生成函数（保留所有现有逻辑）
-  const generate = useCallback(async (inputText: string, auto: boolean, tm: string, sc: number | 'auto', th?: string, tn?: string, im?: string) => {
-    setLoading(true);
-    setError('');
-    setResult(null);
-    setStep(0);
-    setStepText('正在分析你的需求...');
-
-    try {
-      const numC = sc === 'auto' ? 10 : sc;
-      setStep(1);
-      setStepText('AI正在生成大纲内容...');
-
-      const oRes = await fetch('/api/outline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputText, slideCount: numC, textMode: auto ? 'generate' : tm, auto }),
-      });
-
-      if (!oRes.ok) {
-        const d = await oRes.json();
-        throw new Error(d.error || '大纲生成失败');
-      }
-
-      const od = await oRes.json();
-      const actualMode = auto ? 'generate' : tm;
-      const actualPages = (od.slides || []).length;
-
-      // 扣积分
-      if (user) {
-        setStep(1);
-        setStepText('检查积分...');
-        const deductRes = await fetch('/api/user', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'deduct', userId: user.id, mode: actualMode, numPages: actualPages }),
-        });
-        const deductData = await deductRes.json();
-
-        if (!deductRes.ok || deductData.error) {
-          if (deductData.error === '积分不足') {
-            throw new Error(`积分不足！需要${deductData.needed}积分，当前余额${deductData.balance}积分`);
-          }
-          throw new Error(deductData.error || '积分扣除失败');
-        }
-
-        setUser(prev => prev ? { ...prev, credits: deductData.balance } : null);
-        setStepText(`已扣除${deductData.creditsUsed}积分`);
-      }
-
-      if (auto || tm === 'easy') {
-        setStep(2);
-        setStepText('AI正在渲染PPT，请耐心等待...');
-
-        const md = buildMd(od.title, od.slides || []);
-        const gRes = await fetch('/api/gamma', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            inputText: md,
-            textMode: auto ? 'generate' : tm,
-            format: 'presentation',
-            numCards: (od.slides || []).length,
-            exportAs: 'pptx',
-            themeId: th || od.themeId || undefined,
-            tone: tn || od.tone || 'professional',
-            imageMode: im || od.imageMode || 'auto',
-          }),
-        });
-
-        if (!gRes.ok) throw new Error('PPT生成失败');
-        const gd = await gRes.json();
-
-        if (gd.generationId) {
-          setStep(2);
-          setStepText('PPT渲染中，预计30-60秒...');
-          let pollCount = 0;
-
-          const pollStep = () => new Promise<void>((resolve, reject) => {
-            const timer = setInterval(async () => {
-              pollCount++;
-              try {
-                const r = await fetch(`/api/gamma?id=${gd.generationId}`);
-                if (!r.ok) return;
-                const d = await r.json();
-                if (d.status === 'completed') {
-                  clearInterval(timer);
-                  resolve();
-                } else if (d.status === 'failed') {
-                  clearInterval(timer);
-                  reject(new Error('PPT生成失败'));
-                } else {
-                  setStepText(`PPT渲染中... (${pollCount * 5}秒)`);
-                }
-              } catch (e: any) {
-                if (e.message?.includes('失败')) {
-                  clearInterval(timer);
-                  reject(e);
-                }
-              }
-            }, 5000);
-            setTimeout(() => {
-              clearInterval(timer);
-              reject(new Error('PPT生成超时'));
-            }, 240000);
-          });
-
-          await pollStep();
-          setStep(3);
-          setStepText('准备下载...');
-
-          const finalRes = await fetch(`/api/gamma?id=${gd.generationId}`);
-          const finalData = await finalRes.json();
-          setResult({ title: od.title, slides: od.slides || [], dlUrl: finalData.exportUrl || '' });
-          setStep(4);
-        }
-      } else {
-        setStep(3);
-        setResult({ title: od.title, slides: od.slides || [], dlUrl: '' });
-        setStep(4);
-      }
-
-      setLoading(false);
-    } catch (e: any) {
-      setError(e.message || '生成失败');
-      setLoading(false);
-      setStep(0);
-    }
-  }, [user]);
-
-  // 省心模式一键生成
-  const handleEasyGenerate = () => {
-    if (files.length === 0 && !topic.trim()) return;
-    if (!user) {
-      setShowLogin(true);
-      return;
-    }
-    generate(collectText(), true, 'generate', 'auto');
-  };
-
-  // 专业模式生成
-  const handleProGenerate = () => {
-    if (!collectText().trim()) return;
-    if (!user) {
-      setShowLogin(true);
-      return;
-    }
-    if (genMode === 'easy') {
-      generate(
-        collectText(),
-        true,
-        'generate',
-        pages,
-        themeColor === 'auto' ? undefined : themeColor,
-        tone,
-        imgMode === 'auto' ? undefined : imgMode
-      );
-    } else {
-      generate(collectText(), false, genMode, pages);
-    }
-  };
-
-  // 重置
-  const reset = () => {
-    setLoading(false);
-    setError('');
-    setResult(null);
-    setFiles([]);
-    setTopic('');
-    setShowPro(false);
-  };
-
-  // 登录
-  const handleLogin = async () => {
-    if (!loginPhone || !/^1[3-9]\d{9}$/.test(loginPhone)) return;
-    setLoginLoading(true);
-    setLoginError('');
-    try {
-      const res = await fetch('/api/user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'login', phone: loginPhone }),
-      });
-      const data = await res.json();
-      if (data.error) {
-        setLoginError(data.error);
-        setLoginLoading(false);
-        return;
-      }
-      if (data.user) {
-        setUser(data.user);
-        setShowLogin(false);
-        setLoginPhone('');
-        localStorage.setItem('sx_user', JSON.stringify(data.user));
-      }
-    } catch {
-      setLoginError('登录失败，请重试');
-    }
-    setLoginLoading(false);
-  };
-
-  const handleCloseLogin = () => {
-    setShowLogin(false);
-    setLoginPhone('');
-    setLoginError('');
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('sx_user');
-  };
-
-  // 恢复登录态
-  React.useEffect(() => {
-    try {
-      const saved = localStorage.getItem('sx_user');
-      if (saved) setUser(JSON.parse(saved));
-    } catch {}
-  }, []);
-
-  const resultOutline = result?.slides || [];
-
-  return (
-    <div className="min-h-screen bg-[#fafbfc] flex flex-col">
-      {/* 导航 */}
-      <nav className="bg-white/80 backdrop-blur-xl border-b border-gray-100/80 px-8 py-3 flex items-center justify-between sticky top-0 z-50">
-        <button onClick={reset} className="flex items-center gap-2.5 group">
-          <div className="w-8 h-8 bg-gradient-to-br from-[#5B4FE9] to-[#8B5CF6] rounded-xl flex items-center justify-center shadow-lg shadow-[#DDD6FE]/50">
-            <span className="text-white text-sm font-bold">P</span>
-          </div>
-          <span className="text-lg font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">省心PPT</span>
-        </button>
-        <div className="flex items-center gap-3">
-          {result && (
-            <button onClick={reset} className="text-sm text-gray-400 hover:text-gray-700 transition-colors">
-              ← 新建
-            </button>
-          )}
-          {user ? (
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100 rounded-xl">
-                <span className="text-amber-500 text-xs">🪙</span>
-                <span className="text-xs font-bold text-amber-700">{user.credits}</span>
-              </div>
-              <span className="text-xs text-gray-400">{user.nickname}</span>
-              <button onClick={handleLogout} className="text-xs text-gray-300 hover:text-gray-500">
-                退出
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setShowLogin(true)}
-              className="px-4 py-2 text-xs font-medium text-white bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] rounded-xl hover:shadow-lg hover:shadow-[#DDD6FE]/50 transition-all"
-            >
-              登录
-            </button>
-          )}
-        </div>
-      </nav>
-
-      <div className="flex-1">
-        {/* Loading overlay */}
-        {loading && (
-          <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="text-center animate-fade-in w-full max-w-sm mx-4">
-              <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mb-8">
-                <div
-                  className="h-full bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] rounded-full transition-all duration-700 ease-out"
-                  style={{ width: `${Math.min(95, (step / 4) * 100)}%` }}
-                />
-              </div>
-
-              <div className="w-20 h-20 mx-auto mb-6 rounded-3xl bg-gradient-to-br from-[#EDE9FE] to-[#DDD6FE] flex items-center justify-center relative">
-                {step < 2 ? (
-                  <div className="w-12 h-12 rounded-full border-4 border-[#A78BFA] border-t-[#5B4FE9] animate-spin" />
-                ) : step < 4 ? (
-                  <div className="text-3xl animate-pulse">🎨</div>
-                ) : (
-                  <div className="text-3xl">✅</div>
-                )}
-              </div>
-
-              <p className="text-lg font-bold text-gray-900 mb-1">
-                {step < 2 ? '正在分析需求' : step === 2 ? 'AI渲染中' : step === 3 ? '准备下载' : '完成！'}
-              </p>
-              <p className="text-sm text-gray-400 mb-8">{stepText || '请稍候...'}</p>
-
-              <div className="flex items-center justify-center gap-2">
-                {[
-                  { icon: '📝', label: '分析需求' },
-                  { icon: '📋', label: '生成大纲' },
-                  { icon: '🎨', label: '渲染PPT' },
-                  { icon: '📥', label: '下载' },
-                ].map((s, i) => (
-                  <React.Fragment key={i}>
-                    <div className={`flex flex-col items-center gap-1 ${i <= step ? 'opacity-100' : 'opacity-30'}`}>
-                      <div
-                        className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm transition-all ${
-                          i < step
-                            ? 'bg-green-100 text-green-600'
-                            : i === step
-                            ? 'bg-[#EDE9FE] text-[#4F46E5] scale-110 shadow-lg shadow-[#DDD6FE]/50'
-                            : 'bg-gray-100 text-gray-400'
-                        }`}
-                      >
-                        {i < step ? '✓' : s.icon}
-                      </div>
-                      <span className="text-[10px] font-medium text-gray-500">{s.label}</span>
-                    </div>
-                    {i < 3 && <div className={`w-4 h-px ${i < step ? 'bg-green-300' : 'bg-gray-200'}`} />}
-                  </React.Fragment>
-                ))}
-              </div>
-
-              <button
-                onClick={() => {
-                  setLoading(false);
-                  setError('已取消');
-                  setStep(0);
-                }}
-                className="mt-8 text-xs text-gray-300 hover:text-gray-500 transition-colors"
-              >
-                取消生成
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Login Modal */}
-        {showLogin && !user && (
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50" onClick={handleCloseLogin}>
-            <div className="relative bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
-              <button onClick={handleCloseLogin} className="absolute top-4 right-4 text-gray-300 hover:text-gray-500 text-lg">
-                ✕
-              </button>
-
-              <div className="text-center mb-6">
-                <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-[#5B4FE9] to-[#8B5CF6] flex items-center justify-center">
-                  <span className="text-white text-lg font-bold">P</span>
-                </div>
-                <h3 className="text-lg font-bold text-gray-900">登录省心PPT</h3>
-                <p className="text-xs text-gray-400 mt-1">登录即送100积分，免费生成PPT</p>
-              </div>
-
-              <div className="space-y-3">
-                <input
-                  type="tel"
-                  value={loginPhone}
-                  onChange={e => setLoginPhone(e.target.value)}
-                  placeholder="请输入手机号"
-                  maxLength={11}
-                  className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:border-[#8B5CF6] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none transition-all text-sm"
-                />
-                <button
-                  onClick={handleLogin}
-                  disabled={!loginPhone || !/^1[3-9]\d{9}$/.test(loginPhone) || loginLoading}
-                  className="w-full py-3 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-xl font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {loginLoading && <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />}
-                  {loginLoading ? '登录中...' : '登录 / 注册'}
-                </button>
-              </div>
-
-              {loginError && <p className="text-center text-xs text-red-500 mt-3">{loginError}</p>}
-              <p className="text-center text-[10px] text-gray-300 mt-4">MVP演示版 · 手机号即账号 · 短信验证码待接入</p>
-            </div>
-          </div>
-        )}
-
-        {/* 结果页 */}
-        {result && !loading && (
-          <div className="max-w-3xl mx-auto px-6 py-12 text-center animate-fade-in">
-            <div className="text-5xl mb-4">🎉</div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">PPT 已生成！</h2>
-            <p className="text-gray-400 mb-8">
-              {result.title} · {resultOutline.length} 页
-            </p>
-
-            {resultOutline.length > 0 && (
-              <div className="bg-white rounded-3xl shadow-sm shadow-gray-100/50 border border-gray-100 p-6 mb-6 text-left">
-                <h3 className="text-sm font-semibold text-gray-800 mb-3">📄 内容大纲</h3>
-                <div className="grid grid-cols-2 gap-2">
-                  {resultOutline.map((item, i) => (
-                    <div key={item.id} className="flex items-start gap-2 px-3 py-2.5 bg-gray-50/80 rounded-xl">
-                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#EDE9FE] text-[#4F46E5] text-[10px] font-bold flex items-center justify-center mt-0.5">
-                        {i + 1}
-                      </span>
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold text-gray-800 truncate">{item.title}</div>
-                        <div className="text-[10px] text-gray-400 truncate">
-                          {item.content?.slice(0, 2).join(' · ')}
-                          {item.content?.length > 2 ? ` · +${item.content.length - 2}` : ''}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center justify-center gap-4">
-              {result.dlUrl && (
-                <a
-                  href={result.dlUrl}
-                  download
-                  className="inline-flex items-center gap-2 px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-2xl font-semibold text-sm hover:shadow-lg hover:shadow-green-200/60 transition-all"
-                >
-                  📥 下载PPT文件
-                </a>
-              )}
-              <button onClick={reset} className="px-6 py-3.5 text-gray-500 hover:text-gray-700 text-sm font-medium transition-colors">
-                继续创建
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* 主页（单页设计） */}
-        {!result && !loading && (
-          <div className="max-w-6xl mx-auto px-6 py-6 animate-fade-in">
-            {/* Hero 区 */}
-            <div className="text-center mb-12 pt-8">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-[#F5F3FF] text-[#4F46E5] rounded-full text-sm font-medium mb-6">
-                <span>✨</span>
-                <span>AI驱动 · 一键生成专业PPT</span>
-              </div>
-              <h1 className="text-5xl font-extrabold mb-4 bg-gradient-to-r from-[#4F46E5] via-[#5B4FE9] to-[#8B5CF6] bg-clip-text text-transparent leading-tight">
-                让每一份PPT
-                <br />
-                都令人惊艳
-              </h1>
-              <p className="text-gray-400 text-lg max-w-xl mx-auto">拖入文件或输入主题，AI自动完成内容创作与精美排版，分钟级交付专业PPT</p>
-            </div>
-
-            {/* 输入区域 + 省心模式按钮 */}
-            <div className="max-w-4xl mx-auto mb-6">
-              <div className="flex flex-col lg:flex-row gap-4">
-                {/* 左侧：拖拽上传 + 文本输入 */}
-                <div className="flex-1 bg-white rounded-3xl shadow-sm shadow-gray-100/50 border border-gray-100 p-6">
-                  <div
-                    onDragOver={e => {
-                      e.preventDefault();
-                      setDragging(true);
-                    }}
-                    onDragLeave={() => setDragging(false)}
-                    onDrop={onDrop}
-                    onClick={() => fileRef.current?.click()}
-                    className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200 ${
-                      dragging ? 'border-[#8B5CF6] bg-[#F5F3FF]/50' : 'border-gray-200 hover:border-[#A78BFA] hover:bg-gray-50/50'
-                    }`}
-                  >
-                    <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-[#EDE9FE] to-[#DDD6FE] flex items-center justify-center text-xl">
-                      📎
-                    </div>
-                    <p className="text-gray-600 font-medium text-sm">拖拽文件到这里</p>
-                    <p className="text-gray-400 text-xs mt-1">或点击选择文件</p>
-                  </div>
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    multiple
-                    accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx"
-                    onChange={onFileChange}
-                    className="hidden"
-                  />
-                  <textarea
-                    value={topic}
-                    onChange={e => setTopic(e.target.value)}
-                    placeholder="输入PPT主题或补充说明..."
-                    className="w-full mt-4 px-4 py-3 rounded-xl bg-gray-50/80 border border-gray-200 focus:border-[#8B5CF6] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none transition-all text-sm text-gray-700 placeholder:text-gray-300"
-                    rows={3}
-                  />
-                  {files.length > 0 && (
-                    <div className="mt-4 space-y-2">
-                      {files.map((f, i) => (
-                        <div key={i} className="flex items-center gap-3 px-3 py-2.5 bg-gray-50/80 rounded-xl group">
-                          <span className="text-base">
-                            {f.type.startsWith('image/') ? '🖼️' : /\.(xls|csv)/.test(f.name) ? '📊' : /\.(doc|pdf|ppt)/.test(f.name) ? '📄' : '📝'}
-                          </span>
-                          <span className="flex-1 text-sm text-gray-700 truncate">{f.name}</span>
-                          <span className="text-xs text-gray-400">{fmtSize(f.size)}</span>
-                          <button
-                            onClick={e => {
-                              e.stopPropagation();
-                              removeFile(i);
-                            }}
-                            className="text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all text-xs"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* 右侧：省心模式按钮 */}
-                <div className="lg:w-64 flex flex-col gap-3">
-                  <button
-                    onClick={handleEasyGenerate}
-                    disabled={files.length === 0 && !topic.trim()}
-                    className="flex-1 lg:flex-none bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-2xl font-semibold text-base hover:shadow-lg hover:shadow-[#DDD6FE]/60 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-2 py-6"
-                  >
-                    <span className="text-2xl">✨</span>
-                    <span>省心模式</span>
-                    <span className="text-xs opacity-80">一键生成</span>
-                  </button>
-                  <button
-                    onClick={() => setShowPro(!showPro)}
-                    className="px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all flex items-center justify-center gap-2"
-                  >
-                    <span className={`transition-transform ${showPro ? 'rotate-90' : ''}`}>▸</span>
-                    <span>专业模式</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* 专业模式折叠面板 */}
-            {showPro && (
-              <div className="max-w-4xl mx-auto mb-6 animate-fade-in">
-                <div className="bg-white rounded-3xl shadow-sm shadow-gray-100/50 border border-gray-100 p-6 space-y-5">
-                  {/* 生成模式 */}
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 mb-2.5 block uppercase tracking-wider">生成模式</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {GEN_MODES.map(m => (
-                        <button
-                          key={m.id}
-                          onClick={() => setGenMode(m.id)}
-                          className={`p-3 rounded-xl border-2 transition-all text-left ${
-                            genMode === m.id ? 'border-[#5B4FE9] bg-[#F5F3FF]/80' : 'border-gray-100 hover:border-gray-200'
-                          }`}
-                        >
-                          <div className="text-lg mb-0.5">{m.icon}</div>
-                          <div className={`text-xs font-semibold ${genMode === m.id ? 'text-[#4338CA]' : 'text-gray-700'}`}>{m.name}</div>
-                          <div className="text-[10px] text-gray-400 mt-0.5 leading-tight">{m.desc}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 主题色系 */}
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 mb-2.5 block uppercase tracking-wider">主题色系</label>
-                    <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-                      {THEME_COLORS.map(t => (
-                        <button
-                          key={t.id}
-                          onClick={() => setThemeColor(t.id)}
-                          className={`p-3 rounded-xl border-2 transition-all ${
-                            themeColor === t.id ? 'border-[#5B4FE9] bg-[#F5F3FF]/80' : 'border-gray-100 hover:border-gray-200'
-                          }`}
-                        >
-                          <div className="flex items-center justify-center gap-1 mb-2">
-                            {t.colors.map((c, i) => (
-                              <div key={i} className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c }} />
-                            ))}
-                          </div>
-                          <div className={`text-[10px] font-semibold text-center ${themeColor === t.id ? 'text-[#4338CA]' : 'text-gray-700'}`}>
-                            {t.name}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 语气 + 页数 + 配图 */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    {/* 语气 */}
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-2 block uppercase tracking-wider">语气</label>
-                      <div className="flex gap-2">
-                        {TONE_STYLES.map(s => (
-                          <button
-                            key={s.id}
-                            onClick={() => setTone(s.id)}
-                            className={`flex-1 p-2.5 rounded-xl border-2 transition-all text-center ${
-                              tone === s.id ? 'border-[#5B4FE9] bg-[#F5F3FF]/80' : 'border-gray-100 hover:border-gray-200'
-                            }`}
-                          >
-                            <div className="text-lg">{s.icon}</div>
-                            <div className={`text-[10px] font-semibold mt-0.5 ${tone === s.id ? 'text-[#4338CA]' : 'text-gray-600'}`}>{s.name}</div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* 页数 */}
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-2 block uppercase tracking-wider">页数</label>
-                      <div className="flex gap-2">
-                        <button onClick={() => setPages('auto')} className={`flex-1 py-2.5 rounded-xl border-2 text-xs font-semibold transition-all ${pages === 'auto' ? 'border-[#5B4FE9] bg-[#F5F3FF]/80 text-[#4338CA]' : 'border-gray-100 text-gray-600 hover:border-gray-200'}`}>自动</button>
-                        {[8, 12, 16, 20].map(n => (
-                          <button key={n} onClick={() => setPages(n)} className={`py-2.5 px-2 rounded-xl border-2 text-xs font-semibold transition-all ${pages === n ? 'border-[#5B4FE9] bg-[#F5F3FF]/80 text-[#4338CA]' : 'border-gray-100 text-gray-600 hover:border-gray-200'}`}>{n}</button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* 配图 */}
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-2 block uppercase tracking-wider">配图</label>
-                      <div className="flex gap-2">
-                        {IMAGE_MODES.map(m => (
-                          <button key={m.id} onClick={() => setImgMode(m.id)} className={`flex-1 p-2 rounded-xl border-2 transition-all text-center ${imgMode === m.id ? 'border-[#5B4FE9] bg-[#F5F3FF]/80' : 'border-gray-100 hover:border-gray-200'}`}>
-                            <div className={`text-[10px] font-semibold ${imgMode === m.id ? 'text-[#4338CA]' : 'text-gray-600'}`}>{m.name}</div>
-                            <div className="text-[9px] text-gray-400">{m.desc}</div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 专业模式生成按钮 */}
-                  <button onClick={handleProGenerate} disabled={!collectText().trim()} className="w-full py-3.5 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-2xl font-bold text-sm hover:shadow-xl hover:shadow-purple-200/60 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                    🚀 一键生成PPT
-                  </button>
-                </div>
-              </div>
-            )}
-            {error && <div className="max-w-4xl mx-auto mb-6 px-4 py-3 bg-red-50 text-red-500 rounded-xl text-sm">❌ {error}</div>}
-
-            {/* 场景展示 */}
-            <div className="max-w-4xl mx-auto mb-16">
-              <h2 className="text-center text-xl font-bold text-gray-900 mb-2">适用于各种场景</h2>
-              <p className="text-center text-gray-400 text-sm mb-8">无论什么需求，都能快速生成高质量PPT</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                {SCENARIOS.map(s => (
-                  <div key={s.title} className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md hover:border-gray-200 transition-all">
-                    <div className="text-2xl mb-3">{s.icon}</div>
-                    <h3 className="text-sm font-bold text-gray-900 mb-1">{s.title}</h3>
-                    <p className="text-xs text-gray-400">{s.desc}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 特性区 */}
-            <div className="max-w-4xl mx-auto bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-3xl p-8 md:p-10 mb-8">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
-                <div>
-                  <div className="text-3xl mb-3">⚡</div>
-                  <h3 className="text-white font-bold text-lg mb-2">极速生成</h3>
-                  <p className="text-gray-400 text-sm">AI驱动，分钟级完成专业PPT</p>
-                </div>
-                <div>
-                  <div className="text-3xl mb-3">🎨</div>
-                  <h3 className="text-white font-bold text-lg mb-2">精美设计</h3>
-                  <p className="text-gray-400 text-sm">8+主题色系，自动匹配最佳排版</p>
-                </div>
-                <div>
-                  <div className="text-3xl mb-3">🔒</div>
-                  <h3 className="text-white font-bold text-lg mb-2">隐私安全</h3>
-                  <p className="text-gray-400 text-sm">文件即传即用，不留存任何数据</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Footer */}
-        <footer className="border-t border-gray-100 py-5 text-center text-sm text-gray-400">
-          省心PPT · AI驱动的PPT生成器 · Powered by GLM‑5
-        </footer>
-      </div>
-    </div>
-  );
-}
+type SlideItem = { id: string; title: string; content?: string[]; notes?: string };
 
 function buildMd(title: string, slides: any[]): string {
   const p: string[] = [];
@@ -797,6 +34,7 @@ function buildMd(title: string, slides: any[]): string {
   for (let i = 0; i < slides.length; i++) {
     const s = slides[i];
     p.push('---\n');
+    if (i === 0) { p.push(`# ${s.title}\n`); continue; }
     if (i === slides.length - 1 && (/感谢|谢谢|总结/.test(s.title))) { p.push(`# ${s.title}\n`); if (s.content?.length) p.push(`> ${s.content.join('；')}\n`); continue; }
     if (i === 1 && (/目录|概览/.test(s.title))) { p.push(`## ${s.title}\n\n`); s.content?.forEach((c: string, ci: number) => { p.push(`${ci + 1}. **${c.trim()}**\n`); }); continue; }
     p.push(`## ${s.title}\n\n`);
@@ -804,4 +42,478 @@ function buildMd(title: string, slides: any[]): string {
     if (s.notes) p.push(`> ${s.notes}\n`);
   }
   return p.join('\n');
+}
+
+export default function Home() {
+  const { user, showLogin, showPayment, paymentPlan } = useAuth();
+  const router = useRouter();
+
+  // Landing page vs generate flow
+  const [phase, setPhase] = useState<'landing' | 'input' | 'streaming' | 'outline' | 'generating' | 'result'>('landing');
+
+  // Input state
+  const [topic, setTopic] = useState('');
+  const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [hasInput, setHasInput] = useState(false);
+
+  // Pro mode
+  const [showPro, setShowPro] = useState(false);
+  const [genMode, setGenMode] = useState('generate');
+  const [theme, setTheme] = useState('auto');
+  const [tone, setTone] = useState('professional');
+  const [imgMode, setImgMode] = useState('auto');
+  const [pages, setPages] = useState(10);
+
+  // Generation state
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [stepText, setStepText] = useState('');
+  const [genProgress, setGenProgress] = useState(0);
+  const [genStep, setGenStep] = useState(0);
+
+  // Outline
+  const [outlineResult, setOutlineResult] = useState<{ title: string; slides: SlideItem[]; themeId?: string } | null>(null);
+  const [editedSlides, setEditedSlides] = useState<SlideItem[]>([]);
+  const [streamingSlides, setStreamingSlides] = useState<SlideItem[]>([]);
+
+  // Result
+  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; dlUrl: string } | null>(null);
+
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const collectText = useCallback(() => {
+    const p: string[] = [];
+    files.forEach(f => p.push(f.content ? `[${f.name}]\n${f.content}` : `[${f.name}]`));
+    if (topic.trim()) p.push(topic.trim());
+    return p.join('\n\n');
+  }, [files, topic]);
+
+  // Track hasInput
+  useEffect(() => { setHasInput(files.length > 0 || topic.trim().length > 0); }, [files, topic]);
+
+  // Enter generate flow
+  const startGenerate = useCallback(() => {
+    if (!user) return;
+    setPhase('input');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [user]);
+
+  // Step 1: Generate outline (with streaming feel)
+  const generateOutline = useCallback(async () => {
+    const inputText = collectText();
+    if (!inputText.trim()) return;
+
+    setLoading(true);
+    setError('');
+    setPhase('streaming');
+    setGenStep(0);
+    setGenProgress(10);
+    setStepText('AI 正在分析你的需求...');
+
+    try {
+      const isEasy = !showPro;
+      const tm = isEasy ? 'generate' : genMode;
+
+      // Step 1: Analyze
+      await new Promise(r => setTimeout(r, 800));
+      setGenStep(1);
+      setGenProgress(30);
+      setStepText('AI 正在生成大纲...');
+
+      const oRes = await fetch('/api/outline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputText, slideCount: pages, textMode: tm, auto: isEasy }),
+      });
+      if (!oRes.ok) { const d = await oRes.json(); throw new Error(d.error || '大纲生成失败'); }
+      const od = await oRes.json();
+
+      // Step 2: Show streaming outline
+      setGenProgress(60);
+      setStreamingSlides(od.slides || []);
+
+      // Wait for streaming animation
+      await new Promise(r => setTimeout(r, od.slides.length * 300 + 500));
+
+      setOutlineResult(od);
+      setEditedSlides(od.slides || []);
+      setPhase('outline');
+      setGenProgress(100);
+    } catch (e: any) {
+      setError(e.message);
+      setPhase('input');
+    }
+    setLoading(false);
+  }, [user, files, topic, showPro, genMode, pages, collectText]);
+
+  // Step 2: Confirm and generate PPT
+  const confirmAndGenerate = useCallback(async () => {
+    if (!outlineResult || !user) return;
+    setLoading(true);
+    setError('');
+    setPhase('generating');
+    setGenStep(0);
+    setGenProgress(0);
+    setStepText('AI 正在准备渲染...');
+
+    try {
+      const isEasy = !showPro;
+      const tm = isEasy ? 'generate' : genMode;
+
+      // Step 0: Deduct credits
+      setGenStep(0);
+      setGenProgress(10);
+      const deductRes = await fetch('/api/user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'deduct', userId: user.id, mode: tm, numPages: editedSlides.length }),
+      });
+      const deductData = await deductRes.json();
+      if (!deductRes.ok || deductData.error) {
+        throw new Error(deductData.error === '积分不足' ? `积分不足！需要${deductData.needed}积分` : deductData.error || '积分扣除失败');
+      }
+      // Update credits locally
+      const updatedUser = { ...user, credits: deductData.balance };
+      localStorage.setItem('sx_user', JSON.stringify(updatedUser));
+
+      // Step 1: Prepare
+      setGenStep(1);
+      setGenProgress(25);
+      setStepText('AI 正在优化内容...');
+      await new Promise(r => setTimeout(r, 600));
+
+      // Step 2: Generate
+      setGenStep(2);
+      setGenProgress(40);
+      setStepText('AI 正在渲染 PPT 页面...');
+
+      const md = buildMd(outlineResult.title, editedSlides);
+      const gRes = await fetch('/api/gamma', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inputText: md, textMode: tm, format: 'presentation',
+          numCards: editedSlides.length, exportAs: 'pptx',
+          themeId: isEasy ? undefined : (theme === 'auto' ? outlineResult.themeId : theme),
+          scene: isEasy ? 'biz' : (tone === 'traditional' ? 'traditional' : 'biz'),
+          tone: isEasy ? 'professional' : tone,
+          imageMode: isEasy ? 'auto' : imgMode,
+        }),
+      });
+      if (!gRes.ok) throw new Error('PPT 生成失败');
+      const gd = await gRes.json();
+
+      if (gd.generationId) {
+        let c = 0;
+        await new Promise<void>((resolve, reject) => {
+          const t = setInterval(async () => {
+            c++;
+            const prog = Math.min(40 + c * 5, 90);
+            setGenProgress(prog);
+            setStepText(`AI 渲染中... (${Math.round(prog)}%)`);
+
+            try {
+              const r = await fetch(`/api/gamma?id=${gd.generationId}`);
+              if (!r.ok) return;
+              const d = await r.json();
+              if (d.status === 'completed') {
+                clearInterval(t);
+                setGenProgress(95);
+                resolve();
+              } else if (d.status === 'failed') {
+                clearInterval(t);
+                reject(new Error('PPT 生成失败'));
+              }
+            } catch (e: any) {
+              if (e.message?.includes('失败')) { clearInterval(t); reject(e); }
+            }
+          }, 5000);
+          setTimeout(() => { clearInterval(t); reject(new Error('PPT 生成超时')); }, 240000);
+        });
+
+        // Step 3: Final check
+        setGenStep(3);
+        setGenProgress(98);
+        setStepText('最终检查中...');
+        await new Promise(r => setTimeout(r, 500));
+
+        const finalRes = await fetch(`/api/gamma?id=${gd.generationId}`);
+        const finalData = await finalRes.json();
+        setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalData.exportUrl || '' });
+        setGenProgress(100);
+        setPhase('result');
+      }
+    } catch (e: any) {
+      setError(e.message);
+      setPhase('outline');
+    }
+    setLoading(false);
+  }, [user, outlineResult, editedSlides, showPro, genMode, theme, tone, imgMode]);
+
+  const reset = () => {
+    setLoading(false);
+    setError('');
+    setResult(null);
+    setOutlineResult(null);
+    setEditedSlides([]);
+    setStreamingSlides([]);
+    setFiles([]);
+    setTopic('');
+    setShowPro(false);
+    setPhase('landing');
+    setGenProgress(0);
+    setGenStep(0);
+  };
+
+  const backToLanding = () => {
+    setPhase('landing');
+    setOutlineResult(null);
+    setEditedSlides([]);
+    setStreamingSlides([]);
+    setError('');
+  };
+
+  const backToOutline = () => {
+    setPhase('outline');
+    setError('');
+  };
+
+  // Outline editing helpers
+  const updateSlide = (idx: number, field: 'title' | 'content', val: string) => {
+    setEditedSlides(prev => prev.map((s, i) =>
+      i === idx ? (field === 'title' ? { ...s, title: val } : { ...s, content: val.split('\n').filter(Boolean) }) : s
+    ));
+  };
+
+  const addSlide = () => setEditedSlides(prev => [...prev, { id: `new-${Date.now()}`, title: '新幻灯片', content: [] }]);
+  const removeSlide = (idx: number) => setEditedSlides(prev => prev.filter((_, i) => i !== idx));
+  const moveSlide = (idx: number, dir: -1 | 1) => {
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= editedSlides.length) return;
+    setEditedSlides(prev => { const arr = [...prev]; [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]]; return arr; });
+  };
+
+  const fileProcess = async (fl: FileList | File[]) => {
+    const r: UploadedFile[] = [];
+    for (const f of Array.from(fl)) {
+      const item: UploadedFile = { name: f.name, type: f.type, size: f.size };
+      if (f.type === 'text/plain' || /\.(md|txt|csv)$/.test(f.name)) item.content = await f.text();
+      r.push(item);
+    }
+    return r;
+  };
+
+  const fmtSize = (b: number) => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
+
+  return (
+    <div className="min-h-screen bg-[#FAFBFE] flex flex-col">
+      <Navbar />
+
+      {/* ===== LANDING PAGE ===== */}
+      {phase === 'landing' && (
+        <>
+          <HeroSection topic={topic} setTopic={setTopic} files={files} setFiles={setFiles} onGenerate={startGenerate} hasInput={hasInput} loading={loading} />
+          <SceneCards />
+          <FeaturesSection />
+          <ProcessSection />
+          <PricingSection />
+          <TestimonialSection />
+          <FAQSection />
+          <Footer />
+        </>
+      )}
+
+      {/* ===== GENERATE FLOW ===== */}
+      {(phase === 'input' || phase === 'outline') && (
+        <div className="flex-1">
+          <div className="max-w-3xl mx-auto px-4 md:px-6 pt-8 pb-24">
+            {/* Back button */}
+            <button onClick={backToLanding} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 mb-6 transition-colors">
+              <span>←</span> 返回首页
+            </button>
+
+            {phase === 'input' && (
+              <>
+                {/* Input card */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                  <textarea
+                    value={topic}
+                    onChange={e => setTopic(e.target.value)}
+                    placeholder="输入你想创建的 PPT 主题，例如：2024年度营销策略汇报"
+                    className="w-full px-4 py-3 rounded-xl bg-[#FAFBFE] border border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-300 transition-all"
+                    rows={3}
+                  />
+
+                  {/* File upload */}
+                  <div
+                    onClick={() => fileRef.current?.click()}
+                    className="mt-3 border border-dashed rounded-xl py-3 px-4 flex items-center gap-3 cursor-pointer hover:border-gray-300 hover:bg-gray-50/50 transition-all"
+                  >
+                    <span className="text-gray-400 text-sm">📎</span>
+                    <span className="text-xs text-gray-400">拖拽或点击上传文件</span>
+                    <span className="text-[10px] text-gray-300 ml-auto">PPT / Word / PDF / Excel</span>
+                  </div>
+                  <input ref={fileRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={async e => { if (e.target.files?.length) { const processed = await fileProcess(e.target.files); setFiles(prev => [...prev, ...processed]); } e.target.value = ''; }} className="hidden" />
+
+                  {files.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {files.map((f, i) => (
+                        <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#F5F3FF] rounded-lg text-[11px] text-[#4338CA] font-medium">
+                          {f.type.startsWith('image/') ? '🖼️' : /\.(xls|csv)/.test(f.name) ? '📊' : '📄'} {f.name}
+                          <span className="text-gray-400">{fmtSize(f.size)}</span>
+                          <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="text-gray-300 hover:text-red-400">×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="border-t border-gray-100 my-4" />
+
+                  {/* Pro mode toggle */}
+                  <button onClick={() => setShowPro(true)} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-[#5B4FE9] transition-colors">
+                    ⚙️ <span>专业模式</span>
+                    <span className="text-[10px]">自定义参数</span>
+                    <span>▸</span>
+                  </button>
+
+                  {error && <div className="mt-3 px-3 py-2 bg-red-50 text-red-500 rounded-lg text-xs">❌ {error}</div>}
+                </div>
+              </>
+            )}
+
+            {phase === 'outline' && outlineResult && (
+              <>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">{outlineResult.title}</h2>
+                    <p className="text-xs text-gray-400 mt-0.5">共 {editedSlides.length} 页 · 可编辑标题和内容</p>
+                  </div>
+                  <button onClick={() => { setPhase('input'); setOutlineResult(null); setEditedSlides([]); }} className="text-xs text-gray-400 hover:text-gray-600 transition-colors">← 修改需求</button>
+                </div>
+
+                <div className="space-y-2 mb-4">
+                  {editedSlides.map((slide, idx) => (
+                    <div key={slide.id} className="bg-white rounded-xl border border-gray-100 p-3 group hover:border-[#EDE9FE] transition-colors">
+                      <div className="flex items-start gap-2">
+                        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[#F5F3FF] text-[#5B4FE9] text-[10px] font-bold flex items-center justify-center mt-0.5">{idx + 1}</div>
+                        <div className="flex-1 min-w-0">
+                          <input value={slide.title} onChange={e => updateSlide(idx, 'title', e.target.value)}
+                            className="w-full text-sm font-semibold text-gray-800 bg-transparent border-b border-transparent focus:border-[#5B4FE9] outline-none py-0.5" />
+                          {slide.content && slide.content.length > 0 && (
+                            <textarea value={slide.content.join('\n')} onChange={e => updateSlide(idx, 'content', e.target.value)}
+                              rows={Math.min(slide.content.length, 4)}
+                              className="w-full mt-1 text-xs text-gray-500 bg-gray-50 rounded-lg px-2.5 py-1.5 border border-transparent focus:border-[#5B4FE9] outline-none resize-none" />
+                          )}
+                        </div>
+                        <div className="flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => moveSlide(idx, -1)} className="w-6 h-6 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 text-[10px]">↑</button>
+                          <button onClick={() => moveSlide(idx, 1)} className="w-6 h-6 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 text-[10px]">↓</button>
+                          <button onClick={() => removeSlide(idx)} className="w-6 h-6 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 text-[10px]">✕</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <button onClick={addSlide} className="w-full py-2.5 border border-dashed border-gray-200 rounded-xl text-xs text-gray-400 hover:text-[#5B4FE9] hover:border-[#5B4FE9] transition-colors">+ 添加幻灯片</button>
+                </div>
+
+                {error && <div className="mb-4 px-3 py-2 bg-red-50 text-red-500 rounded-lg text-xs">❌ {error}</div>}
+              </>
+            )}
+          </div>
+
+          {/* Floating button */}
+          {!loading && (
+            <FloatingButton
+              label={phase === 'input' ? '生成' : '确认'}
+              icon={phase === 'input' ? '✨' : '🚀'}
+              onClick={phase === 'input' ? generateOutline : confirmAndGenerate}
+              disabled={phase === 'input' && !hasInput}
+            />
+          )}
+        </div>
+      )}
+
+      {/* ===== STREAMING OUTLINE ===== */}
+      {phase === 'streaming' && (
+        <div className="flex-1">
+          <div className="max-w-3xl mx-auto px-4 md:px-6 pt-8 pb-24">
+            <button onClick={() => { setPhase('input'); setLoading(false); }} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 mb-6 transition-colors">← 取消</button>
+
+            <div className="mb-4">
+              <h2 className="text-lg font-bold text-gray-900">AI 正在生成大纲...</h2>
+              <p className="text-xs text-gray-400 mt-0.5">请稍候，大纲会逐条显示</p>
+            </div>
+
+            {streamingSlides.length > 0 ? (
+              <StreamingOutline slides={streamingSlides} />
+            ) : (
+              <div className="space-y-2">
+                <SkeletonCard lines={2} />
+                <SkeletonCard lines={3} />
+                <SkeletonCard lines={2} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== GENERATING PROGRESS ===== */}
+      {phase === 'generating' && loading && (
+        <GenerationProgress currentStep={genStep} progress={genProgress} subtext={stepText} />
+      )}
+
+      {/* ===== RESULT ===== */}
+      {phase === 'result' && result && !loading && (
+        <div className="flex-1">
+          <div className="max-w-2xl mx-auto px-4 md:px-6 pt-16 text-center animate-fade-in">
+            <div className="text-5xl mb-4">🎉</div>
+            <h2 className="text-xl font-bold text-gray-900 mb-1">PPT 已生成！</h2>
+            <p className="text-xs text-gray-400 mb-8">{result.title} · {result.slides.length} 页</p>
+
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="text-center">
+                  <div className="text-2xl mb-1">📄</div>
+                  <p className="text-xs text-gray-500">{result.slides.length} 页</p>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl mb-1">🎨</div>
+                  <p className="text-xs text-gray-500">AI 排版</p>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl mb-1">⬇️</div>
+                  <p className="text-xs text-gray-500">即下即用</p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                {result.dlUrl && (
+                  <a href={result.dlUrl} download className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 transition-all">
+                    📥 下载 PPTX
+                  </a>
+                )}
+                <button onClick={reset} className="w-full sm:w-auto px-8 py-3.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">
+                  继续创建
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODALS ===== */}
+      <ProPanel
+        open={showPro}
+        onClose={() => setShowPro(false)}
+        genMode={genMode} setGenMode={setGenMode}
+        theme={theme} setTheme={setTheme}
+        tone={tone} setTone={setTone}
+        imgMode={imgMode} setImgMode={setImgMode}
+        pages={pages} setPages={setPages}
+      />
+
+      <LoginModal open={showLogin} onClose={() => {}} />
+      <PaymentModal open={showPayment} onClose={() => {}} plan={paymentPlan} />
+    </div>
+  );
 }
