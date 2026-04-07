@@ -20,6 +20,8 @@ import StreamingOutline from '@/components/StreamingOutline';
 import GenerationProgress from '@/components/GenerationProgress';
 import FloatingButton from '@/components/FloatingButton';
 import SkeletonCard from '@/components/SkeletonCard';
+import ThemeSelector from '@/components/ThemeSelector';
+import { buildMdV2 } from '@/lib/build-md-v2';
 
 /* ==================== Config ==================== */
 
@@ -28,28 +30,22 @@ const GEN_MODES_MAP: Record<string, string> = { generate: 'generate', condense: 
 type UploadedFile = { name: string; type: string; size: number; content?: string };
 type SlideItem = { id: string; title: string; content?: string[]; notes?: string };
 
-function buildMd(title: string, slides: any[]): string {
-  const p: string[] = [];
-  p.push(`# ${title}\n`);
-  for (let i = 0; i < slides.length; i++) {
-    const s = slides[i];
-    p.push('---\n');
-    if (i === 0) { p.push(`# ${s.title}\n`); continue; }
-    if (i === slides.length - 1 && (/感谢|谢谢|总结/.test(s.title))) { p.push(`# ${s.title}\n`); if (s.content?.length) p.push(`> ${s.content.join('；')}\n`); continue; }
-    if (i === 1 && (/目录|概览/.test(s.title))) { p.push(`## ${s.title}\n\n`); s.content?.forEach((c: string, ci: number) => { p.push(`${ci + 1}. **${c.trim()}**\n`); }); continue; }
-    p.push(`## ${s.title}\n\n`);
-    if (s.content?.length) { if (s.content.length <= 4) { for (const pt of s.content) { if (pt.trim()) p.push(`- **${pt.trim()}**\n\n`); } } else { for (const pt of s.content) { if (pt.trim()) p.push(`### ${pt.trim()}\n\n`); } } }
-    if (s.notes) p.push(`> ${s.notes}\n`);
-  }
-  return p.join('\n');
-}
+// buildMd 已替换为 buildMdV2（lib/build-md-v2.ts）
+// 在 confirmAndGenerate 中直接传 slides 给 /api/gamma
 
 export default function Home() {
-  const { user, showLogin, showPayment, paymentPlan, openPayment } = useAuth();
+  const { user, showLogin, showPayment, paymentPlan, openPayment, openLogin } = useAuth();
   const router = useRouter();
 
+  // Dual-track mode
+  const [mode, setMode] = useState<'direct' | 'smart'>('direct');
+  const [directTheme, setDirectTheme] = useState('default-light');
+  const [directTone, setDirectTone] = useState('professional');
+  const [directImgMode, setDirectImgMode] = useState('pictographic');
+  const [directTextMode, setDirectTextMode] = useState<'generate' | 'condense' | 'preserve'>('generate');
+
   // Landing page vs generate flow
-  const [phase, setPhase] = useState<'landing' | 'input' | 'streaming' | 'outline' | 'generating' | 'result'>('landing');
+  const [phase, setPhase] = useState<'landing' | 'input' | 'streaming' | 'outline' | 'generating' | 'direct-generating' | 'result'>('landing');
 
   // Input state
   const [topic, setTopic] = useState('');
@@ -94,9 +90,94 @@ export default function Home() {
   // Enter generate flow
   const startGenerate = useCallback(() => {
     if (!user) return;
+    setMode('direct');
     setPhase('input');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [user]);
+
+  // Direct mode: generate directly without outline editing
+  const generateDirect = useCallback(async () => {
+    const inputText = collectText();
+    if (!inputText.trim()) return;
+    if (!user) return;
+
+    setLoading(true);
+    setError('');
+    setPhase('direct-generating');
+    setGenStep(0);
+    setGenProgress(10);
+    setStepText('AI 正在提交 Gamma 直通任务...');
+
+    try {
+      // Step 0: Deduct credits
+      const deductRes = await fetch('/api/user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'deduct', userId: user.id, mode: 'generate', numPages: pages }),
+      });
+      const deductData = await deductRes.json();
+      if (!deductRes.ok || deductData.error) {
+        if (deductData.error === '积分不足') {
+          setLoading(false);
+          setPhase('input');
+          openPayment({
+            id: 'basic',
+            name: '积分不足，请充值',
+            price: '¥9.9/月',
+            billing: 'monthly',
+            reason: '积分不足，无法生成PPT',
+            neededCredits: deductData.needed,
+            currentCredits: deductData.balance,
+          });
+          return;
+        }
+        throw new Error(deductData.error || '积分扣除失败');
+      }
+      const updatedUser = { ...user, credits: deductData.balance };
+      localStorage.setItem('sx_user', JSON.stringify(updatedUser));
+
+      // Step 1: Create Gamma task
+      setGenStep(1);
+      setGenProgress(25);
+      setStepText('AI 正在渲染 PPT 页面...');
+
+      const gRes = await fetch('/api/gamma-direct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inputText,
+          themeId: directTheme,
+          numCards: pages,
+          imageSource: directImgMode,
+          tone: directTone,
+          textMode: directTextMode,
+          exportAs: 'pptx',
+        }),
+      });
+      if (!gRes.ok) {
+        const d = await gRes.json();
+        throw new Error(d.error || 'PPT 生成失败');
+      }
+      const gd = await gRes.json();
+
+      if (gd.generationId) {
+        // 本地生成是同步的，直接返回 downloadUrl
+        setGenStep(2);
+        setGenProgress(80);
+        setStepText('PPT 生成完成，准备下载...');
+        await new Promise(r => setTimeout(r, 500));
+
+        const topicText = inputText.split('\n')[0].replace(/^#\s*/, '').trim();
+        setResult({ title: topicText || 'PPT', slides: [], dlUrl: gd.downloadUrl || '' });
+        setGenProgress(100);
+        setPhase('result');
+      }
+    } catch (e: any) {
+      setError(e.message);
+      setPhase('input');
+    }
+    setLoading(false);
+  }, [user, collectText, directTheme, directTone, directImgMode, directTextMode, pages, openPayment]);
 
   // Step 1: Generate outline (with streaming feel)
   const generateOutline = useCallback(async () => {
@@ -202,59 +283,35 @@ export default function Home() {
       setGenProgress(40);
       setStepText('AI 正在渲染 PPT 页面...');
 
-      const md = buildMd(outlineResult.title, editedSlides);
+      // 🚨 关键改进：用 buildMdV2 构建高质量 Markdown，传 slides 给 API
+      const md = buildMdV2(outlineResult.title, editedSlides, isEasy ? 'noImages' : imgMode);
       const gRes = await fetch('/api/gamma', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          inputText: md, textMode: tm, format: 'presentation',
-          numCards: editedSlides.length, exportAs: 'pptx',
+          inputText: md,
+          textMode: isEasy ? 'generate' : 'preserve',  // 🚨 省心定制用 preserve！
+          format: 'presentation',
+          numCards: editedSlides.length,
+          exportAs: 'pptx',
           themeId: isEasy ? undefined : (theme === 'auto' ? outlineResult.themeId : theme),
           scene: isEasy ? 'biz' : (tone === 'traditional' ? 'traditional' : 'biz'),
           tone: isEasy ? 'professional' : tone,
           imageMode: isEasy ? 'auto' : imgMode,
+          slides: editedSlides,  // 🚨 传结构化数据，让 API 用 buildMdV2
         }),
       });
       if (!gRes.ok) throw new Error('PPT 生成失败');
       const gd = await gRes.json();
 
       if (gd.generationId) {
-        let c = 0;
-        await new Promise<void>((resolve, reject) => {
-          const t = setInterval(async () => {
-            c++;
-            const prog = Math.min(40 + c * 5, 90);
-            setGenProgress(prog);
-            setStepText(`AI 渲染中... (${Math.round(prog)}%)`);
-
-            try {
-              const r = await fetch(`/api/gamma?id=${gd.generationId}`);
-              if (!r.ok) return;
-              const d = await r.json();
-              if (d.status === 'completed') {
-                clearInterval(t);
-                setGenProgress(95);
-                resolve();
-              } else if (d.status === 'failed') {
-                clearInterval(t);
-                reject(new Error('PPT 生成失败'));
-              }
-            } catch (e: any) {
-              if (e.message?.includes('失败')) { clearInterval(t); reject(e); }
-            }
-          }, 5000);
-          setTimeout(() => { clearInterval(t); reject(new Error('PPT 生成超时')); }, 240000);
-        });
-
-        // Step 3: Final check
+        // 本地生成是同步的，直接返回 downloadUrl
         setGenStep(3);
-        setGenProgress(98);
-        setStepText('最终检查中...');
+        setGenProgress(90);
+        setStepText('PPT 生成完成，准备下载...');
         await new Promise(r => setTimeout(r, 500));
 
-        const finalRes = await fetch(`/api/gamma?id=${gd.generationId}`);
-        const finalData = await finalRes.json();
-        setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalData.exportUrl || '' });
+        setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: gd.downloadUrl || '' });
         setGenProgress(100);
         setPhase('result');
       }
@@ -319,7 +376,26 @@ export default function Home() {
     const r: UploadedFile[] = [];
     for (const f of Array.from(fl)) {
       const item: UploadedFile = { name: f.name, type: f.type, size: f.size };
-      if (f.type === 'text/plain' || /\.(md|txt|csv)$/.test(f.name)) item.content = await f.text();
+      if (f.type === 'text/plain' || /\.(md|txt|csv)$/.test(f.name)) {
+        item.content = await f.text();
+      } else if (f.type.startsWith('image/')) {
+        try {
+          const arrayBuffer = await f.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = '';
+          for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+          const base64 = btoa(binary);
+          const res = await fetch('/api/understand-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64, mimeType: f.type }),
+          });
+          const data = await res.json();
+          item.content = data.text || `[图片: ${f.name}]`;
+        } catch {
+          item.content = `[图片: ${f.name}]`;
+        }
+      }
       r.push(item);
     }
     return r;
@@ -335,6 +411,47 @@ export default function Home() {
       {phase === 'landing' && (
         <>
           <HeroSection topic={topic} setTopic={setTopic} files={files} setFiles={setFiles} onGenerate={startGenerate} hasInput={hasInput} loading={loading} />
+
+          {/* ===== 双轨制入口 ===== */}
+          <div className="max-w-3xl mx-auto px-4 pt-8 pb-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* 直通模式 */}
+              <button
+                onClick={() => { if (!user) { openLogin(); return; } setMode('direct'); setPhase('input'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                className="bg-white rounded-2xl border-2 border-gray-100 p-5 text-left hover:border-[#5B4FE9] hover:shadow-md transition-all group"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">🚀</span>
+                  <h3 className="text-base font-bold text-gray-900 group-hover:text-[#4338CA]">直通模式</h3>
+                </div>
+                <p className="text-xs text-gray-500 mb-3">快速生成，选主题/配图/页数，直接提交渲染</p>
+                <div className="flex flex-wrap gap-1">
+                  <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px]">主题色系</span>
+                  <span className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded text-[10px]">自选配图</span>
+                  <span className="px-2 py-0.5 bg-green-50 text-green-600 rounded text-[10px]">零等待</span>
+                </div>
+              </button>
+
+              {/* 省心定制 */}
+              <button
+                onClick={() => { if (!user) { openLogin(); return; } setMode('smart'); setPhase('input'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                className="bg-gradient-to-br from-[#F5F3FF] to-white rounded-2xl border-2 border-[#EDE9FE] p-5 text-left hover:border-[#5B4FE9] hover:shadow-md transition-all group relative"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">✨</span>
+                  <h3 className="text-base font-bold text-gray-900 group-hover:text-[#4338CA]">省心定制</h3>
+                  <span className="px-1.5 py-0.5 bg-[#5B4FE9] text-white rounded text-[10px]">会员</span>
+                </div>
+                <p className="text-xs text-gray-500 mb-3">AI深度优化，专业级PPT忠实呈现</p>
+                <div className="flex flex-wrap gap-1">
+                  <span className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded text-[10px]">AI预处理</span>
+                  <span className="px-2 py-0.5 bg-amber-50 text-amber-600 rounded text-[10px]">preserve</span>
+                  <span className="px-2 py-0.5 bg-rose-50 text-rose-600 rounded text-[10px]">深度定制</span>
+                </div>
+              </button>
+            </div>
+          </div>
+
           <SceneCards />
           <FeaturesSection />
           <ProcessSection />
@@ -391,29 +508,103 @@ export default function Home() {
 
                   <div className="border-t border-gray-100 my-4" />
 
-                  {/* Mode toggle */}
+                  {/* Mode indicator */}
                   <div className="flex gap-2 mt-1">
                     <button
-                      onClick={() => setShowPro(false)}
+                      onClick={() => setMode('smart')}
                       className={`flex-1 py-2.5 rounded-xl border text-center transition-all text-sm font-medium ${
-                        !showPro
+                        mode === 'smart'
                           ? 'border-[#5B4FE9] bg-[#F5F3FF] text-[#4338CA] shadow-sm'
                           : 'border-gray-200 text-gray-400 hover:border-gray-300'
                       }`}
                     >
-                      ✨ 省心模式
+                      ✨ 省心定制
                     </button>
                     <button
-                      onClick={() => setShowPro(true)}
+                      onClick={() => setMode('direct')}
                       className={`flex-1 py-2.5 rounded-xl border text-center transition-all text-sm font-medium ${
-                        showPro
+                        mode === 'direct'
                           ? 'border-[#5B4FE9] bg-[#F5F3FF] text-[#4338CA] shadow-sm'
                           : 'border-gray-200 text-gray-400 hover:border-gray-300'
                       }`}
                     >
-                      {showPro ? '⚙️ 收起' : '⚙️ 专业模式'}
+                      🚀 直通模式
                     </button>
                   </div>
+
+                  {/* Direct mode: show ThemeSelector + simplified params */}
+                  {mode === 'direct' && (
+                    <div className="mt-4 pt-4 border-t border-gray-100">
+                      <ThemeSelector value={directTheme} onChange={setDirectTheme} />
+
+                      {/* 直通三模式 */}
+                      <div className="mt-3">
+                        <label className="text-xs text-gray-500 mb-2 block">文本处理模式</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { value: 'generate', label: '🚀 扩充文本', desc: 'AI丰富内容' },
+                            { value: 'condense', label: '✨ 总结提炼', desc: 'AI精简核心' },
+                            { value: 'preserve', label: '📝 保持原样', desc: '忠实呈现' },
+                          ].map(opt => (
+                            <button
+                              key={opt.value}
+                              onClick={() => setDirectTextMode(opt.value as 'generate' | 'condense' | 'preserve')}
+                              className={`py-2.5 px-2 rounded-xl border-2 text-center transition-all ${
+                                directTextMode === opt.value
+                                  ? 'border-[#5B4FE9] bg-[#F5F3FF] shadow-sm'
+                                  : 'border-gray-100 hover:border-gray-200 bg-white'
+                              }`}
+                            >
+                              <div className={`text-xs font-semibold ${directTextMode === opt.value ? 'text-[#4338CA]' : 'text-gray-600'}`}>{opt.label}</div>
+                              <div className="text-[9px] text-gray-400 mt-0.5">{opt.desc}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Simplified params */}
+                      <div className="grid grid-cols-2 gap-3 mt-3">
+                        <div>
+                          <label className="text-xs text-gray-500 mb-1 block">配图模式</label>
+                          <select
+                            value={directImgMode}
+                            onChange={e => setDirectImgMode(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                          >
+                            <option value="noImages">无图</option>
+                            <option value="pictographic">插图图标</option>
+                            <option value="pexels">高清照片</option>
+                            <option value="webFreeToUseCommercially">搜索配图</option>
+                            <option value="aiGenerated">AI配图</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500 mb-1 block">语气风格</label>
+                          <select
+                            value={directTone}
+                            onChange={e => setDirectTone(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                          >
+                            <option value="professional">专业</option>
+                            <option value="casual">轻松</option>
+                            <option value="creative">创意</option>
+                            <option value="bold">大胆</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <label className="text-xs text-gray-500 mb-1 block">页数：{pages} 页</label>
+                        <input
+                          type="range"
+                          min="5"
+                          max="30"
+                          value={pages}
+                          onChange={e => setPages(Number(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {error && <div className="mt-3 px-3 py-2 bg-red-50 text-red-500 rounded-lg text-xs">❌ {error}</div>}
                 </div>
@@ -444,10 +635,12 @@ export default function Home() {
                               className="w-full mt-1 text-xs text-gray-500 bg-gray-50 rounded-lg px-2.5 py-1.5 border border-transparent focus:border-[#5B4FE9] outline-none resize-none" />
                           )}
                         </div>
-                        <div className="flex-shrink-0 flex items-center gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => moveSlide(idx, -1)} className="w-6 h-6 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 text-[10px]">↑</button>
-                          <button onClick={() => moveSlide(idx, 1)} className="w-6 h-6 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 text-[10px]">↓</button>
-                          <button onClick={() => removeSlide(idx)} className="w-6 h-6 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 text-[10px]">✕</button>
+                        <div className="flex-shrink-0 flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => moveSlide(idx, -1)} className="w-7 h-7 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 text-xs transition-colors">↑</button>
+                          <button onClick={() => moveSlide(idx, 1)} className="w-7 h-7 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 text-xs transition-colors">↓</button>
+                          <button onClick={() => removeSlide(idx)} className="w-7 h-7 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-colors" title="删除此页">
+                            <span className="text-sm">🗑️</span>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -463,9 +656,9 @@ export default function Home() {
           {/* Floating button */}
           {!loading && (
             <FloatingButton
-              label={phase === 'input' ? '省心生成' : '确认生成'}
-              icon={phase === 'input' ? '✨' : '🚀'}
-              onClick={phase === 'input' ? generateOutline : confirmAndGenerate}
+              label={phase === 'input' && mode === 'direct' ? '🚀 直通生成' : phase === 'input' ? '✨ 省心生成' : '确认生成'}
+              icon={phase === 'input' ? (mode === 'direct' ? '🚀' : '✨') : '🚀'}
+              onClick={phase === 'input' ? (mode === 'direct' ? generateDirect : generateOutline) : confirmAndGenerate}
               disabled={phase === 'input' && !hasInput}
             />
           )}
@@ -494,6 +687,15 @@ export default function Home() {
             )}
           </div>
         </div>
+      )}
+
+      {/* ===== DIRECT GENERATING PROGRESS ===== */}
+      {phase === 'direct-generating' && (
+        <GenerationProgress
+          currentStep={genStep}
+          progress={genProgress}
+          subtext={stepText}
+        />
       )}
 
       {/* ===== GENERATING PROGRESS ===== */}
@@ -542,7 +744,7 @@ export default function Home() {
 
       {/* ===== MODALS ===== */}
       <ProPanel
-        open={showPro}
+        open={showPro && mode === 'smart'}
         onClose={() => setShowPro(false)}
         genMode={genMode} setGenMode={setGenMode}
         theme={theme} setTheme={setTheme}

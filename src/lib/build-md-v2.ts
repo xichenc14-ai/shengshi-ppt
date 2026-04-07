@@ -1,0 +1,515 @@
+// build-md-v2.ts — Gamma PPT Markdown 排版引擎 V5
+// 核心规范来源：gamma-ppt-database.md（技术部完整培训资料）
+// 
+// 设计原则（来自 gamma-ppt-database.md）：
+// 1. 信息密度：50-80字/页，严禁大段文本
+// 2. 大文本强制：### 触发大文本短句（非普通小字）
+// 3. 卡片触发：3-4个并列要点触发三列/四宫格卡片
+// 4. 时间轴触发：有序列表 1. 2. 3. 触发流程布局
+// 5. 对比布局：### 优势 / ### 劣势 触发左右对照
+// 6. 演讲者备注：> 引用块分离详细内容
+// 7. 配图克制：封面/过渡/结尾三处使用
+
+export type SlideItem = {
+  id: string;
+  title: string;
+  content?: string[];
+  notes?: string;
+  data?: Record<string, string>[];
+};
+
+type PageType = 'cover' | 'toc' | 'content' | 'comparison' | 'process' | 'data' | 'quote' | 'ending';
+
+// ========== V5 内容增强库（短要点智能展开） ==========
+// 来自 gamma-ppt-database.md：短标题必须扩展为有意义的短句
+const ENHANCEMENT_MAP: Record<string, { desc: string; details: string[] }> = {
+  '创新': { desc: '持续创新突破', details: ['技术突破', '模式创新', '体验升级'] },
+  '高效': { desc: '效率全面提升', details: ['流程优化', '时间节省', '成本降低'] },
+  '专业': { desc: '专业能力领先', details: ['行业经验', '专业资质', '成功案例'] },
+  '安全': { desc: '安全可靠有保障', details: ['数据加密', '隐私保护', '合规认证'] },
+  '用户第一': { desc: '以用户为中心', details: ['需求洞察', '体验优化', '服务升级'] },
+  '降本增效': { desc: '降本增效成果显著', details: ['成本优化', '效率提升', '资源整合'] },
+  '增长': { desc: '驱动业务快速增长', details: ['用户增长', '收入增长', '市场份额'] },
+  '智能化': { desc: '智能化全面升级', details: ['AI赋能', '自动化流程', '数据驱动'] },
+  '全球化': { desc: '全球化布局加速', details: ['海外市场', '本土化运营', '品牌国际化'] },
+  '赋能': { desc: '全方位赋能', details: ['技术赋能', '资源支持', '能力输出'] },
+  '协同': { desc: '协同效率倍增', details: ['跨部门协作', '资源共享', '信息互通'] },
+  '敏捷': { desc: '敏捷响应市场', details: ['快速迭代', '灵活调整', '高效执行'] },
+  '品质': { desc: '品质卓越可靠', details: ['质量把控', '标准认证', '用户口碑'] },
+  '服务': { desc: '服务体验升级', details: ['响应及时', '专业耐心', '持续跟进'] },
+  '品质保障': { desc: '品质有保障', details: ['精选材质', '严格质检', '售后无忧'] },
+  '交期快': { desc: '交付快速准时', details: ['快速响应', '准时交付', '物流跟踪'] },
+  '定制': { desc: '灵活定制方案', details: ['需求沟通', '方案设计', '个性化服务'] },
+  '环保': { desc: '绿色环保可持续', details: ['环保材料', '节能减排', '绿色生产'] },
+  '性价比': { desc: '高性价比之选', details: ['价格合理', '品质优异', '服务完善'] },
+  '口碑': { desc: '用户口碑认可', details: ['好评如潮', '推荐率高', '复购率高'] },
+  '突破': { desc: '关键突破', details: ['技术壁垒', '市场领先', '差异化优势'] },
+  '稳健': { desc: '稳健发展', details: ['风险控制', '持续盈利', '长期主义'] },
+  '领先': { desc: '行业领先', details: ['技术领先', '市场份额', '品牌影响力'] },
+  '整合': { desc: '资源整合', details: ['渠道整合', '业务协同', '价值链优化'] },
+};
+
+function enhanceBullet(text: string): { main: string; expanded: string[] } {
+  const trimmed = text.trim();
+  
+  // 来自 gamma-ppt-database.md：短标题必须扩展
+  if (trimmed.length > 35) {
+    return { main: trimmed, expanded: [] };
+  }
+  
+  // 精确匹配
+  if (ENHANCEMENT_MAP[trimmed]) {
+    const entry = ENHANCEMENT_MAP[trimmed];
+    return { main: entry.desc, expanded: entry.details };
+  }
+  
+  // 部分匹配
+  for (const [key, val] of Object.entries(ENHANCEMENT_MAP)) {
+    if (trimmed.includes(key) && key.length >= 2) {
+      return { main: val.desc, expanded: val.details };
+    }
+  }
+  
+  return { main: trimmed, expanded: [] };
+}
+
+// ========== V5 智能页面类型检测 ==========
+function detectPageType(index: number, total: number, title: string, content?: string[]): PageType {
+  const t = title.toLowerCase();
+  
+  if (index === 0) return 'cover';
+  if (/目录|概览|index|agenda|内容大纲|contents/.test(t)) return 'toc';
+  if (/感谢|谢谢|thank|end|结语|联系/.test(t) && (index === total - 1 || index >= total - 2)) return 'ending';
+  if (/对比|比较|versus|vs|优劣|差异/.test(t)) return 'comparison';
+  if (/流程|步骤|process|路线|路径|阶段|时间轴/.test(t)) return 'process';
+  if (content && content.some(c => /数据|图表|增长|下降|比例|占比|%|率|\d{2,}%/.test(c))) return 'data';
+  if (/引言|前言|背景|使命|愿景|价值观|理念|关于/.test(t) && (!content || content.length <= 2)) return 'quote';
+  return 'content';
+}
+
+// ========== V5 内容密度判断 ==========
+// 来自 gamma-ppt-database.md：单页50-80字，严禁大段文本
+function estimatePageContentLength(title: string, content: string[]): number {
+  const titleLen = title.length * 2; // 标题权重更高
+  const contentLen = content.reduce((sum, c) => sum + c.trim().length, 0);
+  return titleLen + contentLen;
+}
+
+function needsSplit(title: string, content: string[]): boolean {
+  return estimatePageContentLength(title, content) > 80;
+}
+
+// ========== V5 判断卡片布局触发 ==========
+// 来自 gamma-ppt-database.md：3-4个并列要点触发三列/四宫格卡片
+function shouldUseCards(content: string[], pageType: PageType): boolean {
+  if (pageType !== 'content') return false;
+  if (content.length === 0) return false;
+  // 3-4个要点触发卡片布局
+  if (content.length === 3 || content.length === 4) return true;
+  // 每个要点都很短（<=20字）也可能触发
+  if (content.length <= 4 && content.every(c => c.trim().length <= 20)) return true;
+  return false;
+}
+
+// ========== V5 构建封面页 ==========
+function buildCoverPage(title: string, subtitle?: string[]): string {
+  const lines: string[] = [];
+  lines.push(`# ${title}`);
+  if (subtitle && subtitle.length > 0) {
+    lines.push('');
+    lines.push(`${subtitle.slice(0, 2).join(' · ')}`);
+  }
+  return lines.join('\n');
+}
+
+// ========== V5 构建目录页 ==========
+// 来自 gamma-ppt-database.md：有序列表触发时间轴布局
+function buildTocPage(title: string, content: string[]): string {
+  const lines: string[] = [];
+  lines.push(`## ${title}`);
+  lines.push('');
+  content.forEach((item, idx) => {
+    const cleanItem = item.trim().replace(/^[0-9a-zA-Z一二三四五六七八九十百千万]+[.、)）\s]+/, '');
+    lines.push(`${idx + 1}. **${cleanItem}**`);
+  });
+  return lines.join('\n');
+}
+
+// ========== V5 构建内容页（核心） ==========
+// 来自 gamma-ppt-database.md 的排版触发规则：
+// - ### 大文本触发（非普通小字）
+// - - **粗体** 触发卡片
+// - 1. 2. 3. 触发时间轴
+function buildContentPage(title: string, content: string[], pageType: PageType): string {
+  const lines: string[] = [];
+  lines.push(`## ${title}`);
+  lines.push('');
+
+  switch (pageType) {
+    case 'content': {
+      if (shouldUseCards(content, pageType)) {
+        // V5 卡片布局：- **标题** + ### 大文本描述
+        // 来自 gamma-ppt-database.md：三列/四宫格卡片
+        for (const pt of content) {
+          if (!pt.trim()) continue;
+          const { main, expanded } = enhanceBullet(pt);
+          lines.push(`- **${main}**`);
+          if (expanded.length > 0) {
+            // 嵌套卡片：子要点用 ### 大文本
+            for (const ex of expanded) {
+              lines.push(`  ### ${ex}`);
+            }
+          } else if (pt.trim().length <= 20) {
+            // 短标题：自动加一行大文本描述
+            lines.push(`  ### ${main}`);
+          }
+        }
+      } else if (content.length > 5) {
+        // V5 内容多：分段大文本（来自 gamma-ppt-database.md：禁用大段文本，必须拆分）
+        for (const pt of content) {
+          if (!pt.trim()) continue;
+          lines.push(`### ${pt.trim()}`);
+          lines.push('');
+        }
+      } else {
+        // V5 中等内容：标准列表 + 大文本强制
+        for (const pt of content) {
+          if (!pt.trim()) continue;
+          const { main, expanded } = enhanceBullet(pt);
+          if (expanded.length > 0) {
+            lines.push(`- **${main}**`);
+            for (const ex of expanded) {
+              lines.push(`  - ${ex}`);
+            }
+          } else {
+            lines.push(`### ${main}`);
+            lines.push('');
+          }
+        }
+      }
+      break;
+    }
+
+    case 'comparison': {
+      // V5 对比布局：### 优势 / ### 劣势（来自 gamma-ppt-database.md）
+      if (content.length >= 2) {
+        lines.push(`### 优势`);
+        lines.push(`${content[0].trim()}`);
+        lines.push('');
+        lines.push(`### 劣势`);
+        lines.push(`${content[1].trim()}`);
+      } else {
+        for (const pt of content) {
+          if (!pt.trim()) continue;
+          lines.push(`- **${pt.trim()}**`);
+        }
+      }
+      break;
+    }
+
+    case 'process': {
+      // V5 时间轴/流程：有序列表（来自 gamma-ppt-database.md）
+      content.forEach((step, idx) => {
+        if (!step.trim()) return;
+        const { main, expanded } = enhanceBullet(step);
+        lines.push(`${idx + 1}. **${main}**`);
+        if (expanded.length > 0) {
+          for (const ex of expanded) {
+            lines.push(`   ${ex}`);
+          }
+        }
+      });
+      break;
+    }
+
+    case 'data': {
+      // V5 数据页：数据要点（来自 gamma-ppt-database.md：数字"3"和"4"并列）
+      for (const pt of content) {
+        if (!pt.trim()) continue;
+        lines.push(`- **${pt.trim()}**`);
+      }
+      break;
+    }
+
+    case 'quote': {
+      // V5 引言页：> 引用块（来自 gamma-ppt-database.md：演讲者备注分离）
+      if (content.length > 0) {
+        lines.push(`> ${content.join('\n> ')}`);
+      }
+      break;
+    }
+
+    default: {
+      for (const pt of content) {
+        if (!pt.trim()) continue;
+        const { main, expanded } = enhanceBullet(pt);
+        lines.push(`### ${main}`);
+        if (expanded.length > 0) {
+          for (const ex of expanded) {
+            lines.push(`- ${ex}`);
+          }
+        }
+        lines.push('');
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
+// ========== V5 构建结尾页 ==========
+function buildEndingPage(title: string, content?: string[]): string {
+  const lines: string[] = [];
+  lines.push(`# ${title}`);
+  if (content && content.length > 0) {
+    lines.push('');
+    lines.push(`> ${content.join('；')}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * V5 构建 Gamma Markdown（严格遵循 gamma-ppt-database.md 规范）
+ * 
+ * 排版触发规则（来自技术部培训资料）：
+ * 1. '# 标题' → 封面大标题
+ * 2. '## 页面标题' → 页面主标题
+ * 3. '### 核心要点' → 大文本短句（非普通小字）
+ * 4. '**粗体短句**' → 视觉强调（放大显示）
+ * 5. '- **卡片标题**' → 卡片/区块触发（3-4列布局）
+ * 6. '1. 2. 3.' → 时间轴/流程布局
+ * 7. '> 引用块' → 演讲者备注
+ * 8. '---' → 分页符
+ */
+export function buildMdV2(
+  title: string,
+  slides: SlideItem[],
+  imageMode: string = 'noImages'
+): string {
+  if (!slides || slides.length === 0) {
+    return `# ${title}\n\n---\n\n## 内容\n\n- 请添加内容`;
+  }
+
+  const pages: string[] = [];
+  const total = slides.length;
+
+  for (let i = 0; i < slides.length; i++) {
+    const s = slides[i];
+    const isLast = i === total - 1;
+    const isFirst = i === 0;
+    const pageType = detectPageType(i, total, s.title, s.content);
+
+    let pageContent: string;
+
+    switch (pageType) {
+      case 'cover':
+        pageContent = buildCoverPage(s.title, s.content);
+        break;
+      
+      case 'toc':
+        pageContent = buildTocPage(s.title, s.content || []);
+        break;
+      
+      case 'ending':
+        pageContent = buildEndingPage(s.title, s.content);
+        break;
+      
+      default:
+        pageContent = buildContentPage(s.title, s.content || [], pageType);
+    }
+
+    pages.push(pageContent);
+
+    // V5 演讲者备注分离（来自 gamma-ppt-database.md）
+    if (s.notes) {
+      pages.push('');
+      pages.push(`> 演讲者备注：${s.notes}`);
+    }
+
+    // V5 分页符控制
+    if (!isFirst && !isLast) {
+      pages.push('\n---\n');
+    } else if (isFirst && total > 1) {
+      pages.push('\n---\n');
+    }
+  }
+
+  return pages.join('\n');
+}
+
+/**
+ * V5 构建 Gamma additionalInstructions（精细化排版指令）
+ * 
+ * 严格遵循 gamma-ppt-database.md 的规范：
+ * 1. 字号规范：主标题≥44pt，页面标题≥32pt，正文≥18pt
+ * 2. 信息密度：50-80字/页，超出必须拆分
+ * 3. 大文本强制：正文最小展示层级 = 大文本
+ * 4. 卡片布局：3-4个并列项触发三列/四宫格
+ * 5. 时间轴：有序列表触发流程布局
+ * 6. 配图规则：封面/过渡/结尾三处，风格必须含 "Minimalist, clean background, negative space"
+ */
+export function buildAdditionalInstructions(
+  tone: string = 'professional',
+  scene: string = 'biz',
+  imageMode: string = 'auto'
+): string {
+  // ========== 通用排版规则（V5 核心） ==========
+  const baseRules = `【排版规则 — 严格遵守】
+
+📐 字号规范（必须精确）：
+- 主标题（#）：≥ 44pt，加粗，居中
+- 页面标题（##）：≥ 32pt，加粗
+- 大文本要点（###）：≥ 24pt，加粗（正文必须是大文本，禁止小字）
+- 卡片标题（- **标题**）：≥ 20pt，加粗
+- 辅助文字：≥ 14pt
+
+📝 内容密度（铁律）：
+- 单页正文严格控制在50-80字以内
+- 超出80字必须拆分到下一页
+- 禁止出现大段文本堆积
+- 每页只放3-4个核心要点
+
+🎨 布局触发规则（核心技巧）：
+- 3-4个并列要点 → 使用三列/四宫格卡片布局
+- 有序列表（1. 2. 3.）→ 时间轴/流程布局
+- ### 大文本短句 → 独占一行的大字正文
+- **粗体短句** → 视觉强调（放大显示）
+- 对比内容（### 优势 / ### 劣势）→ 左右对照布局
+
+📌 禁止事项（绝对禁止）：
+- 禁止普通小字正文（必须是大文本）
+- 禁止表格嵌套超过2层
+- 禁止标题和内容混在一行
+- 禁止留大面积空白
+- 禁止在内容页堆砌超过4个要点`;
+
+  // ========== 语气风格规则（V5） ==========
+  const toneRules: Record<string, string> = {
+    professional: `【风格：专业商务】
+
+配色：克制优雅，主色（深蓝/深灰）+ 1个强调色（金色/橙色），大面积留白
+字体：无衬线字体（思源黑体/PingFang SC/Microsoft YaHei）
+布局：规整对称，信息密度适中，视觉层次清晰
+感觉：麦肯锡/BCG/贝恩咨询PPT风格，权威可信
+
+视觉隐喻：攀登、建筑、根基（如：山峰、建筑、树根图片方向）`,
+
+    casual: `【风格：简洁友好】
+
+配色：明亮清新，主色（蓝/绿）+ 浅色背景，适当使用圆角元素
+字体：无衬线字体，现代感强
+布局：轻松随意，可用不对称布局，视觉重心偏移
+感觉：Notion/Figma/Slack官方演示风格，友好亲切
+
+视觉隐喻：拼图、编织、连接（如：拼图、编织图片方向）`,
+
+    creative: `【风格：大胆创意】
+
+配色：大丰富，2-3个亮色（渐变粉/紫/橙），允许大色块背景
+字体：无衬线字体，粗体突出
+布局：不对称、大胆、视觉冲击强，大量使用几何元素
+感觉：Apple/特斯拉发布会风格，前卫震撼
+
+视觉隐喻：破晓、冲刺、打破（如：日出、冲刺、打破常规图片方向）`,
+
+    bold: `【风格：高端科技】
+
+配色：深色主题，深蓝/深灰背景 + 亮色文字，大量使用渐变和光效
+字体：无衬线字体，极细/极粗字重对比
+布局：科技感强，大面积深色块，精致网格线
+感觉：高端科技公司品牌发布，引领未来
+
+视觉隐喻：星空、光路、电路（如：星空、光线、电路图片方向）`,
+
+    traditional: `【风格：中国传统】
+
+配色：古典配色，红/金/墨/米白，祥云/水墨/古典边框装饰
+字体：标题粗体，正文宋体/黑体
+布局：庄重大气，对称平衡，中式美学
+感觉：故宫/国潮品牌发布风格，典雅大气
+
+视觉隐喻：水墨、祥云、古典边框（如：水墨山水、祥云纹图片方向）`,
+  };
+
+  // ========== 配图规则（V5 核心） ==========
+  // 来自 gamma-ppt-database.md：配图风格必须含 "Minimalist, clean background, negative space"
+  let imageRules = '';
+  switch (imageMode) {
+    case 'noImages':
+      imageRules = `
+【配图规则】
+- 不使用任何外部图片
+- 用色块、图标、几何图形填充视觉空间
+- 内容少的页面用装饰性元素补充留白
+- 可使用图标库（Font Awesome / Material Icons）`;
+      break;
+    case 'aiGenerated':
+      imageRules = `
+【配图规则】
+- 封面页和结尾页必须配AI生成图
+- 内容页仅在文字少于40字时配图
+- 配图位置：右图或上图，禁止左图布局
+- 配图风格（必须包含）：Minimalist, clean background, negative space, professional, high quality
+- 留白感：配图描述必须含 "negative space"
+- 适度使用 Icons 提高可视化`;
+      break;
+    case 'webFreeToUseCommercially':
+    case 'pexels':
+      imageRules = `
+【配图规则】
+- 封面页配高质量照片
+- 内容页文字少于50字时可配相关图片
+- 图片风格：professional, clean, business context
+- 确保图片来源合规可商用
+- 配图位置：右图或上图`;
+      break;
+    default:
+      imageRules = `
+【配图规则】
+- 封面页配专业图片
+- 内容页仅在视觉需要时配图
+- 图片不遮挡文字，保持阅读性
+- 优先使用 Icons`;
+  }
+
+  // ========== 语言规则 ==========
+  const languageRules = `
+【语言规则】
+- 所有文字使用简体中文
+- 保持演讲者备注（通过 > 引用块）
+- 保持整体风格从头到尾统一一致`;
+
+  const toneRule = toneRules[tone] || toneRules.professional;
+  
+  return `${baseRules}\n\n${toneRule}${imageRules}${languageRules}`;
+}
+
+/**
+ * V5 获取配图风格关键词
+ * 来自 gamma-ppt-database.md 的配图风格关键词库
+ */
+export function getImageStyleKeyword(
+  scene: string,
+  tone: string
+): string {
+  const baseKeyword = 'Minimalist, clean background, negative space, professional';
+  
+  const sceneKeywords: Record<string, string> = {
+    '商务汇报': 'corporate, business meeting, blue tones',
+    '路演融资': 'startup, investment, growth, professional',
+    '培训课件': 'classroom, education, friendly, approachable',
+    '创意方案': 'creative, innovative, modern, vibrant',
+    '美妆时尚': 'elegant, stylish, chic, fashion, refined',
+    '数据分析': 'data visualization, charts, clean, professional',
+    '年度总结': 'annual report, summary, corporate, polished',
+    '产品发布': 'product launch, futuristic, sleek, technology',
+    '教育课件': 'learning, knowledge, clean, simple',
+    '生活方式': 'lifestyle, natural, warm, approachable',
+    '科技AI': 'futuristic, technology, AI, modern, high tech',
+    '通用': 'clean, versatile, professional',
+  };
+
+  const sceneKeyword = sceneKeywords[scene] || sceneKeywords['通用'];
+  
+  return `${baseKeyword}, ${sceneKeyword}, high quality`;
+}

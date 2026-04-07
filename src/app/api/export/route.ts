@@ -1,37 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { exportToPPTX } from '@/lib/pptx-export';
-import { Presentation } from '@/lib/types';
+import fs from 'fs';
+import path from 'path';
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { presentation, addWatermark = false } = body as { presentation: Presentation; addWatermark?: boolean };
+    const { searchParams } = new URL(request.url);
+    const fileId = searchParams.get('file');
 
-    if (!presentation || !presentation.slides) {
-      return NextResponse.json(
-        { error: '无效的PPT数据' },
-        { status: 400 }
-      );
+    if (!fileId) {
+      return NextResponse.json({ error: '缺少文件参数' }, { status: 400 });
     }
 
-    const blob = await exportToPPTX(presentation, addWatermark);
-    const buffer = Buffer.from(await blob.arrayBuffer());
-    const filename = (presentation.title || 'presentation').replace(/[^\u4e00-\u9fa5a-zA-Z0-9_-]/g, '_');
+    const filePath = path.join('/tmp/ppt-output', `${fileId}.pptx`);
+
+    if (!fs.existsSync(filePath)) {
+      return NextResponse.json({ error: '文件不存在或已过期' }, { status: 404 });
+    }
+
+    const buffer = fs.readFileSync(filePath);
+    const filename = `省心PPT_${fileId}.pptx`;
 
     return new NextResponse(buffer, {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}.pptx`,
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
         'Content-Length': buffer.length.toString(),
         'Cache-Control': 'no-cache',
       },
     });
   } catch (error: any) {
     console.error('Export error:', error);
-    return NextResponse.json(
-      { error: error.message || '导出失败' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: '下载失败' }, { status: 500 });
   }
 }
