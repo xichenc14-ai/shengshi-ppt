@@ -73,7 +73,7 @@ export default function Home() {
   const [streamingSlides, setStreamingSlides] = useState<SlideItem[]>([]);
 
   // Result
-  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; dlUrl: string } | null>(null);
+  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; dlUrl: string; gammaUrl?: string } | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -305,13 +305,48 @@ export default function Home() {
       const gd = await gRes.json();
 
       if (gd.generationId) {
-        // 本地生成是同步的，直接返回 downloadUrl
+        // Gamma API 是异步的，需要轮询状态
         setGenStep(3);
-        setGenProgress(90);
-        setStepText('PPT 生成完成，准备下载...');
-        await new Promise(r => setTimeout(r, 500));
+        setGenProgress(60);
+        setStepText('正在等待 Gamma 生成 PPT...');
 
-        setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: gd.downloadUrl || '' });
+        // 轮询 Gamma 状态（最多 3 分钟）
+        const startTime = Date.now();
+        const pollInterval = 4000;
+        let finalExportUrl = '';
+        let finalGammaUrl = '';
+
+        while (Date.now() - startTime < 180000) {
+          await new Promise(r => setTimeout(r, pollInterval));
+
+          const statusRes = await fetch(`/api/gamma?id=${gd.generationId}`);
+          if (!statusRes.ok) continue;
+
+          const statusData = await statusRes.json();
+
+          if (statusData.status === 'completed') {
+            finalExportUrl = statusData.exportUrl || '';
+            finalGammaUrl = statusData.gammaUrl || '';
+            setGenProgress(90);
+            setStepText('PPT 生成完成，准备下载...');
+            break;
+          }
+
+          if (statusData.status === 'failed') {
+            throw new Error(statusData.error || 'Gamma 生成失败');
+          }
+
+          // pending / processing - 继续轮询，显示进度
+          const elapsed = Math.floor((Date.now() - startTime) / 1000);
+          setStepText(`AI 渲染中... ${elapsed}秒`);
+        }
+
+        if (!finalExportUrl) {
+          throw new Error('Gamma 生成超时，请重试');
+        }
+
+        await new Promise(r => setTimeout(r, 500));
+        setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalExportUrl, gammaUrl: finalGammaUrl });
         setGenProgress(100);
         setPhase('result');
       }
