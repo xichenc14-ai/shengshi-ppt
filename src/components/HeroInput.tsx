@@ -10,7 +10,7 @@ interface HeroInputProps {
   topic: string;
   setTopic: (t: string) => void;
   files: UploadedFile[];
-  setFiles: (f: UploadedFile[]) => void;
+  setFiles: (f: UploadedFile[] | ((prev: UploadedFile[]) => UploadedFile[])) => void;
   hasInput: boolean;
   error: string;
   directTheme: string;
@@ -65,7 +65,7 @@ export default React.memo(function HeroInput({
             <span className="text-xs text-gray-400">拖拽或点击上传文件</span>
             <span className="text-[10px] text-gray-300 ml-auto">PPT / Word / PDF / Excel</span>
           </div>
-          <input ref={fileRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={async e => { if (e.target.files?.length) { const processed = await fileProcess(e.target.files); setFiles(prev => [...prev, ...processed]); } e.target.value = ''; }} className="hidden" />
+          <input ref={fileRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={async e => { if (e.target.files?.length) { const processed = await fileProcess(e.target.files); setFiles((prev: any[]) => [...prev, ...processed]); } e.target.value = ''; }} className="hidden" />
 
           {files.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -73,7 +73,7 @@ export default React.memo(function HeroInput({
                 <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#F5F3FF] rounded-lg text-[11px] text-[#4338CA] font-medium">
                   {f.type.startsWith('image/') ? '🖼️' : /\.(xls|csv)/.test(f.name) ? '📊' : '📄'} {f.name}
                   <span className="text-gray-400">{fmtSize(f.size)}</span>
-                  <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="text-gray-300 hover:text-red-400">×</button>
+                  <button onClick={() => setFiles((prev: any[]) => prev.filter((_, j) => j !== i))} className="text-gray-300 hover:text-red-400">×</button>
                 </span>
               ))}
             </div>

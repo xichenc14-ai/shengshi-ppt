@@ -1,0 +1,296 @@
+// build-md-v2.ts — 增强版 Markdown 排版引擎 V3
+// 核心改进：结构化输出 + 上下文感知展开 + 布局提示
+// 专为 Gamma preserve 模式优化
+
+export type SlideItem = {
+  id: string;
+  title: string;
+  content?: string[];
+  notes?: string;
+  data?: Record<string, string>[];
+};
+
+type PageType = 'cover' | 'toc' | 'content' | 'comparison' | 'process' | 'data' | 'quote' | 'ending';
+
+// ========== 上下文感知的要点展开 ==========
+const EXPANSION_MAP: Record<string, string> = {
+  '创新': '持续创新突破，引领行业变革与升级',
+  '高效': '提升运营效率，显著降低时间与成本',
+  '专业': '专业团队打造，提供行业领先的高质量服务',
+  '安全': '多层安全防护，全面保障数据与隐私安全',
+  '用户第一': '以用户需求为核心驱动力，打造极致体验',
+  '持续创新': '不断探索前沿技术与创新解决方案',
+  '数据驱动': '基于大数据深度分析，科学指导业务决策',
+  '智能化': '运用AI与自动化技术，全面提升运营效能',
+  '全球化': '布局全球市场，拓展国际化业务版图',
+  '可持续发展': '践行ESG理念，推动绿色低碳发展',
+  '降本增效': '优化资源配置，实现成本与效率的双重提升',
+  '精准营销': '基于用户画像的精细化运营与精准推广',
+  '全渠道': '打通线上线下全渠道，构建一体化营销体系',
+  '闭环': '构建完整业务闭环，驱动可持续增长',
+  '赋能': '以技术赋能业务，推动行业数字化转型升级',
+  '协同': '强化团队协同作战，提升跨部门协作效率',
+  '敏捷': '采用敏捷方法论，快速响应市场变化与需求',
+  '体验': '优化用户全旅程体验，提升满意度与忠诚度',
+  '增长': '聚焦核心增长指标，实现规模化可持续增长',
+  '生态': '构建开放共赢生态，连接产业链上下游资源',
+  '自动化': '实现流程自动化，释放人力聚焦高价值工作',
+  '标准化': '建立标准化流程体系，确保质量与效率统一',
+  '差异化': '打造差异化竞争优势，建立品牌护城河',
+  '规模化': '从0到1验证模式，从1到N实现规模化复制',
+};
+
+function expandBullet(text: string, _context?: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length > 20) return trimmed;
+  // 精确匹配
+  if (EXPANSION_MAP[trimmed]) return EXPANSION_MAP[trimmed];
+  // 部分匹配
+  for (const [key, val] of Object.entries(EXPANSION_MAP)) {
+    if (trimmed.includes(key) && key.length >= 2) return val;
+  }
+  return trimmed;
+}
+
+// ========== 智能页面类型检测 ==========
+function detectPageType(index: number, total: number, title: string, content?: string[]): PageType {
+  const t = title.toLowerCase();
+  if (index === 0) return 'cover';
+  if (/目录|概览|index|agenda|内容大纲/.test(t)) return 'toc';
+  if (/感谢|谢谢|thank|end|结语/.test(t) && (index === total - 1 || index >= total - 2)) return 'ending';
+  if (/对比|比较|versus|vs|优劣/.test(t)) return 'comparison';
+  if (/流程|步骤|process|路线|路径|阶段/.test(t)) return 'process';
+  if (content && content.some(c => /数据|图表|增长|下降|比例|占比|%|率|\d{2,}%|\d+\.\d+/.test(c))) return 'data';
+  if (/引言|前言|背景|使命|愿景|价值观|理念/.test(t) && content && content.length <= 2) return 'quote';
+  return 'content';
+}
+
+// ========== 判断内容是否适合卡片布局 ==========
+function shouldUseCards(content: string[], pageType: PageType): boolean {
+  if (pageType !== 'content') return false;
+  if (content.length === 0) return false;
+  if (content.length > 5) return false; // 太多项不适合卡片
+  // 如果所有要点都比较短（<=25字），适合卡片布局
+  return content.every(c => c.trim().length <= 25);
+}
+
+// ========== 判断是否需要配图提示 ==========
+function needsImageHint(pageType: PageType, content: string[]): boolean {
+  if (pageType === 'cover' || pageType === 'ending') return true;
+  // 内容少的页面需要视觉元素填充
+  if (pageType === 'content' && content.length <= 2) return true;
+  return false;
+}
+
+/**
+ * 构建面向 Gamma preserve 模式的优化 Markdown
+ * 
+ * 设计原则：
+ * 1. 结构清晰 — 用 #/##/###/- 严格控制层级
+ * 2. 内容充实 — 短要点自动展开，避免空洞页面
+ * 3. 布局提示 — 通过 Markdown 语法暗示 Gamma 使用什么布局
+ * 4. 不插入 Gamma 提示文本 — 这些会被渲染为正文
+ */
+export function buildMdV2(
+  title: string,
+  slides: SlideItem[],
+  imageMode: string = 'noImages'
+): string {
+  const pages: string[] = [];
+  const total = slides.length;
+
+  for (let i = 0; i < slides.length; i++) {
+    const s = slides[i];
+    const isLast = i === total - 1;
+    const pageType = detectPageType(i, total, s.title, s.content);
+
+    switch (pageType) {
+      case 'cover': {
+        // 封面：大标题 + 可选副标题
+        pages.push(`# ${s.title}`);
+        if (s.content?.length) {
+          const subtitle = s.content.slice(0, 2).join(' · ');
+          pages.push(`\n${subtitle}`);
+        }
+        break;
+      }
+
+      case 'toc': {
+        // 目录：有序列表 → Gamma 倾向用卡片/时间轴布局
+        pages.push(`## ${s.title}\n`);
+        if (s.content?.length) {
+          s.content.forEach((c, ci) => {
+            pages.push(`${ci + 1}. **${c.trim()}**`);
+          });
+        }
+        break;
+      }
+
+      case 'content': {
+        pages.push(`## ${s.title}\n`);
+        if (s.content && s.content.length > 0) {
+          if (shouldUseCards(s.content, pageType)) {
+            // 卡片布局：- **粗体标题** + 展开说明
+            for (const pt of s.content) {
+              if (pt.trim()) {
+                const expanded = expandBullet(pt);
+                // 如果展开后有新内容，用描述格式
+                if (expanded !== pt.trim() && expanded.length > pt.trim().length) {
+                  pages.push(`- **${pt.trim()}**`);
+                  pages.push(`  ${expanded}`);
+                } else {
+                  pages.push(`- **${pt.trim()}**`);
+                }
+              }
+            }
+          } else if (s.content.length > 5) {
+            // 太多项 → 用 ### 分块布局
+            for (const pt of s.content) {
+              if (pt.trim()) pages.push(`### ${pt.trim()}\n`);
+            }
+          } else {
+            // 中等数量 → 混合布局
+            for (const pt of s.content) {
+              if (pt.trim()) {
+                const expanded = expandBullet(pt);
+                if (expanded !== pt.trim() && expanded.length > pt.trim().length) {
+                  pages.push(`- **${pt.trim()}**`);
+                  pages.push(`  ${expanded}`);
+                } else {
+                  pages.push(`- **${pt.trim()}**`);
+                }
+              }
+            }
+          }
+        }
+        break;
+      }
+
+      case 'comparison': {
+        pages.push(`## ${s.title}\n`);
+        if (s.content && s.content.length >= 2) {
+          // 用 ### 分组暗示左右对比布局
+          pages.push(`### ${s.content[0].trim()}\n`);
+          pages.push(`核心优势与适用场景分析\n`);
+          pages.push(`### ${s.content[1].trim()}\n`);
+          pages.push(`核心优势与适用场景分析`);
+        }
+        break;
+      }
+
+      case 'process': {
+        pages.push(`## ${s.title}\n`);
+        if (s.content) {
+          // 有序列表 → 时间轴/流程布局
+          s.content.forEach((step, ci) => {
+            const expanded = expandBullet(step);
+            pages.push(`${ci + 1}. **${step.trim()}**`);
+            if (expanded !== step.trim()) {
+              pages.push(`   ${expanded}`);
+            }
+          });
+        }
+        break;
+      }
+
+      case 'data': {
+        pages.push(`## ${s.title}\n`);
+        if (s.content && s.content.length > 0) {
+          pages.push(`### 核心数据概览\n`);
+          if (s.data && s.data.length > 0) {
+            const headers = Object.keys(s.data[0]);
+            pages.push(`| ${headers.join(' | ')} |`);
+            pages.push(`| ${headers.map(() => '---').join(' | ')} |`);
+            for (const row of s.data) {
+              pages.push(`| ${headers.map(h => row[h] || '').join(' | ')} |`);
+            }
+          } else {
+            // 没有结构化数据，把内容作为数据要点
+            for (const pt of s.content) {
+              pages.push(`- **${pt.trim()}**`);
+            }
+          }
+        }
+        break;
+      }
+
+      case 'quote': {
+        // 引言/背景/愿景页 — 大文字居中布局
+        pages.push(`## ${s.title}\n`);
+        if (s.content?.length) {
+          pages.push(`> ${s.content.join('\n>\n')}`);
+        }
+        break;
+      }
+
+      case 'ending': {
+        pages.push(`# ${s.title}`);
+        if (s.content?.length) {
+          pages.push(`\n> ${s.content.join('；')}`);
+        }
+        break;
+      }
+    }
+
+    // 演讲者备注
+    if (s.notes) {
+      pages.push(`\n---\n\n*${s.notes}*`);
+    } else if (!isLast && pageType !== 'cover') {
+      pages.push('\n---');
+    }
+
+    if (!isLast) pages.push('\n');
+  }
+
+  return pages.join('\n');
+}
+
+/**
+ * 构建 Gamma additionalInstructions（V3 — 精细化排版指令）
+ * 
+ * 根据语气和场景生成具体、可执行的排版指令
+ * 不再使用泛化的"大文本"描述，而是给出精确规则
+ */
+export function buildAdditionalInstructions(
+  tone: string = 'professional',
+  scene: string = 'biz',
+  imageMode: string = 'auto'
+): string {
+  // 通用排版规则（所有语气共享）
+  const baseRules = `排版规则（必须严格遵守）：
+1. 标题字号 ≥ 36pt，副标题 ≥ 24pt，正文 ≥ 18pt
+2. 每页文字不超过80个汉字，超过则拆分到下一页
+3. 列表项（- 开头）使用卡片布局，每行一个卡片，最多4个卡片一行
+4. 三级标题（### 开头）使用大文本块布局，每个占一行
+5. 有序列表（1. 2. 3.）使用时间轴或步骤流程布局
+6. 引用文本（> 开头）居中显示，使用大字号斜体
+7. 不要将任何内容排成表格（除非Markdown中明确包含|表格语法）
+8. 分页符（---）严格分页，不要合并页面
+9. 封面标题居中，使用最大字号
+10. 每页必须有明确的视觉焦点，不要留大面积空白`;
+
+  // 图片规则
+  let imageRules = '';
+  if (imageMode === 'noImages') {
+    imageRules = `\n配图规则：不使用任何外部图片，用色块、图标、几何图形填充视觉空间。内容少的页面用装饰性几何元素补充。`;
+  } else if (imageMode === 'aiGenerated') {
+    imageRules = `\n配图规则：封面和结尾页使用AI生成配图。内容页仅在文字少于50字时配图。配图风格要专业、高质量、与内容主题相关。`;
+  } else {
+    imageRules = `\n配图规则：封面和结尾页必须配图。内容页文字少于50字时配图补充。图片风格：professional, clean, high quality。`;
+  }
+
+  // 语气特定规则
+  const toneRules: Record<string, string> = {
+    professional: `风格：专业商务风格。配色克制（主色+1个强调色），留白充足。使用无衬线字体（如思源黑体、PingFang SC）。整体感觉：像麦肯锡/BCG的咨询PPT。`,
+
+    casual: `风格：简洁友好风格。配色明亮但不花哨，适当使用圆角元素。使用无衬线字体。整体感觉：像Notion或Figma的官方演示。`,
+
+    creative: `风格：大胆创意风格。配色大胆丰富（2-3个亮色），布局可以不对称。使用无衬线字体。允许使用大色块背景、渐变色。整体感觉：像Apple发布会或科技产品发布。`,
+
+    bold: `风格：高端科技风格。深色背景为主（深蓝/深灰），亮色文字和强调色。使用无衬线字体。大量使用渐变、光效。整体感觉：像高端科技公司的品牌发布会。`,
+
+    traditional: `风格：中国风/传统文化风格。配色以红色、金色、墨色、米白为主。标题使用大号加粗字体。装饰元素：祥云纹、水墨、古典边框。整体感觉：典雅大气的中国风PPT。`,
+  };
+
+  return `${baseRules}\n\n${toneRules[tone] || toneRules.professional}${imageRules}\n\n语言：所有文字使用简体中文。保持演讲者备注。整体风格从头到尾统一一致。`;
+}
