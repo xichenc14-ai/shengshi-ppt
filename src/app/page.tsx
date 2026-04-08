@@ -764,11 +764,19 @@ export default function Home() {
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                 {result.dlUrl && (
                   <button onClick={() => {
-                    // 支持 data: URL 和普通 URL
                     if (result.dlUrl.startsWith('data:')) {
                       const link = document.createElement('a');
                       link.href = result.dlUrl;
                       link.download = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    } else if (result.dlUrl.includes('assets.api.gamma.app')) {
+                      const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                      const proxyUrl = `/api/export?url=${encodeURIComponent(result.dlUrl)}&name=${encodeURIComponent(filename)}`;
+                      const link = document.createElement('a');
+                      link.href = proxyUrl;
+                      link.download = filename;
                       document.body.appendChild(link);
                       link.click();
                       document.body.removeChild(link);
@@ -778,6 +786,12 @@ export default function Home() {
                   }} className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 transition-all">
                     📥 下载 PPTX
                   </button>
+                )}
+                {result.gammaUrl && (
+                  <a href={result.gammaUrl} target="_blank" rel="noopener noreferrer"
+                    className="w-full sm:w-auto px-8 py-3.5 text-purple-600 hover:text-purple-700 text-sm font-medium border border-purple-200 hover:border-purple-300 rounded-xl transition-all">
+                    🔗 在 Gamma 查看
+                  </a>
                 )}
                 <button onClick={reset} className="w-full sm:w-auto px-8 py-3.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">
                   继续创建
