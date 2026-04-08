@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
           },
-          signal: AbortSignal.timeout(30000),
+          signal: AbortSignal.timeout(120000),
         });
 
         if (!gammaRes.ok) {
