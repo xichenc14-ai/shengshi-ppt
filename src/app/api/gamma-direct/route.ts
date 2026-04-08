@@ -17,11 +17,15 @@ const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource
 };
 
 const INSTRUCTION_TEMPLATES: Record<string, string> = {
-  professional: `用中文生成PPT。要求：全局正文使用大文本，不要小号字。不要将列表排成表格。封面页和结尾页必须有配图。保持演讲者备注。使用无衬线字体风格。`,
-  casual: `用中文生成PPT。要求：全局正文使用大文本，不要小号字。不使用外部图片，纯文字+图标+色块设计。使用无衬线字体风格。`,
-  creative: `用中文生成PPT。要求：全局正文使用大文本，不要小号字。视觉风格大胆创新，色彩丰富但统一。封面页使用AI生成配图。配图风格：creative, vibrant, modern, bold colors。使用无衬线字体风格。`,
-  bold: `用中文生成PPT。要求：全局正文使用大文本，不要小号字。视觉风格大胆，科技感强烈。封面页使用震撼的AI生成配图。配图风格：futuristic, technology, modern, sleek。使用无衬线字体风格。`,
-  traditional: `用中文生成PPT。要求：全局正文使用大文本，不要小号字。整体风格为中国风/古典风格，使用中国传统文化元素。配色以红色、金色、墨色为主。使用无衬线字体风格。保持演讲者备注。`,
+  professional: `【排版规则 — 严格遵守】\n\n📐 字号规范（必须精确）：\n- 主标题（#）：≥ 44pt，加粗，居中\n- 页面标题（##）：≥ 32pt，加粗\n- 大文本要点（###）：≥ 24pt，加粗（正文必须是大文本，禁止小字）\n- 卡片标题（- **标题**）：≥ 20pt，加粗\n\n📝 内容密度（铁律）：\n- 单页正文严格控制在50-80字以内\n- 超出80字必须拆分到下一页\n- 禁止出现大段文本堆积\n- 每页只放3-4个核心要点\n- 神奇数字3与4：归纳为3或4个并列项，触发三列/四宫格布局\n\n🎨 布局触发规则（核心技巧）：\n- 3-4个并列要点 → 使用三列/四宫格卡片布局\n- 有序列表（1. 2. 3.）→ 时间轴/流程布局\n- ### 大文本短句 → 独占一行的大字正文\n- **粗体短句** → 视觉强调（放大显示）\n- 对比内容（### 优势 / ### 劣势）→ 左右对照布局\n\n📊 数据可视化（铁律）：\n- 提到数据/统计/比例时必须分配图表类型（折线图/饼图/柱状图）\n- 所有图表必须显示数据标签\n\n📌 禁止事项（绝对禁止）：\n- 禁止普通小字正文（必须是大文本）\n- 禁止将列表排成表格\n- 禁止在内容页堆砌超过4个要点\n\n【风格：专业商务】\n配色：克制优雅，主色（深蓝/深灰）+ 1个强调色（金色/橙色），大面积留白\n字体：无衬线字体（思源黑体/PingFang SC/Microsoft YaHei）\n感觉：麦肯锡/BCG/贝恩咨询PPT风格，权威可信\n\n【配图规则】\n- 封面页和结尾页必须配图\n- 配图风格（必须包含）：Minimalist, clean background, negative space, professional, high quality\n- 配图位置：右图或上图，禁止左图布局\n- 适度使用 Icons 提高可视化\n\n【语言规则】\n- 所有文字使用简体中文\n- 保持演讲者备注（通过 > 引用块）`,
+
+  casual: `【排版规则 — 严格遵守】\n\n📐 字号规范（必须精确）：\n- 主标题（#）：≥ 44pt，加粗，居中\n- 大文本要点（###）：≥ 24pt，加粗（正文必须是大文本，禁止小字）\n\n📝 内容密度（铁律）：\n- 单页正文严格控制在50-80字以内\n- 神奇数字3与4：归纳为3或4个并列项，触发三列/四宫格布局\n\n🎨 布局触发规则：\n- 3-4个并列要点 → 使用三列/四宫格卡片布局\n- ### 大文本短句 → 独占一行的大字正文\n\n📌 禁止事项：\n- 禁止普通小字正文（必须是大文本）\n- 禁止在内容页堆砌超过4个要点\n\n【风格：简洁友好】\n配色：明亮清新，主色（蓝/绿）+ 浅色背景，适当使用圆角元素\n感觉：Notion/Figma/Slack官方演示风格，友好亲切\n\n【配图规则】\n- 不使用外部图片，纯文字+图标+色块设计\n- 可使用图标库（Font Awesome / Material Icons）\n\n【语言规则】\n- 所有文字使用简体中文\n- 保持演讲者备注（通过 > 引用块）`,
+
+  creative: `【排版规则 — 严格遵守】\n\n📐 字号规范（必须精确）：\n- 主标题（#）：≥ 44pt，加粗，居中\n- 大文本要点（###）：≥ 24pt，加粗（正文必须是大文本，禁止小字）\n\n📝 内容密度（铁律）：\n- 单页正文严格控制在50-80字以内\n- 神奇数字3与4：归纳为3或4个并列项，触发三列/四宫格布局\n\n🎨 布局触发规则：\n- 3-4个并列要点 → 使用三列/四宫格卡片布局\n- ### 大文本短句 → 独占一行的大字正文\n\n📊 数据可视化：\n- 提到数据/统计时必须分配图表类型，强制显示数据标签\n\n📌 禁止事项：\n- 禁止普通小字正文（必须是大文本）\n- 禁止在内容页堆砌超过4个要点\n\n【风格：大胆创意】\n配色：大丰富，2-3个亮色（渐变粉/紫/橙），允许大色块背景\n感觉：Apple/特斯拉发布会风格，前卫震撼\n\n【配图规则】\n- 封面页使用AI生成配图\n- 配图风格：creative, vibrant, modern, bold colors, minimalist, negative space\n- 配图位置：右图或上图\n\n【语言规则】\n- 所有文字使用简体中文\n- 保持演讲者备注（通过 > 引用块）`,
+
+  bold: `【排版规则 — 严格遵守】\n\n📐 字号规范（必须精确）：\n- 主标题（#）：≥ 44pt，加粗，居中\n- 大文本要点（###）：≥ 24pt，加粗（正文必须是大文本，禁止小字）\n\n📝 内容密度（铁律）：\n- 单页正文严格控制在50-80字以内\n- 神奇数字3与4：归纳为3或4个并列项，触发三列/四宫格布局\n\n🎨 布局触发规则：\n- 3-4个并列要点 → 使用三列/四宫格卡片布局\n- ### 大文本短句 → 独占一行的大字正文\n\n📊 数据可视化：\n- 提到数据/统计时必须分配图表类型，强制显示数据标签\n\n📌 禁止事项：\n- 禁止普通小字正文（必须是大文本）\n- 禁止在内容页堆砌超过4个要点\n\n【风格：高端科技】\n配色：深色主题，深蓝/深灰背景 + 亮色文字，大量使用渐变和光效\n感觉：高端科技公司品牌发布，引领未来\n\n【配图规则】\n- 封面页使用震撼的AI生成配图\n- 配图风格：futuristic, technology, modern, sleek, minimalist, negative space\n- 配图位置：右图或上图\n\n【语言规则】\n- 所有文字使用简体中文\n- 保持演讲者备注（通过 > 引用块）`,
+
+  traditional: `【排版规则 — 严格遵守】\n\n📐 字号规范（必须精确）：\n- 主标题（#）：≥ 44pt，加粗，居中\n- 大文本要点（###）：≥ 24pt，加粗（正文必须是大文本，禁止小字）\n\n📝 内容密度（铁律）：\n- 单页正文严格控制在50-80字以内\n- 神奇数字3与4：归纳为3或4个并列项，触发三列/四宫格布局\n\n🎨 布局触发规则：\n- 3-4个并列要点 → 使用三列/四宫格卡片布局\n- ### 大文本短句 → 独占一行的大字正文\n\n📌 禁止事项：\n- 禁止普通小字正文（必须是大文本）\n- 禁止在内容页堆砌超过4个要点\n\n【风格：中国传统】\n配色：古典配色，红/金/墨/米白，祥云/水墨/古典边框装饰\n感觉：故宫/国潮品牌发布风格，典雅大气\n\n【配图规则】\n- 封面页使用中国风配图\n- 配图风格：Chinese traditional, ink wash, classical Chinese art, elegant, minimalist, negative space\n- 配图位置：右图或上图\n\n【语言规则】\n- 所有文字使用简体中文\n- 保持演讲者备注（通过 > 引用块）`,
 };
 
 // POST: 直通模式 - 调用 Gamma API 并等待完成，直接返回下载链接
@@ -42,6 +46,7 @@ export async function POST(request: NextRequest) {
       textMode = 'generate',
       imageSource = 'webFreeToUseCommercially',
       exportAs = 'pptx',
+      visualMetaphor,
     } = body;
 
     if (!inputText?.trim()) {
@@ -70,6 +75,11 @@ export async function POST(request: NextRequest) {
     }
 
     const instructions = INSTRUCTION_TEMPLATES[tone] || INSTRUCTION_TEMPLATES.professional;
+    // P0修复：追加全局视觉隐喻（如果提供）
+    const metaphorAppend = visualMetaphor
+      ? `\n\n【全局视觉隐喻】\n贯穿全演示的统一意象：${visualMetaphor}。\n所有配图、图标、色块风格应与此意象一致，配图描述中必须体现该意象关键词。`
+      : '';
+    const finalInstructions = instructions + metaphorAppend;
     const finalThemeId = themeId || SCENE_CONFIGS.biz.themeId;
 
     // 步骤1：创建 Gamma 生成任务
@@ -86,7 +96,7 @@ export async function POST(request: NextRequest) {
         format: 'presentation',
         numCards,
         themeId: finalThemeId,
-        additionalInstructions: instructions,
+        additionalInstructions: finalInstructions,
         textOptions: { amount: 'medium', tone, language: 'zh-cn' },
         imageOptions,
         cardOptions: {

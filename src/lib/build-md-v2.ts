@@ -99,6 +99,75 @@ function needsSplit(title: string, content: string[]): boolean {
   return estimatePageContentLength(title, content) > 80;
 }
 
+// P0修复：硬截断函数 — 在句子边界截断，避免断章取义
+function truncateToWordCount(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const truncated = text.slice(0, maxChars);
+  const lastPeriod = Math.max(
+    truncated.lastIndexOf('。'),
+    truncated.lastIndexOf('，'),
+    truncated.lastIndexOf('.'),
+    truncated.lastIndexOf('；')
+  );
+  return lastPeriod > maxChars * 0.5 ? truncated.slice(0, lastPeriod + 1) : truncated;
+}
+
+// P0修复：强制执行单页字数限制（标题+正文 ≤ 80字）
+function enforcePageCharLimit(title: string, content: string[]): string[] {
+  const MAX_CHARS = 80;
+  const titleChars = title.length;
+  let remaining = MAX_CHARS - titleChars;
+  if (remaining <= 0) return content.slice(0, 1).map(c => truncateToWordCount(c.trim(), 10));
+  const perItem = Math.floor(remaining / Math.max(content.length, 1));
+  return content
+    .map(c => truncateToWordCount(c.trim(), Math.max(perItem, 10)))
+    .filter(c => c.length > 0);
+}
+
+// ========== P0修复：智能图表类型分配 ==========
+// 来自兮晨框架：数据可视化 — 分配图表类型，强制显示数据标签
+function assignChartType(content: string[]): { chartType: string; emoji: string } | null {
+  const text = content.join(' ');
+  const hasPercent = /%|\d+%|比例|占比|份额/.test(text);
+  const hasTrend = /增长|下降|趋势|同比|环比|增速|增幅|跌幅/.test(text);
+  const hasRanking = /排名|第[一二三四五六七八九十百千]|前三|Top|top|首位/.test(text);
+  const hasComparison = /对比|比较|vs|VS|优劣|差异/.test(text);
+  const hasAmount = /营收|收入|利润|销售额|GMV|规模|用户量|下载量/.test(text) && /\d/.test(text);
+
+  if (hasTrend && hasAmount) return { chartType: '折线图', emoji: '📈' };
+  if (hasTrend) return { chartType: '折线图', emoji: '📈' };
+  if (hasPercent) return { chartType: '饼图', emoji: '🥧' };
+  if (hasRanking || hasComparison) return { chartType: '柱状图', emoji: '📊' };
+  if (hasAmount) return { chartType: '柱状图', emoji: '📊' };
+  return null;
+}
+
+// ========== P0修复：视觉隐喻关键词库 ==========
+const VISUAL_METAPHOR_MAP: Record<string, string[]> = {
+  '突破': ['破晓', '冲刺', '山峰', '攀登'],
+  '成长': ['树苗', '发芽', '上升', '光合作用'],
+  '创新': ['闪电', '火花', '化学反应', '重组'],
+  '稳定': ['根基', '磐石', '锚点', '平衡'],
+  '连接': ['桥梁', '网络', '握手', '交叉'],
+  '转型': ['变形', '蜕变', '蝴蝶', '升级'],
+  '增长': ['上升', '加速', '阶梯', '火箭'],
+  '智能': ['芯片', '光路', '数据流', '神经网络'],
+  '安全': ['盾牌', '锁', '城墙', '堡垒'],
+  '协同': ['齿轮', '链条', '团队', '同心圆'],
+  '品质': ['钻石', '皇冠', '金牌', '勋章'],
+  '环保': ['绿叶', '地球', '水滴', '阳光'],
+  '全球化': ['地球仪', '桥梁', '航线', '世界地图'],
+  '效率': ['时钟', '闪电', '加速', '流水线'],
+};
+
+function selectVisualMetaphor(topics: string[]): string {
+  const allText = topics.join(' ');
+  for (const [key, metaphors] of Object.entries(VISUAL_METAPHOR_MAP)) {
+    if (allText.includes(key)) return metaphors[0];
+  }
+  return '攀登'; // 默认：积极向上
+}
+
 // ========== V5 判断卡片布局触发 ==========
 // 来自 gamma-ppt-database.md：3-4个并列要点触发三列/四宫格卡片
 function shouldUseCards(content: string[], pageType: PageType): boolean {
@@ -142,15 +211,25 @@ function buildTocPage(title: string, content: string[]): string {
 // - 1. 2. 3. 触发时间轴
 function buildContentPage(title: string, content: string[], pageType: PageType): string {
   const lines: string[] = [];
+  // P0修复：强制截断超长内容到50-80字范围
+  const enforcedContent = enforcePageCharLimit(title, content);
+
   lines.push(`## ${title}`);
   lines.push('');
 
+  // P0修复：数据页自动标注图表类型
+  const chartMeta = pageType === 'data' ? assignChartType(enforcedContent) : null;
+  if (chartMeta) {
+    lines.push(`${chartMeta.emoji} [${chartMeta.chartType}]`);
+    lines.push('');
+  }
+
   switch (pageType) {
     case 'content': {
-      if (shouldUseCards(content, pageType)) {
+      if (shouldUseCards(enforcedContent, pageType)) {
         // V5 卡片布局：- **标题** + ### 大文本描述
         // 来自 gamma-ppt-database.md：三列/四宫格卡片
-        for (const pt of content) {
+        for (const pt of enforcedContent) {
           if (!pt.trim()) continue;
           const { main, expanded } = enhanceBullet(pt);
           lines.push(`- **${main}**`);
@@ -164,16 +243,16 @@ function buildContentPage(title: string, content: string[], pageType: PageType):
             lines.push(`  ### ${main}`);
           }
         }
-      } else if (content.length > 5) {
+      } else if (enforcedContent.length > 5) {
         // V5 内容多：分段大文本（来自 gamma-ppt-database.md：禁用大段文本，必须拆分）
-        for (const pt of content) {
+        for (const pt of enforcedContent) {
           if (!pt.trim()) continue;
           lines.push(`### ${pt.trim()}`);
           lines.push('');
         }
       } else {
         // V5 中等内容：标准列表 + 大文本强制
-        for (const pt of content) {
+        for (const pt of enforcedContent) {
           if (!pt.trim()) continue;
           const { main, expanded } = enhanceBullet(pt);
           if (expanded.length > 0) {
@@ -192,14 +271,14 @@ function buildContentPage(title: string, content: string[], pageType: PageType):
 
     case 'comparison': {
       // V5 对比布局：### 优势 / ### 劣势（来自 gamma-ppt-database.md）
-      if (content.length >= 2) {
+      if (enforcedContent.length >= 2) {
         lines.push(`### 优势`);
-        lines.push(`${content[0].trim()}`);
+        lines.push(`${enforcedContent[0].trim()}`);
         lines.push('');
         lines.push(`### 劣势`);
-        lines.push(`${content[1].trim()}`);
+        lines.push(`${enforcedContent[1].trim()}`);
       } else {
-        for (const pt of content) {
+        for (const pt of enforcedContent) {
           if (!pt.trim()) continue;
           lines.push(`- **${pt.trim()}**`);
         }
@@ -209,7 +288,7 @@ function buildContentPage(title: string, content: string[], pageType: PageType):
 
     case 'process': {
       // V5 时间轴/流程：有序列表（来自 gamma-ppt-database.md）
-      content.forEach((step, idx) => {
+      enforcedContent.forEach((step, idx) => {
         if (!step.trim()) return;
         const { main, expanded } = enhanceBullet(step);
         lines.push(`${idx + 1}. **${main}**`);
@@ -224,7 +303,7 @@ function buildContentPage(title: string, content: string[], pageType: PageType):
 
     case 'data': {
       // V5 数据页：数据要点（来自 gamma-ppt-database.md：数字"3"和"4"并列）
-      for (const pt of content) {
+      for (const pt of enforcedContent) {
         if (!pt.trim()) continue;
         lines.push(`- **${pt.trim()}**`);
       }
@@ -233,14 +312,14 @@ function buildContentPage(title: string, content: string[], pageType: PageType):
 
     case 'quote': {
       // V5 引言页：> 引用块（来自 gamma-ppt-database.md：演讲者备注分离）
-      if (content.length > 0) {
-        lines.push(`> ${content.join('\n> ')}`);
+      if (enforcedContent.length > 0) {
+        lines.push(`> ${enforcedContent.join('\n> ')}`);
       }
       break;
     }
 
     default: {
-      for (const pt of content) {
+      for (const pt of enforcedContent) {
         if (!pt.trim()) continue;
         const { main, expanded } = enhanceBullet(pt);
         lines.push(`### ${main}`);
@@ -268,8 +347,14 @@ function buildEndingPage(title: string, content?: string[]): string {
   return lines.join('\n');
 }
 
+export type BuildMdV2Result = {
+  markdown: string;
+  visualMetaphor: string;
+};
+
 /**
  * V5 构建 Gamma Markdown（严格遵循 gamma-ppt-database.md 规范）
+ * 返回 markdown 文本和检测到的全局视觉隐喻关键词（供 buildAdditionalInstructions 使用）
  * 
  * 排版触发规则（来自技术部培训资料）：
  * 1. '# 标题' → 封面大标题
@@ -285,13 +370,20 @@ export function buildMdV2(
   title: string,
   slides: SlideItem[],
   imageMode: string = 'noImages'
-): string {
+): BuildMdV2Result {
   if (!slides || slides.length === 0) {
-    return `# ${title}\n\n---\n\n## 内容\n\n- 请添加内容`;
+    return {
+      markdown: `# ${title}\n\n---\n\n## 内容\n\n- 请添加内容`,
+      visualMetaphor: '山峰',
+    };
   }
 
   const pages: string[] = [];
   const total = slides.length;
+
+  // P0修复：从所有幻灯片标题中提取全局视觉隐喻关键词
+  const allTitles = slides.map(s => s.title);
+  const globalVisualMetaphor = selectVisualMetaphor(allTitles);
 
   for (let i = 0; i < slides.length; i++) {
     const s = slides[i];
@@ -321,9 +413,18 @@ export function buildMdV2(
     pages.push(pageContent);
 
     // V5 演讲者备注分离（来自 gamma-ppt-database.md）
+    // P0修复：自动从超长内容中提取有价值信息到备注
     if (s.notes) {
       pages.push('');
       pages.push(`> 演讲者备注：${s.notes}`);
+    } else if (estimatePageContentLength(s.title, s.content || []) > 80) {
+      // 内容超长时，将被截断的细节自动放入备注
+      const truncated = enforcePageCharLimit(s.title, s.content || []);
+      const removedContent = (s.content || []).filter(c => !truncated.includes(c));
+      if (removedContent.length > 0) {
+        pages.push('');
+        pages.push(`> 演讲者备注：${removedContent.join('；')}`);
+      }
     }
 
     // V5 分页符控制
@@ -334,7 +435,10 @@ export function buildMdV2(
     }
   }
 
-  return pages.join('\n');
+  return {
+    markdown: pages.join('\n'),
+    visualMetaphor: globalVisualMetaphor,
+  };
 }
 
 /**
@@ -351,7 +455,8 @@ export function buildMdV2(
 export function buildAdditionalInstructions(
   tone: string = 'professional',
   scene: string = 'biz',
-  imageMode: string = 'auto'
+  imageMode: string = 'auto',
+  visualMetaphor?: string
 ): string {
   // ========== 通用排版规则（V5 核心） ==========
   const baseRules = `【排版规则 — 严格遵守】
@@ -480,8 +585,13 @@ export function buildAdditionalInstructions(
 - 保持整体风格从头到尾统一一致`;
 
   const toneRule = toneRules[tone] || toneRules.professional;
-  
-  return `${baseRules}\n\n${toneRule}${imageRules}${languageRules}`;
+
+  // P0修复：全局视觉隐喻贯穿指令
+  const metaphorSection = visualMetaphor
+    ? `\n\n【全局视觉隐喻】\n贯穿全演示的统一意象：${visualMetaphor}。\n所有配图、图标、色块风格应与此意象一致（如：使用山峰图片、光线效果、渐变金到白）。\n配图描述中必须体现该意象关键词。`
+    : '';
+
+  return `${baseRules}\n\n${toneRule}${metaphorSection}${imageRules}${languageRules}`;
 }
 
 /**
