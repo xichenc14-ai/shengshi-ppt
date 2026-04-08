@@ -73,13 +73,22 @@ export async function POST(request: NextRequest) {
 
     // 支持结构化 slides 数据或纯文本 inputText
     let finalInputText: string;
-    if (slides && Array.isArray(slides) && slides.length > 0) {
-      // 结构化数据 → 转为 Gamma 格式的 Markdown
+    if (inputText && inputText.trim()) {
+      // 优先使用 inputText（已由前端 buildMdV2 处理过的高质量 markdown）
+      finalInputText = inputText.trim();
+      // 短内容自动增强结构
+      if (finalInputText.length < 100) {
+        finalInputText = `# ${finalInputText}\n\n---\n`;
+      } else if (!finalInputText.includes('---') && slides && slides.length > 1) {
+        finalInputText = finalInputText.split(/\n\n+/).filter((p: string) => p.trim()).join('\n\n---\n\n');
+      }
+    } else if (slides && Array.isArray(slides) && slides.length > 0) {
+      // 兜底：从结构化 slides 构建 markdown
       const markdown = slides.map((s: any) => {
         const content = (s.content || []).map((c: string) => `- ${c}`).join('\n');
         return `## ${s.title}\n\n${content}`;
       }).join('\n\n---\n\n');
-      finalInputText = `# ${inputText?.split('\n')[0]?.replace(/^#+\s*/, '').trim() || 'PPT'}\n\n${markdown}`;
+      finalInputText = `# ${slides[0]?.title || 'PPT'}\n\n${markdown}`;
     } else if (inputText) {
       finalInputText = inputText.trim();
       // 短内容自动增强结构
