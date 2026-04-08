@@ -12,7 +12,7 @@ type Plan = {
   name: string;
   desc: string;
   popular?: boolean;
-  prices: { monthly: string; annual: string; annualMonthly: string };
+  prices: { monthly: string; annual: string; annualMonthly: string; annualSave: string };
   credits: string;
   features: PlanFeature[];
   cta: string;
@@ -25,12 +25,12 @@ const PLANS: Plan[] = [
     emoji: '💚',
     name: '免费体验版',
     desc: '免费开始，感受AI的魔力',
-    prices: { monthly: '¥0', annual: '¥0', annualMonthly: '¥0' },
-    credits: '100 积分',
+    prices: { monthly: '¥0', annual: '¥0', annualMonthly: '¥0', annualSave: '' },
+    credits: '3 次/月',
     features: [
-      '100 积分（约可生成 3 次10页PPT）',
+      '每月 3 次 PPT 生成',
       '每次最多 8 页',
-      '可导出可编辑PPTX（带水印），每月限1次',
+      '可导出PPTX（带水印）',
       '5 个基础主题',
     ].map(t => ({ text: t, included: true })),
     cta: '当前套餐',
@@ -42,13 +42,13 @@ const PLANS: Plan[] = [
     name: '基础版',
     desc: '职场人的效率神器',
     popular: true,
-    prices: { monthly: '¥9.9', annual: '¥99/年', annualMonthly: '¥8.25' },
-    credits: '500 积分/月',
+    prices: { monthly: '¥29', annual: '¥199/年', annualMonthly: '¥16.6', annualSave: '省¥149' },
+    credits: '20 次/月',
     features: [
-      '500 积分/月（约可生成 16 次10页PPT）',
+      '每月 20 次 PPT 生成',
       '每次最多 15 页',
-      '导出PPTX无水印，不限次数',
-      '全部主题 + 模板',
+      '无水印导出PPTX，不限次数',
+      '全部主题',
       '文档上传转PPT',
     ].map(t => ({ text: t, included: true })),
     cta: '立即开通',
@@ -59,15 +59,15 @@ const PLANS: Plan[] = [
     emoji: '👑',
     name: '专业版',
     desc: '重度用户的首选',
-    prices: { monthly: '¥19.9', annual: '¥199/年', annualMonthly: '¥16.6' },
-    credits: '2000 积分/月',
+    prices: { monthly: '¥59', annual: '¥399/年', annualMonthly: '¥33.3', annualSave: '省¥309' },
+    credits: '100 次/月',
     features: [
-      '2000 积分/月（约可生成 66 次10页PPT）',
+      '每月 100 次 PPT 生成',
       '每次最多 30 页',
-      '导出PPTX无水印，不限次数',
       'AI大纲编辑器',
       '优先生成队列',
       '历史记录永久保存',
+      '全格式导出（PDF/PPTX/PNG）',
     ].map(t => ({ text: t, included: true })),
     cta: '立即开通',
     ctaDisabled: false,
@@ -95,7 +95,7 @@ export default function PricingSection() {
       <div className="max-w-5xl mx-auto px-4 md:px-6">
         <div className="text-center mb-6">
           <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 mb-2">简单透明的定价</h2>
-          <p className="text-sm text-gray-400">免费试用，满意再付费 · 按页计费更灵活</p>
+          <p className="text-sm text-gray-400">免费试用，满意再付费 · 月付年付随心选</p>
         </div>
 
         {/* 月付/年付切换 */}
@@ -121,18 +121,10 @@ export default function PricingSection() {
           </button>
         </div>
 
-        {/* 积分计费说明 */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#F5F3FF] rounded-full">
-            <span className="text-sm">💡</span>
-            <span className="text-xs text-[#5B4FE9] font-medium">按页计费：10页PPT约30积分，页数越多积分越多</span>
-          </div>
-        </div>
-
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 max-w-4xl mx-auto">
           {PLANS.map((p, i) => {
             const displayPrice = p.ctaDisabled ? p.prices.monthly : (isAnnual ? p.prices.annualMonthly : p.prices.monthly);
-            const displayPeriod = p.ctaDisabled ? '/月' : '/月';
+            const displayPeriod = p.ctaDisabled ? '' : '/月';
 
             return (
               <div

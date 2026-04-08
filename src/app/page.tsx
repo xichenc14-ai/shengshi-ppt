@@ -34,7 +34,7 @@ type SlideItem = { id: string; title: string; content?: string[]; notes?: string
 // 在 confirmAndGenerate 中直接传 slides 给 /api/gamma
 
 export default function Home() {
-  const { user, showLogin, showPayment, paymentPlan, openPayment, openLogin } = useAuth();
+  const { user, showLogin, showPayment, paymentPlan, openPayment, openLogin, closeLogin, closePayment } = useAuth();
   const router = useRouter();
 
   // Dual-track mode
@@ -765,8 +765,8 @@ export default function Home() {
         pages={pages} setPages={setPages}
       />
 
-      <LoginModal open={showLogin} onClose={() => {}} />
-      <PaymentModal open={showPayment} onClose={() => {}} plan={paymentPlan} />
+      <LoginModal open={showLogin} onClose={closeLogin} />
+      <PaymentModal open={showPayment} onClose={closePayment} plan={paymentPlan} />
     </div>
   );
 }

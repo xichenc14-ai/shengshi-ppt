@@ -33,6 +33,14 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
     return () => clearTimeout(t);
   }, [countdown]);
 
+  // ESC key to close
+  useEffect(() => {
+    if (!open) return;
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [open]);
+
   const sendCode = async () => {
     if (!phone || !/^1[3-9]\d{9}$/.test(phone)) { setError('请输入正确的手机号'); return; }
     setLoading(true); setError('');

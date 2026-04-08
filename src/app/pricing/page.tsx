@@ -12,7 +12,7 @@ type Plan = {
   name: string;
   desc: string;
   popular?: boolean;
-  prices: { monthly: string; annual: string; annualMonthly: string };
+  prices: { monthly: string; annual: string; annualMonthly: string; annualSave: string };
   features: PlanFeature[];
   cta: string;
   ctaDisabled: boolean;
@@ -24,7 +24,7 @@ const PLANS: Plan[] = [
     emoji: '💚',
     name: '免费体验版',
     desc: '免费开始，感受AI的魔力',
-    prices: { monthly: '¥0', annual: '¥0', annualMonthly: '¥0' },
+    prices: { monthly: '¥0', annual: '¥0', annualMonthly: '¥0', annualSave: '' },
     features: [
       { text: '每月 3 次 PPT 生成', included: true },
       { text: '每次最多 8 页', included: true },
@@ -44,12 +44,12 @@ const PLANS: Plan[] = [
     name: '基础版',
     desc: '职场人的效率神器',
     popular: true,
-    prices: { monthly: '¥9.9', annual: '¥99/年', annualMonthly: '¥8.25' },
+    prices: { monthly: '¥29', annual: '¥199/年', annualMonthly: '¥16.6', annualSave: '省¥149' },
     features: [
-      { text: '每月 30 次 PPT 生成', included: true },
+      { text: '每月 20 次 PPT 生成', included: true },
       { text: '每次最多 15 页', included: true },
-      { text: 'PDF + PPTX 导出（无水印）', included: true },
-      { text: '全部主题 + 模板', included: true },
+      { text: '无水印导出（PPTX）', included: true },
+      { text: '全部主题', included: true },
       { text: '文档上传转PPT', included: true },
       { text: 'AI大纲编辑器', included: false },
       { text: '优先生成队列', included: false },
@@ -63,7 +63,7 @@ const PLANS: Plan[] = [
     emoji: '👑',
     name: '专业版',
     desc: '重度用户的首选',
-    prices: { monthly: '¥19.9', annual: '¥199/年', annualMonthly: '¥16.6' },
+    prices: { monthly: '¥59', annual: '¥399/年', annualMonthly: '¥33.3', annualSave: '省¥309' },
     features: [
       { text: '每月 100 次 PPT 生成', included: true },
       { text: '每次最多 30 页', included: true },
@@ -71,7 +71,6 @@ const PLANS: Plan[] = [
       { text: '优先生成队列', included: true },
       { text: '历史记录永久保存', included: true },
       { text: '全格式导出（PDF/PPTX/PNG）', included: true },
-      { text: '专属客服支持', included: true },
     ],
     cta: '立即开通',
     ctaDisabled: false,
@@ -131,9 +130,11 @@ function PlanCard({ plan, user, openPayment, openLogin }: { plan: Plan; user: an
               }`}
             >
               年付
-              <span className="ml-1 text-[9px] bg-[#10B981] text-white px-1.5 py-0.5 rounded-full align-middle">
-                省20%
-              </span>
+              {plan.prices.annualSave && (
+                <span className="ml-1 text-[9px] bg-[#10B981] text-white px-1.5 py-0.5 rounded-full align-middle">
+                  {plan.prices.annualSave}
+                </span>
+              )}
             </button>
           </div>
         )}
@@ -204,9 +205,9 @@ export default function PricingPage() {
           {[
             { q: '免费版有什么限制？', a: '免费版每月可生成3次PPT，每次最多8页，导出PPTX带「省心PPT」水印。足够体验AI生成PPT的效果。' },
             { q: '可以随时取消订阅吗？', a: '可以，随时取消不会影响当前周期的使用。取消后下个计费周期自动降为免费版。' },
-            { q: '月付和年付有什么区别？', a: '功能完全一样，年付更优惠（省20%）。月付适合先试用，年付适合长期用户。' },
+            { q: '月付和年付有什么区别？', a: '功能完全一样，年付更优惠。基础版年付¥199（省¥149），专业版年付¥399（省¥309）。月付适合先试用，年付适合长期用户。' },
             { q: '支持哪些支付方式？', a: '支持微信支付和支付宝。按月或按年付费，年付更优惠。' },
-            { q: '积分和订阅有什么区别？', a: '积分按次扣除，用完可充值。订阅是包月套餐，每月固定次数，更划算。两者互不冲突。' },
+            { q: '基础版和专业版怎么选？', a: '如果你每月PPT需求在20次以内，基础版（¥29/月）足够。如果需要AI大纲编辑器、优先生成队列、历史记录永久保存等功能，推荐专业版（¥59/月）。' },
           ].map((f, i) => (
             <details key={i} className="bg-white border border-gray-100 rounded-xl group">
               <summary className="px-5 py-3 text-sm font-semibold text-gray-800 cursor-pointer hover:bg-gray-50/50 list-none flex items-center justify-between">

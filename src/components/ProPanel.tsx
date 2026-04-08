@@ -48,6 +48,14 @@ interface ProPanelProps {
 }
 
 export default function ProPanel({ open, onClose, genMode, setGenMode, theme, setTheme, tone, setTone, imgMode, setImgMode, pages, setPages }: ProPanelProps) {
+  // ESC key to close
+  React.useEffect(() => {
+    if (!open) return;
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [open]);
+
   if (!open) return null;
 
   return (
