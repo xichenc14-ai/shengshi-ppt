@@ -86,27 +86,44 @@ export default function HeroSection({ topic, setTopic, files, setFiles, onGenera
 
         {/* Input card */}
         <div className="bg-white rounded-2xl shadow-xl shadow-gray-200/50 border border-gray-100 p-4 md:p-6 max-w-2xl mx-auto">
-          <textarea
-            value={topic}
-            onChange={e => setTopic(e.target.value)}
-            placeholder="✍️ 描述你的PPT需求，例如：帮我做一份Q1季度销售工作汇报..."
-            className="w-full px-5 py-4 rounded-xl bg-[#FAFBFE] border border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-400 transition-all"
-            rows={3}
-          />
-
-          {/* File upload */}
-          <div
-            onDragOver={e => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={onDrop}
-            onClick={() => fileRef.current?.click()}
-            className={`mt-3 border border-dashed rounded-xl py-3 px-4 flex items-center gap-3 cursor-pointer transition-all ${
-              dragging ? 'border-[#8B5CF6] bg-[#F5F3FF]/30' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50'
-            }`}
-          >
-            <span className="text-gray-400 text-sm">📎</span>
-            <span className="text-xs text-gray-400">拖拽或点击上传文件</span>
-            <span className="text-[10px] text-gray-400 ml-auto">Word / PDF / Excel / PPT</span>
+          {/* Textarea with inline upload + generate button in one row */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            {/* Left: textarea wrapper with drag support */}
+            <div
+              className="flex-1 relative"
+              onDragOver={e => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={onDrop}
+            >
+              <textarea
+                value={topic}
+                onChange={e => setTopic(e.target.value)}
+                placeholder="✍️ 描述你的PPT需求，例如：帮我做一份Q1季度销售工作汇报..."
+                className={`w-full h-32 px-4 py-3 pr-10 rounded-xl bg-[#FAFBFE] border outline-none resize-none text-sm text-gray-800 placeholder:text-gray-400 transition-all ${
+                  dragging
+                    ? 'border-[#8B5CF6] bg-[#F5F3FF]/30 ring-2 ring-[#EDE9FE]'
+                    : 'border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white'
+                }`}
+              />
+              {/* Inline attach button */}
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="absolute top-2.5 right-2.5 w-8 h-8 flex items-center justify-center rounded-lg text-gray-300 hover:text-[#5B4FE9] hover:bg-[#F5F3FF] transition-all"
+                title="上传附件"
+              >
+                <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+                </svg>
+              </button>
+            </div>
+            {/* Right: generate button */}
+            <button
+              onClick={handleGenerate}
+              disabled={!hasInput || loading}
+              className="sm:w-36 shrink-0 px-8 py-4 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-xl text-base font-bold hover:shadow-lg hover:shadow-purple-300/40 hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-40 disabled:hover:shadow-none disabled:hover:translate-y-0"
+            >
+              🪄 免费生成
+            </button>
           </div>
           <input ref={fileRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={onFileChange} className="hidden" />
 
@@ -122,23 +139,6 @@ export default function HeroSection({ topic, setTopic, files, setFiles, onGenera
               ))}
             </div>
           )}
-
-          {/* CTA buttons */}
-          <div className="mt-5 flex flex-col sm:flex-row items-center gap-3">
-            <button
-              onClick={handleGenerate}
-              disabled={!hasInput || loading}
-              className="w-full sm:w-auto px-10 py-4 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-xl text-base font-bold hover:shadow-lg hover:shadow-purple-300/40 hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-40 disabled:hover:shadow-none disabled:hover:translate-y-0"
-            >
-              🪄 免费生成PPT
-            </button>
-            <button
-              onClick={() => fileRef.current?.click()}
-              className="w-full sm:w-auto px-8 py-3.5 text-sm font-medium text-[#5B4FE9] bg-white border-2 border-[#EDE9FE] rounded-xl hover:bg-[#F5F3FF] transition-all"
-            >
-              📄 上传文档转PPT
-            </button>
-          </div>
         </div>
 
         {/* Hot scenes */}

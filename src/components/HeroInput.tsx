@@ -47,24 +47,24 @@ export default React.memo(function HeroInput({
         </button>
 
         {/* Input card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <div className="relative bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          {/* Textarea with inline upload */}
           <textarea
             value={topic}
             onChange={e => setTopic(e.target.value)}
             placeholder="输入你想创建的 PPT 主题，例如：2024年度营销策略汇报"
-            className="w-full px-4 py-3 rounded-xl bg-[#FAFBFE] border border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-400 transition-all"
-            rows={3}
+            className="w-full min-h-[120px] px-4 py-3 pr-10 rounded-xl bg-[#FAFBFE] border border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-400 transition-all"
           />
-
-          {/* File upload */}
-          <div
+          {/* Inline attach button */}
+          <button
             onClick={() => fileRef.current?.click()}
-            className="mt-3 border border-dashed rounded-xl py-3 px-4 flex items-center gap-3 cursor-pointer hover:border-gray-300 hover:bg-gray-50/50 transition-all"
+            className="absolute top-[2.6rem] right-[1.6rem] w-8 h-8 flex items-center justify-center rounded-lg text-gray-300 hover:text-[#5B4FE9] hover:bg-[#F5F3FF] transition-all"
+            title="上传附件"
           >
-            <span className="text-gray-400 text-sm">📎</span>
-            <span className="text-xs text-gray-400">拖拽或点击上传文件</span>
-            <span className="text-[10px] text-gray-400 ml-auto">PPT / Word / PDF / Excel</span>
-          </div>
+            <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
           <input ref={fileRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={async e => { if (e.target.files?.length) { const processed = await fileProcess(e.target.files); setFiles((prev: any[]) => [...prev, ...processed]); } e.target.value = ''; }} className="hidden" />
 
           {files.length > 0 && (
@@ -101,7 +101,7 @@ export default React.memo(function HeroInput({
                   : 'border-gray-200 text-gray-400 hover:border-gray-300'
               }`}
             >
-              🚀 直通模式
+              🛠️ 专业模式
             </button>
           </div>
 
