@@ -52,7 +52,7 @@ export default React.memo(function HeroInput({
             value={topic}
             onChange={e => setTopic(e.target.value)}
             placeholder="输入你想创建的 PPT 主题，例如：2024年度营销策略汇报"
-            className="w-full px-4 py-3 rounded-xl bg-[#FAFBFE] border border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-300 transition-all"
+            className="w-full px-4 py-3 rounded-xl bg-[#FAFBFE] border border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-400 transition-all"
             rows={3}
           />
 
@@ -63,7 +63,7 @@ export default React.memo(function HeroInput({
           >
             <span className="text-gray-400 text-sm">📎</span>
             <span className="text-xs text-gray-400">拖拽或点击上传文件</span>
-            <span className="text-[10px] text-gray-300 ml-auto">PPT / Word / PDF / Excel</span>
+            <span className="text-[10px] text-gray-400 ml-auto">PPT / Word / PDF / Excel</span>
           </div>
           <input ref={fileRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={async e => { if (e.target.files?.length) { const processed = await fileProcess(e.target.files); setFiles((prev: any[]) => [...prev, ...processed]); } e.target.value = ''; }} className="hidden" />
 

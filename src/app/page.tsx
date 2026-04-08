@@ -413,7 +413,7 @@ export default function Home() {
           <HeroSection topic={topic} setTopic={setTopic} files={files} setFiles={setFiles} onGenerate={startGenerate} hasInput={hasInput} loading={loading} />
 
           {/* ===== 双轨制入口 ===== */}
-          <div className="max-w-3xl mx-auto px-4 pt-8 pb-4">
+          <div className="max-w-3xl mx-auto px-4 pt-10 pb-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* 直通模式 */}
               <button
@@ -479,7 +479,7 @@ export default function Home() {
                     value={topic}
                     onChange={e => setTopic(e.target.value)}
                     placeholder="输入你想创建的 PPT 主题，例如：2024年度营销策略汇报"
-                    className="w-full px-4 py-3 rounded-xl bg-[#FAFBFE] border border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-300 transition-all"
+                    className="w-full px-5 py-4 rounded-xl bg-[#FAFBFE] border border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-400 transition-all"
                     rows={3}
                   />
 
@@ -490,7 +490,7 @@ export default function Home() {
                   >
                     <span className="text-gray-400 text-sm">📎</span>
                     <span className="text-xs text-gray-400">拖拽或点击上传文件</span>
-                    <span className="text-[10px] text-gray-300 ml-auto">PPT / Word / PDF / Excel</span>
+                    <span className="text-[10px] text-gray-400 ml-auto">PPT / Word / PDF / Excel</span>
                   </div>
                   <input ref={fileRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={async e => { if (e.target.files?.length) { const processed = await fileProcess(e.target.files); setFiles(prev => [...prev, ...processed]); } e.target.value = ''; }} className="hidden" />
 

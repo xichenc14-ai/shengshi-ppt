@@ -25,7 +25,7 @@ const STEPS = [
 
 export default function ProcessSection() {
   return (
-    <section className="py-16 md:py-20 bg-white">
+    <section className="py-20 md:py-24 bg-white">
       <div className="max-w-4xl mx-auto px-4 md:px-6">
         <div className="text-center mb-12">
           <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 mb-2">三步搞定，就这么简单</h2>

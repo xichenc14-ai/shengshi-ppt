@@ -91,7 +91,7 @@ export default function PricingSection() {
   };
 
   return (
-    <section className="py-16 md:py-20 bg-[#FAFBFE]" id="pricing">
+    <section className="py-20 md:py-24 bg-[#FAFBFE]" id="pricing">
       <div className="max-w-5xl mx-auto px-4 md:px-6">
         <div className="text-center mb-6">
           <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 mb-2">简单透明的定价</h2>
@@ -116,7 +116,7 @@ export default function PricingSection() {
           >
             年付
             <span className="ml-1 text-[9px] bg-[#10B981] text-white px-1.5 py-0.5 rounded-full align-middle">
-              省20%
+              最多省¥309
             </span>
           </button>
         </div>
@@ -152,7 +152,7 @@ export default function PricingSection() {
                     <span className="text-xs font-semibold text-[#5B4FE9]">{p.credits}</span>
                   </div>
                   {isAnnual && !p.ctaDisabled && (
-                    <p className="text-[10px] mt-1" style={{ color: '#5B4FE9' }}>年付 {p.prices.annual}，平均每月仅 {p.prices.annualMonthly}</p>
+                    <p className="text-[10px] mt-1" style={{ color: '#5B4FE9' }}>年付 {p.prices.annual}，{p.prices.annualSave}，平均每月仅 {p.prices.annualMonthly}</p>
                   )}
                 </div>
 

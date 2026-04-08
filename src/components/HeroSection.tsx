@@ -90,7 +90,7 @@ export default function HeroSection({ topic, setTopic, files, setFiles, onGenera
             value={topic}
             onChange={e => setTopic(e.target.value)}
             placeholder="✍️ 描述你的PPT需求，例如：帮我做一份Q1季度销售工作汇报..."
-            className="w-full px-4 py-3 rounded-xl bg-[#FAFBFE] border border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-300 transition-all"
+            className="w-full px-5 py-4 rounded-xl bg-[#FAFBFE] border border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-400 transition-all"
             rows={3}
           />
 
@@ -106,7 +106,7 @@ export default function HeroSection({ topic, setTopic, files, setFiles, onGenera
           >
             <span className="text-gray-400 text-sm">📎</span>
             <span className="text-xs text-gray-400">拖拽或点击上传文件</span>
-            <span className="text-[10px] text-gray-300 ml-auto">Word / PDF / Excel / PPT</span>
+            <span className="text-[10px] text-gray-400 ml-auto">Word / PDF / Excel / PPT</span>
           </div>
           <input ref={fileRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={onFileChange} className="hidden" />
 
@@ -128,7 +128,7 @@ export default function HeroSection({ topic, setTopic, files, setFiles, onGenera
             <button
               onClick={handleGenerate}
               disabled={!hasInput || loading}
-              className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-purple-300/40 hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-40 disabled:hover:shadow-none disabled:hover:translate-y-0"
+              className="w-full sm:w-auto px-10 py-4 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-xl text-base font-bold hover:shadow-lg hover:shadow-purple-300/40 hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-40 disabled:hover:shadow-none disabled:hover:translate-y-0"
             >
               🪄 免费生成PPT
             </button>

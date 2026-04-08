@@ -19,7 +19,7 @@ export default function Navbar() {
       </Link>
 
       {/* Desktop Nav Links */}
-      <div className="hidden md:flex items-center gap-6">
+      <div className="hidden md:flex items-center gap-8">
         <Link href="/#features" className="text-sm text-gray-500 hover:text-[#5B4FE9] transition-colors">功能特性</Link>
         <Link href="/pricing" className="text-sm text-gray-500 hover:text-[#5B4FE9] transition-colors">定价</Link>
         <Link href="/account" className="text-sm text-gray-500 hover:text-[#5B4FE9] transition-colors">用户中心</Link>

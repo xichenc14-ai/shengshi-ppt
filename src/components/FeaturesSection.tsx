@@ -13,7 +13,7 @@ const FEATURES = [
 
 export default function FeaturesSection() {
   return (
-    <section className="py-16 md:py-20 bg-[#FAFBFE]" id="features">
+    <section className="py-20 md:py-24 bg-[#FAFBFE]" id="features">
       <div className="max-w-5xl mx-auto px-4 md:px-6">
         <div className="text-center mb-10">
           <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 mb-2">为什么选择省心PPT？</h2>
