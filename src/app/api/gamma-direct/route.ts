@@ -47,18 +47,18 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 本地生成
-    const { fileId, downloadUrl } = await generatePPTX({
+    // 本地生成（纯内存）
+    const { fileId, base64 } = await generatePPTX({
       title,
       slides: slideInputs,
       themeId,
     });
 
-    const generationId = `${fileId}_${Date.now()}`;
-
     return NextResponse.json({
-      generationId,
-      downloadUrl,
+      generationId: `${fileId}_${Date.now()}`,
+      downloadUrl: `data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64,${base64}`,
+      base64,
+      filename: `省心PPT_${title.substring(0, 20)}.pptx`,
       message: 'PPT 生成完成',
       config: { themeId, tone, numCards },
     });

@@ -729,9 +729,21 @@ export default function Home() {
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                 {result.dlUrl && (
-                  <a href={result.dlUrl} download className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 transition-all">
+                  <button onClick={() => {
+                    // 支持 data: URL 和普通 URL
+                    if (result.dlUrl.startsWith('data:')) {
+                      const link = document.createElement('a');
+                      link.href = result.dlUrl;
+                      link.download = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    } else {
+                      window.open(result.dlUrl, '_blank');
+                    }
+                  }} className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 transition-all">
                     📥 下载 PPTX
-                  </a>
+                  </button>
                 )}
                 <button onClick={reset} className="w-full sm:w-auto px-8 py-3.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">
                   继续创建

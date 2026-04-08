@@ -1,6 +1,4 @@
 import PptxGenJS from 'pptxgenjs';
-import fs from 'fs';
-import path from 'path';
 
 // 主题配色表（与 Gamma 主题对应）
 const THEMES: Record<string, { primary: string; secondary: string; bg: string; text: string; accent: string; font: string }> = {
@@ -41,8 +39,8 @@ function generateFileId(): string {
   return `ppt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 }
 
-// 主生成函数
-export async function generatePPTX(options: GenerateOptions): Promise<{ fileId: string; filePath: string; downloadUrl: string }> {
+// 主生成函数 — 纯内存，不写磁盘（兼容 Vercel Serverless）
+export async function generatePPTX(options: GenerateOptions): Promise<{ fileId: string; buffer: Buffer; base64: string }> {
   const { title, slides, themeId = 'default-light' } = options;
 
   const theme = THEMES[themeId] || THEMES['default-light'];
@@ -155,17 +153,10 @@ export async function generatePPTX(options: GenerateOptions): Promise<{ fileId: 
     color: 'FFFFFF', align: 'center',
   });
 
-  // 写入文件
+  // 生成到内存（不写磁盘，兼容 Vercel Serverless）
   const fileId = generateFileId();
-  const outputDir = '/tmp/ppt-output';
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
-  }
-  const filePath = path.join(outputDir, `${fileId}.pptx`);
   const buffer = await pptx.write({ outputType: 'nodebuffer' }) as Buffer;
-  fs.writeFileSync(filePath, buffer);
+  const base64 = buffer.toString('base64');
 
-  const downloadUrl = `/api/export?file=${fileId}`;
-
-  return { fileId, filePath, downloadUrl };
+  return { fileId, buffer, base64 };
 }

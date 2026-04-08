@@ -15,7 +15,7 @@ const SCENE_THEME_MAP: Record<string, string> = {
   traditional: 'chisel',
 };
 
-// POST: 本地生成 PPT（不再调用 Gamma API）
+// POST: 本地生成 PPT（纯内存，兼容 Vercel Serverless）
 export async function POST(request: NextRequest) {
   const ip = request.headers.get('x-forwarded-for') || 'unknown';
   const { allowed } = rateLimit(`gamma:${ip}`, getRateLimitConfig('/api/gamma'));
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     // 从 slides 构建 PPT 结构
     let title = 'PPT';
-    let slideInputs = [];
+    let slideInputs: any[] = [];
 
     if (slides && Array.isArray(slides) && slides.length > 0) {
       // 优先使用结构化 slides 数据
@@ -68,18 +68,18 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 生成 PPT
-    const { fileId, downloadUrl } = await generatePPTX({
+    // 生成 PPT（纯内存，不写磁盘）
+    const { fileId, base64 } = await generatePPTX({
       title,
       slides: slideInputs,
       themeId: finalThemeId,
     });
 
-    const generationId = `${fileId}_${Date.now()}`;
-
     return NextResponse.json({
-      generationId,
-      downloadUrl,
+      generationId: `${fileId}_${Date.now()}`,
+      downloadUrl: `data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64,${base64}`,
+      base64,
+      filename: `省心PPT_${title.substring(0, 20)}.pptx`,
       message: 'PPT 生成完成',
       config: { themeId: finalThemeId, tone, imageMode, numCards },
     });
