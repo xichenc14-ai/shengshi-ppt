@@ -298,7 +298,7 @@ export async function POST(request: NextRequest) {
       : '';
     const finalInstructions = instructions + metaphorAppend;
 
-    // V6升级：cardSplit精确分页（inputTextBreaks严格按---分页，避免Gamma乱拆分）
+    // V7升级：简化 payload（去掉 cardOptions 等可能有问题的参数）
     const gammaPayload: Record<string, any> = {
       inputText: finalInputText,
       textMode, // generate=标准/g直通，preserve=省心定制
@@ -312,19 +312,6 @@ export async function POST(request: NextRequest) {
         language: 'zh-cn',
       },
       imageOptions,
-      cardOptions: {
-        dimensions: '16x9',
-        headerFooter: {
-          bottomRight: { type: 'cardNumber' },
-          hideFromFirstCard: true,
-        },
-        cardSplit: 'inputTextBreaks', // V6新增：严格按---分页
-      },
-      exportAs,
-      sharingOptions: {
-        workspaceAccess: 'view',
-        externalAccess: 'noAccess',
-      },
       // V6新增：preserve模式（省心定制）追加强布局指令
       ...(textMode === 'preserve' && {
         additionalInstructions: finalInstructions + '\n\n【省心定制-强化规则】\n严格保持原文结构，每页内容不超过3-4个要点，用---分页的位置必须保留，不要自动合并或拆分页面。'
@@ -334,6 +321,8 @@ export async function POST(request: NextRequest) {
         additionalInstructions: finalInstructions + '\n\n【精选套图-强调布局图】\n请为每一页自动配Gamma内置的强调布局图（Emphasize布局），这些是Gamma模板自带的免费装饰性图片，不需要额外credits。每页使用不同的强调图，保持视觉丰富度。'
       }),
     };
+
+    console.log('[Gamma] Payload:', JSON.stringify(gammaPayload, null, 2));
 
     // 创建 Gamma 生成任务
     const gammaResponse = await fetch(`${GAMMA_API_BASE}/generations`, {
@@ -348,9 +337,9 @@ export async function POST(request: NextRequest) {
 
     if (!gammaResponse.ok) {
       const errText = await gammaResponse.text();
-      console.error('Gamma API error:', gammaResponse.status, errText);
+      console.error('[Gamma] API error:', gammaResponse.status, errText);
       return NextResponse.json(
-        { error: `Gamma API 调用失败: ${gammaResponse.status}` },
+        { error: `Gamma API 调用失败: ${gammaResponse.status}`, detail: errText.substring(0, 500) },
         { status: 502 }
       );
     }

@@ -97,7 +97,20 @@ export async function POST(request: NextRequest) {
     const finalInstructions = instructions + metaphorAppend + emphasisAppend;
     const finalThemeId = themeId || SCENE_CONFIGS.biz.themeId;
 
-    // 步骤1：创建 Gamma 生成任务
+    // 步骤1：创建 Gamma 生成任务（简化 payload，去掉可能有问题的参数）
+    const gammaPayload = {
+      inputText: finalInputText,
+      textMode,
+      format: 'presentation',
+      numCards,
+      themeId: finalThemeId,
+      additionalInstructions: finalInstructions,
+      textOptions: { amount: 'medium', tone, language: 'zh-cn' },
+      imageOptions,
+    };
+
+    console.log('[Gamma Direct] Payload:', JSON.stringify(gammaPayload, null, 2));
+
     const createRes = await fetch(`${GAMMA_API_BASE}/generations`, {
       method: 'POST',
       headers: {
@@ -105,29 +118,16 @@ export async function POST(request: NextRequest) {
         'X-API-KEY': apiKey,
         'User-Agent': GAMMA_UA,
       },
-      body: JSON.stringify({
-        inputText: finalInputText,
-        textMode,
-        format: 'presentation',
-        numCards,
-        themeId: finalThemeId,
-        additionalInstructions: finalInstructions,
-        textOptions: { amount: 'medium', tone, language: 'zh-cn' },
-        imageOptions,
-        cardOptions: {
-          dimensions: '16x9',
-          headerFooter: { bottomRight: { type: 'cardNumber' }, hideFromFirstCard: true },
-          cardSplit: 'inputTextBreaks', // V6新增：精确分页控制
-        },
-        exportAs,
-        sharingOptions: { workspaceAccess: 'view', externalAccess: 'noAccess' },
-      }),
+      body: JSON.stringify(gammaPayload),
     });
 
     if (!createRes.ok) {
       const errText = await createRes.text();
-      console.error('Gamma API create error:', createRes.status, errText);
-      return NextResponse.json({ error: `Gamma API 调用失败: ${createRes.status}` }, { status: 502 });
+      console.error('[Gamma Direct] API error:', createRes.status, errText);
+      return NextResponse.json({ 
+        error: `Gamma API 调用失败: ${createRes.status}`,
+        detail: errText.substring(0, 500)
+      }, { status: 502 });
     }
 
     const createData = await createRes.json();
