@@ -4,15 +4,16 @@ import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-// 场景 → 推荐配置映射（V6：pictographic免费 + imagen-3-flash）
+// 场景 → 推荐配置映射（V7 修复：Gamma API 只支持 noImages/webFreeToUseCommercially/aiGenerated）
+// pictographic 不是 Gamma API 支持的值，改成 webFreeToUseCommercially（免费搜索图）
 const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource: string; imageModel: string }> = {
-  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
-  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
+  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
   training: { themeId: 'icebreaker', tone: 'casual', imageSource: 'noImages', imageModel: '' },
   creative: { themeId: 'electric', tone: 'creative', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
-  education: { themeId: 'chisel', tone: 'casual', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  education: { themeId: 'chisel', tone: 'casual', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
   data: { themeId: 'gleam', tone: 'professional', imageSource: 'noImages', imageModel: '' },
-  annual: { themeId: 'blues', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  annual: { themeId: 'blues', tone: 'professional', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
   launch: { themeId: 'aurora', tone: 'bold', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
   traditional: { themeId: 'chisel', tone: 'traditional', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
 };
@@ -67,14 +68,14 @@ export async function POST(request: NextRequest) {
       finalInputText = finalInputText.split(/\n\n+/).filter((p: string) => p.trim()).join('\n\n---\n\n');
     }
 
-    // 图片选项（V6新4种模式）
-    // 1=纯净无图 2=精选套图(强调布局图) 3=定制网图 4=定制AI图
+    // 图片选项（V7 修复：Gamma API 只支持三种 source）
+    // 1=纯净无图 2=精选套图(fallback到webFreeToUseCommercially) 3=定制网图 4=定制AI图
     let imageOptions: Record<string, any> = {};
     if (imageSource === 'none' || imageSource === 'noImages') {
       imageOptions = { source: 'noImages' };
     } else if (imageSource === 'emphasis') {
-      // 精选套图（强调布局图，由additionalInstructions触发）
-      imageOptions = { source: 'noImages' };
+      // 精选套图：Gamma无此模式，fallback到免费搜索图
+      imageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageSource === 'web') {
       imageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageSource === 'ai' || imageSource === 'aiGenerated') {

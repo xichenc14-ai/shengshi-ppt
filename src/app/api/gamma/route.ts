@@ -4,15 +4,16 @@ import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-// 场景 → 推荐配置映射（V6 升级：pictographic免费插图 + imagen-3-flash）
+// 场景 → 推荐配置映射（V7 修复：Gamma API 只支持 noImages/webFreeToUseCommercially/aiGenerated）
+// pictographic 不是 Gamma API 支持的值，改成 webFreeToUseCommercially（免费搜索图）
 const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource: string; imageModel: string }> = {
-  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
-  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
+  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
   training: { themeId: 'icebreaker', tone: 'casual', imageSource: 'noImages', imageModel: '' },
   creative: { themeId: 'electric', tone: 'creative', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
-  education: { themeId: 'chisel', tone: 'casual', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  education: { themeId: 'chisel', tone: 'casual', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
   data: { themeId: 'gleam', tone: 'professional', imageSource: 'noImages', imageModel: '' },
-  annual: { themeId: 'blues', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  annual: { themeId: 'blues', tone: 'professional', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
   launch: { themeId: 'aurora', tone: 'bold', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
   traditional: { themeId: 'chisel', tone: 'traditional', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
 };
@@ -286,8 +287,8 @@ export async function POST(request: NextRequest) {
       // 4-定制AI图（只用普通模型：imagen-3-flash/flux-kontext-fast，禁用高级模型）
       imageOptions = { source: 'aiGenerated', model: 'imagen-3-flash', style: 'flat illustration, minimalist, clean background, negative space' };
     } else {
-      // 默认：纯净无图
-      imageOptions = { source: 'noImages' };
+      // 默认：免费搜索图
+      imageOptions = { source: 'webFreeToUseCommercially' }; // 免费且效果好
     }
 
     const instructions = INSTRUCTION_TEMPLATES[finalTone] || INSTRUCTION_TEMPLATES.professional;
