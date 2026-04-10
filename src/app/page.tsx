@@ -444,46 +444,7 @@ export default function Home() {
       {/* ===== LANDING PAGE ===== */}
       {phase === 'landing' && (
         <>
-          <HeroSection topic={topic} setTopic={setTopic} files={files} setFiles={setFiles} onGenerate={startGenerate} hasInput={hasInput} loading={loading} />
-
-          {/* ===== 双轨制入口 ===== */}
-          <div className="max-w-3xl mx-auto px-4 pt-10 pb-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* 专业模式 */}
-              <button
-                onClick={() => { if (!user) { openLogin(); return; } setMode('direct'); setPhase('input'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                className="bg-white rounded-2xl border-2 border-gray-100 p-5 text-left hover:border-[#5B4FE9] hover:shadow-md transition-all group"
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-2xl">🛠️</span>
-                  <h3 className="text-base font-bold text-gray-900 group-hover:text-[#4338CA]">专业模式</h3>
-                </div>
-                <p className="text-xs text-gray-500 mb-3">快速生成，选主题/配图/页数，直接提交渲染</p>
-                <div className="flex flex-wrap gap-1">
-                  <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px]">主题色系</span>
-                  <span className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded text-[10px]">自选配图</span>
-                </div>
-              </button>
-
-              {/* 省心定制 */}
-              <button
-                onClick={() => { if (!user) { openLogin(); return; } setMode('smart'); setPhase('input'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                className="bg-gradient-to-br from-[#F5F3FF] to-white rounded-2xl border-2 border-[#EDE9FE] p-5 text-left hover:border-[#5B4FE9] hover:shadow-md transition-all group relative"
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-2xl">✨</span>
-                  <h3 className="text-base font-bold text-gray-900 group-hover:text-[#4338CA]">省心定制</h3>
-                  <span className="px-1.5 py-0.5 bg-[#5B4FE9] text-white rounded text-[10px]">会员</span>
-                </div>
-                <p className="text-xs text-gray-500 mb-3">AI深度优化，专业级PPT忠实呈现</p>
-                <div className="flex flex-wrap gap-1">
-                  <span className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded text-[10px]">AI预处理</span>
-                  <span className="px-2 py-0.5 bg-amber-50 text-amber-600 rounded text-[10px]">preserve</span>
-                  <span className="px-2 py-0.5 bg-rose-50 text-rose-600 rounded text-[10px]">深度定制</span>
-                </div>
-              </button>
-            </div>
-          </div>
+          <HeroSection onSelectMode={(m) => { setMode(m); setPhase('input'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
 
           <SceneCards />
           <ProcessSection />
