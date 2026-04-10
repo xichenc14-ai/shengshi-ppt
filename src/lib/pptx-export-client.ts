@@ -9,7 +9,7 @@ function getTemplate(templateId: string): Template {
 export async function exportToPPTXClient(presentation: Presentation): Promise<Blob> {
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_16x9';
-  pptx.author = '省事PPT';
+  pptx.author = '省心PPT';
   pptx.title = presentation.title;
 
   const template = getTemplate(presentation.templateId);

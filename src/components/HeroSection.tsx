@@ -76,7 +76,7 @@ export default function HeroSection({ topic, setTopic, files, setFiles, onGenera
       <div className="relative max-w-3xl mx-auto px-4 md:px-6 text-center">
         {/* Main heading */}
         <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight leading-tight">
-          省事PPT，AI帮你搞定
+          省心PPT，AI帮你搞定
           <span className="bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] bg-clip-text text-transparent"> 每一份演示</span>
         </h1>
         <p className="text-base md:text-lg text-gray-500 mb-8 max-w-xl mx-auto leading-relaxed">
