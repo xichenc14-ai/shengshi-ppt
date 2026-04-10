@@ -67,12 +67,17 @@ export default function ProPanel({ open, onClose, genMode, setGenMode, theme, se
       <div className="fixed right-0 top-0 bottom-0 w-80 md:w-96 bg-white shadow-2xl z-50 overflow-y-auto animate-slide-in-right">
         {/* Header */}
         <div className="sticky top-0 bg-white/90 backdrop-blur-xl border-b border-gray-100 px-5 py-4 flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-bold text-gray-900">⚙️ 专业模式</h3>
-            <p className="text-[10px] text-gray-400 mt-0.5">自定义生成参数</p>
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#EDE9FE] to-[#DDD6FE] flex items-center justify-center">
+              <svg className="w-4 h-4 text-[#5B4FE9]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">专业模式</h3>
+              <p className="text-[10px] text-gray-400 mt-0.5">自定义生成参数</p>
+            </div>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors">
-            ✕
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
         </div>
 
@@ -166,7 +171,7 @@ export default function ProPanel({ open, onClose, genMode, setGenMode, theme, se
               max={30}
               value={pages}
               onChange={e => setPages(Number(e.target.value))}
-              className="w-full h-2 bg-gray-100 rounded-full appearance-none cursor-pointer accent-[#5B4FE9]"
+              className="w-full"
             />
             <div className="flex justify-between text-[9px] text-gray-300 mt-1"><span>3</span><span>30</span></div>
           </div>

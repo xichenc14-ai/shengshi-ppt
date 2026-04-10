@@ -76,14 +76,14 @@ export const THEME_DATABASE: GammaTheme[] = [
   { id: 'luxe', name: 'Luxe', nameZh: '奢侈深棕', colors: ['#1C1917', '#D97706', '#F5F5F4'], category: 'gold', categoryZh: '金色奢华', emoji: '🪙', style: '奢侈高端', scenes: ['产品发布', '路演融资', '年度总结'] },
 ];
 
-export const COLOR_CATEGORIES = [
-  { id: 'blue', name: '蓝色系', emoji: '🟦', count: 8 },
-  { id: 'gray', name: '黑白灰', emoji: '⬛', count: 8 },
-  { id: 'purple', name: '紫色系', emoji: '🟪', count: 5 },
-  { id: 'brown', name: '棕米大地', emoji: '🟫', count: 7 },
-  { id: 'pink', name: '粉色系', emoji: '🩷', count: 6 },
-  { id: 'warm', name: '绿色活力', emoji: '🟩', count: 9 },
-  { id: 'gold', name: '金色奢华', emoji: '🪙', count: 7 },
+export const COLOR_CATEGORIES: Array<{ id: string; name: string; emoji: string; count: number; colors: string[] }> = [
+  { id: 'blue', name: '蓝色系', emoji: '🟦', count: 8, colors: ['#1E3A5F', '#2563EB', '#3B82F6'] },
+  { id: 'gray', name: '黑白灰', emoji: '⬛', count: 8, colors: ['#1F2937', '#374151', '#6B7280'] },
+  { id: 'purple', name: '紫色系', emoji: '🟪', count: 5, colors: ['#7C3AED', '#A78BFA', '#06B6D4'] },
+  { id: 'brown', name: '棕米大地', emoji: '🟫', count: 7, colors: ['#92400E', '#D97706', '#78350F'] },
+  { id: 'pink', name: '粉色系', emoji: '🩷', count: 6, colors: ['#FDF2F8', '#EC4899', '#BE185D'] },
+  { id: 'warm', name: '暖色活力', emoji: '🟧', count: 9, colors: ['#1F2937', '#F97316', '#22C55E'] },
+  { id: 'gold', name: '金色奢华', emoji: '🪙', count: 7, colors: ['#111827', '#F59E0B', '#FCD34D'] },
 ];
 
 export function getThemesByCategory(category: string): GammaTheme[] {

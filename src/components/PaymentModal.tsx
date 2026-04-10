@@ -140,8 +140,7 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
               {submitting ? (
                 <span className="loading-dots"><span /> <span /> <span /></span>
               ) : (
-                <>下一步 →"
-                </>
+                <span>下一步</span>
               )}
             </button>
 

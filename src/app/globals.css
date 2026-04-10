@@ -146,9 +146,74 @@ body {
 .loading-dots span:nth-child(2) { animation-delay: -0.16s; }
 .loading-dots span:nth-child(3) { animation-delay: 0s; }
 
-/* 幻灯片过渡 */
-.slide-transition {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+/* 自定义 Range Slider */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: linear-gradient(to right, #5B4FE9 var(--range-progress, 50%), #E5E7EB var(--range-progress, 50%));
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #5B4FE9;
+  box-shadow: 0 1px 4px rgba(91, 79, 233, 0.4);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type='range']::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 2px 8px rgba(91, 79, 233, 0.5);
+}
+
+input[type='range']::-webkit-slider-thumb:active {
+  transform: scale(1.05);
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #5B4FE9;
+  box-shadow: 0 1px 4px rgba(91, 79, 233, 0.4);
+  cursor: pointer;
+  border: none;
+}
+
+/* 隐藏 scrollbar（保留功能） */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* 登录模态框动画增强 */
+@keyframes modalSlideUp {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.animate-modal-slide-up {
+  animation: modalSlideUp 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* 渐变文字 */
+.text-gradient {
+  background: linear-gradient(135deg, #5B4FE9, #8B5CF6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 /* 新增动画 */

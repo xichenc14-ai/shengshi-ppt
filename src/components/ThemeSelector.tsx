@@ -14,74 +14,92 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
 
   return (
     <div>
-      {/* 第一级：色系选择 */}
-      <div className="grid grid-cols-7 gap-2 mb-4">
+      {/* Color category swatches — horizontal scroll on mobile */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide">
         {COLOR_CATEGORIES.map(cat => (
           <button
             key={cat.id}
             onClick={() => setSelectedCategory(cat.id === selectedCategory ? null : cat.id)}
-            className={`flex flex-col items-center p-2 rounded-xl border-2 transition-all ${
+            className={`flex-shrink-0 flex flex-col items-center p-2 rounded-xl border-2 transition-all duration-200 ${
               selectedCategory === cat.id
-                ? 'border-[#5B4FE9] bg-[#F5F3FF] scale-105'
-                : 'border-gray-100 hover:border-gray-200 bg-white'
+                ? 'border-[#5B4FE9] bg-[#F5F3FF] scale-105 shadow-sm'
+                : 'border-gray-100 hover:border-gray-200 bg-white hover:shadow-sm'
             }`}
+            title={cat.name}
           >
-            <span className="text-xl mb-0.5">{cat.emoji}</span>
-            <span className="text-[10px] font-medium text-gray-700">{cat.name}</span>
-            <span className="text-[9px] text-gray-400">{cat.count}个</span>
+            <div className="flex gap-0.5 mb-1">
+              {cat.colors.slice(0, 3).map((c, i) => (
+                <div key={i} className="w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: c }} />
+              ))}
+            </div>
+            <span className="text-[10px] font-medium text-gray-600 whitespace-nowrap">{cat.name}</span>
           </button>
         ))}
       </div>
 
-      {/* 第二级：该色系下的主题 */}
+      {/* Sub-themes grid */}
       {selectedCategory && (
-        <div className="bg-gray-50 rounded-xl p-4 mb-4">
+        <div className="bg-[#FAFBFE] rounded-xl p-4 mb-4 animate-fade-in">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-gray-600">
-              {COLOR_CATEGORIES.find(c => c.id === selectedCategory)?.emoji}{' '}
-              {COLOR_CATEGORIES.find(c => c.id === selectedCategory)?.name}
-            </span>
-            <button onClick={() => setSelectedCategory(null)} className="text-xs text-gray-400 hover:text-gray-600">收起 △</button>
+            <div className="flex items-center gap-2">
+              <div className="flex gap-0.5">
+                {(COLOR_CATEGORIES.find(c => c.id === selectedCategory)?.colors || []).slice(0, 3).map((c, i) => (
+                  <div key={i} className="w-3 h-3 rounded-sm" style={{ backgroundColor: c }} />
+                ))}
+              </div>
+              <span className="text-sm font-medium text-gray-600">
+                {COLOR_CATEGORIES.find(c => c.id === selectedCategory)?.name}
+              </span>
+              <span className="text-xs text-gray-400">· {themes.length} 个主题</span>
+            </div>
+            <button 
+              onClick={() => setSelectedCategory(null)} 
+              className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1 transition-colors"
+            >
+              收起
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 15l-6-6-6 6"/></svg>
+            </button>
           </div>
           <div className="grid grid-cols-4 gap-2">
             {themes.map(theme => (
               <button
                 key={theme.id}
                 onClick={() => onChange(theme.id)}
-                className={`relative flex flex-col items-center p-2 rounded-xl border-2 transition-all ${
+                className={`relative flex flex-col items-center p-2 rounded-xl border-2 transition-all duration-150 ${
                   value === theme.id
                     ? 'border-[#5B4FE9] bg-white shadow-sm'
-                    : 'border-gray-100 hover:border-gray-200 bg-white'
+                    : 'border-gray-100 hover:border-gray-200 bg-white hover:shadow-sm'
                 }`}
               >
                 {value === theme.id && (
-                  <span className="absolute top-1 right-1 text-[10px] bg-[#5B4FE9] text-white rounded-full w-4 h-4 flex items-center justify-center">✓</span>
+                  <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#5B4FE9] rounded-full flex items-center justify-center shadow">
+                    <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20,6 9,17 4,12"/></svg>
+                  </span>
                 )}
-                <div className="flex gap-0.5 mb-1">
+                <div className="flex gap-0.5 mb-1.5">
                   {theme.colors.slice(0, 3).map((c, i) => (
-                    <div key={i} className="w-5 h-5 rounded-sm" style={{ backgroundColor: c }} />
+                    <div key={i} className="w-5 h-5 rounded-sm shadow-sm" style={{ backgroundColor: c }} />
                   ))}
                 </div>
-                <span className="text-[10px] font-medium text-gray-700">{theme.nameZh}</span>
-                <span className="text-[9px] text-gray-400">{theme.style}</span>
+                <span className="text-[10px] font-medium text-gray-700 text-center leading-tight">{theme.nameZh}</span>
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* 当前选中预览 */}
+      {/* Current selection preview */}
       {currentTheme && (
-        <div className="flex items-center gap-2 text-xs text-gray-500">
-          <span>已选：</span>
+        <div className="flex items-center gap-2.5 text-xs text-gray-500">
+          <span className="text-gray-400">已选：</span>
           <div className="flex gap-0.5">
             {currentTheme.colors.map((c, i) => (
-              <div key={i} className="w-3 h-3 rounded-sm" style={{ backgroundColor: c }} />
+              <div key={i} className="w-3.5 h-3.5 rounded-sm shadow-sm" style={{ backgroundColor: c }} />
             ))}
           </div>
-          <span>{currentTheme.nameZh}</span>
-          <span className="text-gray-300">|</span>
-          <span>{currentTheme.style}</span>
+          <span className="font-medium text-gray-700">{currentTheme.nameZh}</span>
+          <span className="text-gray-300">·</span>
+          <span className="text-gray-400">{currentTheme.style}</span>
         </div>
       )}
     </div>

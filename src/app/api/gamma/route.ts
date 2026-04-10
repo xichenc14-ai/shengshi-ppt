@@ -4,17 +4,17 @@ import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-// 场景 → 推荐配置映射
-const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource: string }> = {
-  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'webFreeToUseCommercially' },
-  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'webFreeToUseCommercially' },
-  training: { themeId: 'icebreaker', tone: 'casual', imageSource: 'noImages' },
-  creative: { themeId: 'electric', tone: 'creative', imageSource: 'aiGenerated' },
-  education: { themeId: 'chisel', tone: 'casual', imageSource: 'noImages' },
-  data: { themeId: 'gleam', tone: 'professional', imageSource: 'noImages' },
-  annual: { themeId: 'blues', tone: 'professional', imageSource: 'webFreeToUseCommercially' },
-  launch: { themeId: 'aurora', tone: 'bold', imageSource: 'aiGenerated' },
-  traditional: { themeId: 'chisel', tone: 'traditional', imageSource: 'aiGenerated' },
+// 场景 → 推荐配置映射（V6 升级：pictographic免费插图 + imagen-3-flash）
+const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource: string; imageModel: string }> = {
+  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  training: { themeId: 'icebreaker', tone: 'casual', imageSource: 'noImages', imageModel: '' },
+  creative: { themeId: 'electric', tone: 'creative', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
+  education: { themeId: 'chisel', tone: 'casual', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  data: { themeId: 'gleam', tone: 'professional', imageSource: 'noImages', imageModel: '' },
+  annual: { themeId: 'blues', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  launch: { themeId: 'aurora', tone: 'bold', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
+  traditional: { themeId: 'chisel', tone: 'traditional', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
 };
 
 const INSTRUCTION_TEMPLATES: Record<string, string> = {
@@ -270,20 +270,21 @@ export async function POST(request: NextRequest) {
     const finalThemeId = themeId || sceneConfig.themeId;
     const finalTone = tone || sceneConfig.tone;
 
-    // 图片模式
+    // 图片模式（V6 升级：三级别方案 + pictographic免费插图）
+    // 级别1=标准版（默认pictographic免费），级别2=AI生图（imagen-3-flash），级别3=AI高级（flux-kontext-pro）
     let imageOptions: Record<string, any> = {};
     if (imageMode === 'none') {
+      // 级别1-纯净无图
       imageOptions = { source: 'noImages' };
     } else if (imageMode === 'ai') {
-      imageOptions = { source: 'aiGenerated', model: 'flux-kontext-fast', style: 'Minimalist, clean background, negative space, professional' };
+      // 级别2-AI生图版（imagen-3-flash: 2 credits，性价比最高）
+      imageOptions = { source: 'aiGenerated', model: 'imagen-3-flash', style: 'flat illustration, minimalist, clean background, negative space' };
+    } else if (imageMode === 'ai-premium') {
+      // 级别3-AI高级图版（需批准，flux-kontext-pro: 20 credits）
+      imageOptions = { source: 'aiGenerated', model: 'flux-kontext-pro', style: 'flat illustration, minimalist, clean background, negative space, professional' };
     } else {
-      imageOptions = { source: sceneConfig.imageSource };
-      if (sceneConfig.imageSource === 'aiGenerated') {
-        imageOptions.model = 'flux-kontext-fast';
-        imageOptions.style = scene === 'traditional'
-          ? 'Chinese traditional, ink wash, classical Chinese art, elegant calligraphy'
-          : 'Minimalist, clean background, negative space, professional';
-      }
+      // 默认级别1-标准版：pictographic（免费插图/摘要图，效果好且0 credits）
+      imageOptions = { source: 'pictographic' };
     }
 
     const instructions = INSTRUCTION_TEMPLATES[finalTone] || INSTRUCTION_TEMPLATES.professional;
@@ -293,9 +294,10 @@ export async function POST(request: NextRequest) {
       : '';
     const finalInstructions = instructions + metaphorAppend;
 
+    // V6升级：cardSplit精确分页（inputTextBreaks严格按---分页，避免Gamma乱拆分）
     const gammaPayload: Record<string, any> = {
       inputText: finalInputText,
-      textMode,
+      textMode, // generate=标准/g直通，preserve=省心定制
       format,
       numCards,
       themeId: finalThemeId,
@@ -312,12 +314,17 @@ export async function POST(request: NextRequest) {
           bottomRight: { type: 'cardNumber' },
           hideFromFirstCard: true,
         },
+        cardSplit: 'inputTextBreaks', // V6新增：严格按---分页
       },
       exportAs,
       sharingOptions: {
         workspaceAccess: 'view',
         externalAccess: 'noAccess',
       },
+      // V6新增：preserve模式（省心定制）追加强布局指令
+      ...(textMode === 'preserve' && {
+        additionalInstructions: finalInstructions + '\n\n【省心定制-强化规则】\n严格保持原文结构，每页内容不超过3-4个要点，用---分页的位置必须保留，不要自动合并或拆分页面。'
+      }),
     };
 
     // 创建 Gamma 生成任务

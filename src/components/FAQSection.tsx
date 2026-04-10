@@ -22,22 +22,31 @@ export default function FAQSection() {
         </div>
 
         <div className="space-y-2">
-          {FAQS.map((f, i) => (
-            <div key={i} className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-              <button
-                onClick={() => setOpenIdx(openIdx === i ? null : i)}
-                className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50/50 transition-colors"
-              >
-                <span className="text-sm font-semibold text-gray-800 pr-4">{f.q}</span>
-                <span className={`text-gray-400 text-lg flex-shrink-0 transition-transform duration-200 ${openIdx === i ? 'rotate-45' : ''}`}>+</span>
-              </button>
-              {openIdx === i && (
-                <div className="px-5 pb-4 animate-fade-in">
-                  <p className="text-sm text-gray-500 leading-relaxed">{f.a}</p>
-                </div>
-              )}
-            </div>
-          ))}
+          {FAQS.map((f, i) => {
+            const isOpen = openIdx === i;
+            return (
+              <div key={i} className="bg-white border border-gray-100 rounded-xl overflow-hidden hover:border-[#EDE9FE] transition-colors">
+                <button
+                  onClick={() => setOpenIdx(isOpen ? null : i)}
+                  className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-[#FAFBFE]/50 transition-colors group"
+                >
+                  <span className="text-sm font-semibold text-gray-800 pr-4 group-hover:text-[#5B4FE9] transition-colors">{f.q}</span>
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center transition-all duration-200 flex-shrink-0 ${
+                    isOpen ? 'bg-[#5B4FE9] text-white rotate-180' : 'bg-gray-100 text-gray-400 group-hover:bg-[#EDE9FE] group-hover:text-[#5B4FE9]'
+                  }`}>
+                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <path d="M12 5v14M5 12h14" className={`transition-all duration-200 ${isOpen ? 'rotate-90 opacity-0' : ''}`}/>
+                    </svg>
+                  </span>
+                </button>
+                {isOpen && (
+                  <div className="px-5 pb-4 animate-fade-in">
+                    <p className="text-sm text-gray-500 leading-relaxed pl-0.5 border-l-2 border-[#EDE9FE] pl-4">{f.a}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>

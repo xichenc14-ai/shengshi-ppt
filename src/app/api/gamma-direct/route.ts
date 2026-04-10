@@ -4,16 +4,17 @@ import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource: string }> = {
-  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'webFreeToUseCommercially' },
-  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'webFreeToUseCommercially' },
-  training: { themeId: 'icebreaker', tone: 'casual', imageSource: 'noImages' },
-  creative: { themeId: 'electric', tone: 'creative', imageSource: 'aiGenerated' },
-  education: { themeId: 'chisel', tone: 'casual', imageSource: 'noImages' },
-  data: { themeId: 'gleam', tone: 'professional', imageSource: 'noImages' },
-  annual: { themeId: 'blues', tone: 'professional', imageSource: 'webFreeToUseCommercially' },
-  launch: { themeId: 'aurora', tone: 'bold', imageSource: 'aiGenerated' },
-  traditional: { themeId: 'chisel', tone: 'traditional', imageSource: 'aiGenerated' },
+// 场景 → 推荐配置映射（V6：pictographic免费 + imagen-3-flash）
+const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource: string; imageModel: string }> = {
+  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  training: { themeId: 'icebreaker', tone: 'casual', imageSource: 'noImages', imageModel: '' },
+  creative: { themeId: 'electric', tone: 'creative', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
+  education: { themeId: 'chisel', tone: 'casual', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  data: { themeId: 'gleam', tone: 'professional', imageSource: 'noImages', imageModel: '' },
+  annual: { themeId: 'blues', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  launch: { themeId: 'aurora', tone: 'bold', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
+  traditional: { themeId: 'chisel', tone: 'traditional', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
 };
 
 const INSTRUCTION_TEMPLATES: Record<string, string> = {
@@ -66,12 +67,23 @@ export async function POST(request: NextRequest) {
       finalInputText = finalInputText.split(/\n\n+/).filter((p: string) => p.trim()).join('\n\n---\n\n');
     }
 
-    // 图片选项
-    let imageOptions: Record<string, any> = { source: imageSource };
-    if (imageSource === 'aiGenerated') {
-      imageOptions = { source: 'aiGenerated', model: 'flux-kontext-fast', style: 'Minimalist, clean background, negative space, professional' };
-    } else if (imageSource === 'noImages') {
+    // 图片选项（V6：三级别方案 + pictographic默认免费）
+    // 前端传来：pictographic/noImages/pexels/webFreeToUseCommercially/aiGenerated
+    let imageOptions: Record<string, any> = {};
+    if (imageSource === 'noImages') {
       imageOptions = { source: 'noImages' };
+    } else if (imageSource === 'aiGenerated' || imageSource === 'ai') {
+      // 级别2-AI生图版（imagen-3-flash: 2 credits，性价比最高）
+      imageOptions = { source: 'aiGenerated', model: 'imagen-3-flash', style: 'flat illustration, minimalist, clean background, negative space' };
+    } else if (imageSource === 'ai-premium') {
+      // 级别3-AI高级图版（flux-kontext-pro: 20 credits，需批准）
+      imageOptions = { source: 'aiGenerated', model: 'flux-kontext-pro', style: 'flat illustration, minimalist, clean background, negative space, professional' };
+    } else if (imageSource === 'pexels' || imageSource === 'webFreeToUseCommercially') {
+      // 级别1-标准版（免费高清图）
+      imageOptions = { source: imageSource };
+    } else {
+      // 默认级别1-标准版：pictographic（免费插图/摘要图，效果好且0 credits）
+      imageOptions = { source: 'pictographic' };
     }
 
     const instructions = INSTRUCTION_TEMPLATES[tone] || INSTRUCTION_TEMPLATES.professional;
@@ -102,6 +114,7 @@ export async function POST(request: NextRequest) {
         cardOptions: {
           dimensions: '16x9',
           headerFooter: { bottomRight: { type: 'cardNumber' }, hideFromFirstCard: true },
+          cardSplit: 'inputTextBreaks', // V6新增：精确分页控制
         },
         exportAs,
         sharingOptions: { workspaceAccess: 'view', externalAccess: 'noAccess' },
