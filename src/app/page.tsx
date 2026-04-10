@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 
 import Navbar from '@/components/Navbar';
 import HeroSection from '@/components/HeroSection';
+import SceneCards from '@/components/SceneCards';
+import ProcessSection from '@/components/ProcessSection';
 import FAQSection from '@/components/FAQSection';
 import TestimonialSection from '@/components/TestimonialSection';
 import Footer from '@/components/Footer';
@@ -483,6 +485,8 @@ export default function Home() {
             </div>
           </div>
 
+          <SceneCards />
+          <ProcessSection />
           <FAQSection />
           <TestimonialSection />
           {/* 底部极简导航 */}
