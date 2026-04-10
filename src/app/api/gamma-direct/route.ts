@@ -4,16 +4,15 @@ import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-// 场景 → 推荐配置映射（V7 修复：Gamma API 只支持 noImages/webFreeToUseCommercially/aiGenerated）
-// pictographic 不是 Gamma API 支持的值，改成 webFreeToUseCommercially（免费搜索图）
+// 场景 → 推荐配置映射（恢复技术部验证的 pictographic）
 const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource: string; imageModel: string }> = {
-  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
-  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
+  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
   training: { themeId: 'icebreaker', tone: 'casual', imageSource: 'noImages', imageModel: '' },
   creative: { themeId: 'electric', tone: 'creative', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
-  education: { themeId: 'chisel', tone: 'casual', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
+  education: { themeId: 'chisel', tone: 'casual', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
   data: { themeId: 'gleam', tone: 'professional', imageSource: 'noImages', imageModel: '' },
-  annual: { themeId: 'blues', tone: 'professional', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
+  annual: { themeId: 'blues', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
   launch: { themeId: 'aurora', tone: 'bold', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
   traditional: { themeId: 'chisel', tone: 'traditional', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
 };
@@ -68,21 +67,22 @@ export async function POST(request: NextRequest) {
       finalInputText = finalInputText.split(/\n\n+/).filter((p: string) => p.trim()).join('\n\n---\n\n');
     }
 
-    // 图片选项（V7 修复：Gamma API 只支持三种 source）
-    // 1=纯净无图 2=精选套图(fallback到webFreeToUseCommercially) 3=定制网图 4=定制AI图
+    // 图片选项（按照技术部 gamma-phase2-report.md 验证的11种图片源）
+    // pictographic 是技术部验证有效的免费插图源（0 credits）
     let imageOptions: Record<string, any> = {};
     if (imageSource === 'none' || imageSource === 'noImages') {
-      imageOptions = { source: 'noImages' };
-    } else if (imageSource === 'emphasis') {
-      // 精选套图：Gamma无此模式，fallback到免费搜索图
-      imageOptions = { source: 'webFreeToUseCommercially' };
+      imageOptions = { source: 'noImages' }; // 纯文字
+    } else if (imageSource === 'emphasis' || imageSource === 'pictographic') {
+      // 精选套图/插图：技术部验证的 pictographic（免费摘要图）
+      imageOptions = { source: 'pictographic' }; // ⭐ 推荐！免费插图
     } else if (imageSource === 'web') {
       imageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageSource === 'ai' || imageSource === 'aiGenerated') {
       // 定制AI图：只用普通模型，禁用高级模型
       imageOptions = { source: 'aiGenerated', model: 'imagen-3-flash', style: 'flat illustration, minimalist, clean background, negative space' };
     } else {
-      imageOptions = { source: 'noImages' };
+      // 默认：pictographic（技术部推荐）
+      imageOptions = { source: 'pictographic' };
     }
 
     const instructions = INSTRUCTION_TEMPLATES[tone] || INSTRUCTION_TEMPLATES.professional;
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
     const finalInstructions = instructions + metaphorAppend + emphasisAppend;
     const finalThemeId = themeId || SCENE_CONFIGS.biz.themeId;
 
-    // 步骤1：创建 Gamma 生成任务（简化 payload，去掉可能有问题的参数）
+    // 步骤1：创建 Gamma 生成任务（恢复技术部验证的完整参数）
     const gammaPayload = {
       inputText: finalInputText,
       textMode,
@@ -107,6 +107,11 @@ export async function POST(request: NextRequest) {
       additionalInstructions: finalInstructions,
       textOptions: { amount: 'medium', tone, language: 'zh-cn' },
       imageOptions,
+      // 恢复技术部验证的关键参数
+      cardOptions: {
+        dimensions: '16x9',
+        cardSplit: 'inputTextBreaks' // ⭐ 精确分页控制
+      },
     };
 
     console.log('[Gamma Direct] Payload:', JSON.stringify(gammaPayload, null, 2));

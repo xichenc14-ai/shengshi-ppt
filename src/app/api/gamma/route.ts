@@ -4,16 +4,15 @@ import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-// 场景 → 推荐配置映射（V7 修复：Gamma API 只支持 noImages/webFreeToUseCommercially/aiGenerated）
-// pictographic 不是 Gamma API 支持的值，改成 webFreeToUseCommercially（免费搜索图）
+// 场景 → 推荐配置映射（恢复技术部验证的 pictographic）
 const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource: string; imageModel: string }> = {
-  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
-  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
+  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
   training: { themeId: 'icebreaker', tone: 'casual', imageSource: 'noImages', imageModel: '' },
   creative: { themeId: 'electric', tone: 'creative', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
-  education: { themeId: 'chisel', tone: 'casual', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
+  education: { themeId: 'chisel', tone: 'casual', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
   data: { themeId: 'gleam', tone: 'professional', imageSource: 'noImages', imageModel: '' },
-  annual: { themeId: 'blues', tone: 'professional', imageSource: 'webFreeToUseCommercially', imageModel: 'imagen-3-flash' },
+  annual: { themeId: 'blues', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
   launch: { themeId: 'aurora', tone: 'bold', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
   traditional: { themeId: 'chisel', tone: 'traditional', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
 };
@@ -271,15 +270,15 @@ export async function POST(request: NextRequest) {
     const finalThemeId = themeId || sceneConfig.themeId;
     const finalTone = tone || sceneConfig.tone;
 
-    // 图片模式（V6 新4种模式）
-    // 1=纯净无图(noImages) 2=精选套图(强调布局图) 3=定制网图 4=定制AI图
+    // 图片模式（按照技术部 gamma-phase2-report.md 验证的11种图片源）
+    // pictographic 是技术部验证有效的免费插图源（0 credits）
     let imageOptions: Record<string, any> = {};
     if (imageMode === 'none') {
       // 1-纯净无图
       imageOptions = { source: 'noImages' };
-    } else if (imageMode === 'emphasis') {
-      // 2-精选套图（Gamma内置强调布局图，免费）
-      imageOptions = { source: 'noImages' }; // 强调图由additionalInstructions控制
+    } else if (imageMode === 'emphasis' || imageMode === 'pictographic') {
+      // 2-精选套图：技术部验证的 pictographic（免费摘要图）
+      imageOptions = { source: 'pictographic' }; // ⭐ 推荐！免费插图
     } else if (imageMode === 'web') {
       // 3-定制网图（商用免费图）
       imageOptions = { source: 'webFreeToUseCommercially' };
@@ -287,8 +286,8 @@ export async function POST(request: NextRequest) {
       // 4-定制AI图（只用普通模型：imagen-3-flash/flux-kontext-fast，禁用高级模型）
       imageOptions = { source: 'aiGenerated', model: 'imagen-3-flash', style: 'flat illustration, minimalist, clean background, negative space' };
     } else {
-      // 默认：免费搜索图
-      imageOptions = { source: 'webFreeToUseCommercially' }; // 免费且效果好
+      // 默认：pictographic（技术部推荐）
+      imageOptions = { source: 'pictographic' }; // 免费且效果好
     }
 
     const instructions = INSTRUCTION_TEMPLATES[finalTone] || INSTRUCTION_TEMPLATES.professional;
@@ -298,7 +297,7 @@ export async function POST(request: NextRequest) {
       : '';
     const finalInstructions = instructions + metaphorAppend;
 
-    // V7升级：简化 payload（去掉 cardOptions 等可能有问题的参数）
+    // V8修复：恢复技术部验证的完整参数
     const gammaPayload: Record<string, any> = {
       inputText: finalInputText,
       textMode, // generate=标准/g直通，preserve=省心定制
@@ -312,6 +311,11 @@ export async function POST(request: NextRequest) {
         language: 'zh-cn',
       },
       imageOptions,
+      // 恢复技术部验证的关键参数
+      cardOptions: {
+        dimensions: '16x9',
+        cardSplit: 'inputTextBreaks', // ⭐ 精确分页控制
+      },
       // V6新增：preserve模式（省心定制）追加强布局指令
       ...(textMode === 'preserve' && {
         additionalInstructions: finalInstructions + '\n\n【省心定制-强化规则】\n严格保持原文结构，每页内容不超过3-4个要点，用---分页的位置必须保留，不要自动合并或拆分页面。'
