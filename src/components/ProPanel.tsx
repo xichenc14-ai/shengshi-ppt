@@ -159,21 +159,35 @@ export default function ProPanel({ open, onClose, genMode, setGenMode, theme, se
             </div>
           </div>
 
-          {/* Pages slider */}
+          {/* Pages input */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">页数</div>
               <div className="text-sm font-bold text-[#5B4FE9]">{pages} 页</div>
             </div>
-            <input
-              type="range"
-              min={3}
-              max={30}
-              value={pages}
-              onChange={e => setPages(Number(e.target.value))}
-              className="w-full"
-            />
-            <div className="flex justify-between text-[9px] text-gray-300 mt-1"><span>3</span><span>30</span></div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPages(Math.max(5, pages - 1))}
+                className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:border-[#5B4FE9] hover:text-[#5B4FE9] transition-colors"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <input
+                type="number"
+                min="5"
+                max="30"
+                value={pages}
+                onChange={e => setPages(Math.min(30, Math.max(5, Number(e.target.value))))}
+                className="w-16 h-8 text-center border border-gray-200 rounded-lg text-sm font-medium text-gray-700 outline-none focus:border-[#5B4FE9]"
+              />
+              <span className="text-xs text-gray-400">页</span>
+              <button
+                onClick={() => setPages(Math.min(30, pages + 1))}
+                className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:border-[#5B4FE9] hover:text-[#5B4FE9] transition-colors"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 15l-6-6-6 6"/></svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
