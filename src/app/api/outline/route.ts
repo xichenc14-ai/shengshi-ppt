@@ -75,6 +75,22 @@ export async function POST(request: NextRequest) {
 
     const numCards = slideCount || 10;
 
+    // ===== 省心模式智能判断：分析输入类型 =====
+    const smartModeAnalysis = analyzeInputType(inputText);
+    let finalTextMode = textMode;
+    
+    // 如果是 auto 模式（省心模式），根据分析结果自动选择 textMode
+    if (auto) {
+      finalTextMode = smartModeAnalysis.recommendedMode;
+      console.log('[SmartMode] 输入分析:', {
+        type: smartModeAnalysis.type,
+        length: smartModeAnalysis.length,
+        hasStructure: smartModeAnalysis.hasStructure,
+        recommendedMode: smartModeAnalysis.recommendedMode,
+        reason: smartModeAnalysis.reason
+      });
+    }
+
     // ===== 构建 prompts =====
     const modePrompts: Record<string, string> = {
       generate: `你是一个专业的PPT内容策划师。用户会给一个主题，你需要从零生成完整的PPT大纲。
@@ -140,19 +156,27 @@ export async function POST(request: NextRequest) {
 规则：保留原文结构和专有名词。总共${numCards}页`,
     };
 
-    const systemPrompt = modePrompts[textMode] || modePrompts.generate;
+    const systemPrompt = modePrompts[finalTextMode] || modePrompts.generate;
     const baseUserPrompt = auto
-      ? `请分析以下素材，自动识别需求并生成PPT大纲：\n\n${inputText}`
+      ? `【智能模式分析结果】
+输入类型：${smartModeAnalysis.type}
+处理策略：${smartModeAnalysis.reason}
+推荐模式：${smartModeAnalysis.recommendedMode}
+
+请根据以上分析，${smartModeAnalysis.processInstruction}
+
+素材内容：
+${inputText}`
       : `请根据以下内容生成PPT大纲（${numCards}页）：\n\n${inputText}`;
 
-    // ===== 联网搜索（generate 模式） =====
+    // ===== 联网搜索（generate 模式或需要补充信息时） =====
     let searchContext = '';
-    if (textMode === 'generate') {
+    if (finalTextMode === 'generate' || smartModeAnalysis.needsSearch) {
       searchContext = await searchTopicWithMiniMax(inputText.trim());
     }
 
     // ===== 调用 AI（MiniMax 默认 + GLM 备用） =====
-    let rawContent = await callAIWithFallback(systemPrompt, baseUserPrompt, textMode === 'generate', searchContext);
+    let rawContent = await callAIWithFallback(systemPrompt, baseUserPrompt, finalTextMode === 'generate', searchContext);
 
     let cleaned = rawContent.trim();
     if (cleaned.startsWith('```')) {
@@ -211,4 +235,93 @@ function detectScene(text: string): string {
     if (words.some(w => text.includes(w))) return scene;
   }
   return '通用';
+}
+
+// ===== 省心模式智能输入分析 =====
+function analyzeInputType(input: string): {
+  type: string;
+  length: number;
+  hasStructure: boolean;
+  recommendedMode: 'preserve' | 'condense' | 'generate';
+  reason: string;
+  processInstruction: string;
+  needsSearch: boolean;
+} {
+  const text = input.trim();
+  const length = text.length;
+  
+  // 检测是否有结构化内容（标题、列表、分段等）
+  const hasMarkdownHeaders = /^#+\s/.test(text) || /\n#+\s/.test(text);
+  const hasBulletPoints = /^[\-\*]\s/.test(text) || /\n[\-\*]\s/.test(text);
+  const hasNumberedLists = /^\d+\.\s/.test(text) || /\n\d+\.\s/.test(text);
+  const hasMultipleParagraphs = (text.split('\n\n').length >= 3);
+  const hasFileMarkers = text.includes('[文件') || text.includes('[文档') || text.includes('[图片');
+  const hasStructure = hasMarkdownHeaders || hasBulletPoints || hasNumberedLists || hasMultipleParagraphs || hasFileMarkers;
+  
+  // 检测是否是完整文档（长文本 + 结构化）
+  const isFullDocument = length > 800 && hasStructure;
+  
+  // 检测是否是长文档需要精简（超长 + 有结构）
+  const isLongDocumentNeedsCondense = length > 2000 && hasStructure;
+  
+  // 检测是否是简单描述（短文本 + 无结构）
+  const isSimpleDescription = length < 200 && !hasStructure;
+  
+  // 检测是否需要联网搜索补充信息
+  const needsSearch = length < 500 && !hasFileMarkers;
+  
+  // 判断处理模式
+  let recommendedMode: 'preserve' | 'condense' | 'generate';
+  let type: string;
+  let reason: string;
+  let processInstruction: string;
+  
+  if (isFullDocument && length < 1500) {
+    // 中等长度完整文档 → 保留原文
+    recommendedMode = 'preserve';
+    type = '完整文档（中等长度）';
+    reason = '用户提供了结构完整的文档，应当忠实保留原文内容和结构';
+    processInstruction = '保留用户原文的结构和核心内容，整理为PPT页面，不要大幅修改或删减';
+  } else if (isLongDocumentNeedsCondense) {
+    // 超长文档 → 精简总结
+    recommendedMode = 'condense';
+    type = '长文档需要精简';
+    reason = '文档过长（>' + Math.floor(length/10) + '页），需要提炼核心要点';
+    processInstruction = '提取文档的核心要点和关键信息，精简为PPT大纲，每页不超过3-4个要点';
+  } else if (isSimpleDescription) {
+    // 简单描述 → AI扩充
+    recommendedMode = 'generate';
+    type = '简单主题描述';
+    reason = '用户只给了简短描述，需要AI从零生成完整内容';
+    processInstruction = '根据用户主题，从零生成完整的PPT内容，包含封面、目录、正文、总结';
+  } else if (hasFileMarkers) {
+    // 上传了文件 → 根据内容量判断
+    if (length > 1000) {
+      recommendedMode = 'preserve';
+      type = '文件内容（完整）';
+      reason = '用户上传文件提取的内容，应当保留原文';
+      processInstruction = '保留文件提取的内容结构，整理为PPT，不要大幅修改';
+    } else {
+      recommendedMode = 'generate';
+      type = '文件内容（简短）';
+      reason = '文件内容较短，需要AI补充丰富';
+      processInstruction = '基于文件内容补充相关信息，生成完整PPT';
+    }
+  } else {
+    // 默认：保留原文
+    recommendedMode = 'preserve';
+    type = '结构化内容';
+    reason = '用户提供了有一定结构的内容，优先保留';
+    processInstruction = '整理用户内容为PPT格式，保持原文核心结构';
+  }
+  
+  return {
+    type,
+    length,
+    hasStructure,
+    recommendedMode,
+    reason,
+    processInstruction,
+    needsSearch
+  };
 }
