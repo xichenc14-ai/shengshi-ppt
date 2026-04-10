@@ -12,7 +12,7 @@ export async function understandImage(base64Data: string, mimeType: string): Pro
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'MiniMax-M2.7',
+        model: 'MiniMax-VL-01',
         messages: [{
           role: 'user',
           content: [

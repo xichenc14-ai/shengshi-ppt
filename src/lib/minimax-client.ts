@@ -114,7 +114,7 @@ export async function callMiniMaxVision(
       'Authorization': `Bearer ${MINIMAX_API_KEY}`,
     },
     body: JSON.stringify({
-      model: 'MiniMax-M2.7',
+      model: 'MiniMax-VL-01',
       messages: [
         {
           role: 'user',
