@@ -67,31 +67,33 @@ export async function POST(request: NextRequest) {
       finalInputText = finalInputText.split(/\n\n+/).filter((p: string) => p.trim()).join('\n\n---\n\n');
     }
 
-    // 图片选项（V6：三级别方案 + pictographic默认免费）
-    // 前端传来：pictographic/noImages/pexels/webFreeToUseCommercially/aiGenerated
+    // 图片选项（V6新4种模式）
+    // 1=纯净无图 2=精选套图(强调布局图) 3=定制网图 4=定制AI图
     let imageOptions: Record<string, any> = {};
-    if (imageSource === 'noImages') {
+    if (imageSource === 'none' || imageSource === 'noImages') {
       imageOptions = { source: 'noImages' };
-    } else if (imageSource === 'aiGenerated' || imageSource === 'ai') {
-      // 级别2-AI生图版（imagen-3-flash: 2 credits，性价比最高）
+    } else if (imageSource === 'emphasis') {
+      // 精选套图（强调布局图，由additionalInstructions触发）
+      imageOptions = { source: 'noImages' };
+    } else if (imageSource === 'web') {
+      imageOptions = { source: 'webFreeToUseCommercially' };
+    } else if (imageSource === 'ai' || imageSource === 'aiGenerated') {
+      // 定制AI图：只用普通模型，禁用高级模型
       imageOptions = { source: 'aiGenerated', model: 'imagen-3-flash', style: 'flat illustration, minimalist, clean background, negative space' };
-    } else if (imageSource === 'ai-premium') {
-      // 级别3-AI高级图版（flux-kontext-pro: 20 credits，需批准）
-      imageOptions = { source: 'aiGenerated', model: 'flux-kontext-pro', style: 'flat illustration, minimalist, clean background, negative space, professional' };
-    } else if (imageSource === 'pexels' || imageSource === 'webFreeToUseCommercially') {
-      // 级别1-标准版（免费高清图）
-      imageOptions = { source: imageSource };
     } else {
-      // 默认级别1-标准版：pictographic（免费插图/摘要图，效果好且0 credits）
-      imageOptions = { source: 'pictographic' };
+      imageOptions = { source: 'noImages' };
     }
 
     const instructions = INSTRUCTION_TEMPLATES[tone] || INSTRUCTION_TEMPLATES.professional;
-    // P0修复：追加全局视觉隐喻（如果提供）
+    // 追加全局视觉隐喻
     const metaphorAppend = visualMetaphor
       ? `\n\n【全局视觉隐喻】\n贯穿全演示的统一意象：${visualMetaphor}。\n所有配图、图标、色块风格应与此意象一致，配图描述中必须体现该意象关键词。`
       : '';
-    const finalInstructions = instructions + metaphorAppend;
+    // 精选套图：追加强调布局图指令
+    const emphasisAppend = imageSource === 'emphasis'
+      ? `\n\n【精选套图-强调布局图】\n请为每一页自动配Gamma内置的强调布局图（Emphasize布局），这些是Gamma模板自带的免费装饰性图片，不需要额外credits。每页使用不同的强调图，保持视觉丰富度。`
+      : '';
+    const finalInstructions = instructions + metaphorAppend + emphasisAppend;
     const finalThemeId = themeId || SCENE_CONFIGS.biz.themeId;
 
     // 步骤1：创建 Gamma 生成任务

@@ -41,7 +41,7 @@ export default function Home() {
   const [mode, setMode] = useState<'direct' | 'smart'>('direct');
   const [directTheme, setDirectTheme] = useState('default-light');
   const [directTone, setDirectTone] = useState('professional');
-  const [directImgMode, setDirectImgMode] = useState('pictographic');
+  const [directImgMode, setDirectImgMode] = useState('none');
   const [directTextMode, setDirectTextMode] = useState<'generate' | 'condense' | 'preserve'>('generate');
 
   // Landing page vs generate flow
@@ -57,7 +57,7 @@ export default function Home() {
   const [genMode, setGenMode] = useState('generate');
   const [theme, setTheme] = useState('auto');
   const [tone, setTone] = useState('professional');
-  const [imgMode, setImgMode] = useState('auto');
+  const [imgMode, setImgMode] = useState('none');
   const [pages, setPages] = useState(10);
 
   // Generation state
@@ -284,7 +284,7 @@ export default function Home() {
       setStepText('AI 正在渲染 PPT 页面...');
 
       // 🚨 关键改进：用 buildMdV2 构建高质量 Markdown，传 slides 给 API
-      const { markdown: md, visualMetaphor } = buildMdV2(outlineResult.title, editedSlides, isEasy ? 'noImages' : imgMode);
+      const { markdown: md, visualMetaphor } = buildMdV2(outlineResult.title, editedSlides, imgMode);
       const gRes = await fetch('/api/gamma', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -297,7 +297,7 @@ export default function Home() {
           themeId: isEasy ? undefined : (theme === 'auto' ? outlineResult.themeId : theme),
           scene: isEasy ? 'biz' : (tone === 'traditional' ? 'traditional' : 'biz'),
           tone: isEasy ? 'professional' : tone,
-          imageMode: isEasy ? 'auto' : imgMode,
+          imageMode: isEasy ? 'none' : imgMode,
           slides: editedSlides,  // 🚨 传结构化数据，让 API 用 buildMdV2
           visualMetaphor,
         }),
@@ -606,11 +606,10 @@ export default function Home() {
                             onChange={e => setDirectImgMode(e.target.value)}
                             className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
                           >
-                            <option value="noImages">无图</option>
-                            <option value="pictographic">插图图标</option>
-                            <option value="pexels">高清照片</option>
-                            <option value="webFreeToUseCommercially">搜索配图</option>
-                            <option value="aiGenerated">AI配图</option>
+                            <option value="none">1. 纯净无图</option>
+                            <option value="emphasis">2. 精选套图</option>
+                            <option value="web">3. 定制网图</option>
+                            <option value="ai">4. 定制AI图</option>
                           </select>
                         </div>
                         <div>

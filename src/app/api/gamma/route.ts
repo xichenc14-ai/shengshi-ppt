@@ -270,21 +270,24 @@ export async function POST(request: NextRequest) {
     const finalThemeId = themeId || sceneConfig.themeId;
     const finalTone = tone || sceneConfig.tone;
 
-    // 图片模式（V6 升级：三级别方案 + pictographic免费插图）
-    // 级别1=标准版（默认pictographic免费），级别2=AI生图（imagen-3-flash），级别3=AI高级（flux-kontext-pro）
+    // 图片模式（V6 新4种模式）
+    // 1=纯净无图(noImages) 2=精选套图(强调布局图) 3=定制网图 4=定制AI图
     let imageOptions: Record<string, any> = {};
     if (imageMode === 'none') {
-      // 级别1-纯净无图
+      // 1-纯净无图
       imageOptions = { source: 'noImages' };
+    } else if (imageMode === 'emphasis') {
+      // 2-精选套图（Gamma内置强调布局图，免费）
+      imageOptions = { source: 'noImages' }; // 强调图由additionalInstructions控制
+    } else if (imageMode === 'web') {
+      // 3-定制网图（商用免费图）
+      imageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageMode === 'ai') {
-      // 级别2-AI生图版（imagen-3-flash: 2 credits，性价比最高）
+      // 4-定制AI图（只用普通模型：imagen-3-flash/flux-kontext-fast，禁用高级模型）
       imageOptions = { source: 'aiGenerated', model: 'imagen-3-flash', style: 'flat illustration, minimalist, clean background, negative space' };
-    } else if (imageMode === 'ai-premium') {
-      // 级别3-AI高级图版（需批准，flux-kontext-pro: 20 credits）
-      imageOptions = { source: 'aiGenerated', model: 'flux-kontext-pro', style: 'flat illustration, minimalist, clean background, negative space, professional' };
     } else {
-      // 默认级别1-标准版：pictographic（免费插图/摘要图，效果好且0 credits）
-      imageOptions = { source: 'pictographic' };
+      // 默认：纯净无图
+      imageOptions = { source: 'noImages' };
     }
 
     const instructions = INSTRUCTION_TEMPLATES[finalTone] || INSTRUCTION_TEMPLATES.professional;
@@ -324,6 +327,10 @@ export async function POST(request: NextRequest) {
       // V6新增：preserve模式（省心定制）追加强布局指令
       ...(textMode === 'preserve' && {
         additionalInstructions: finalInstructions + '\n\n【省心定制-强化规则】\n严格保持原文结构，每页内容不超过3-4个要点，用---分页的位置必须保留，不要自动合并或拆分页面。'
+      }),
+      // 精选套图：追加Gamma内置强调布局图指令
+      ...(imageMode === 'emphasis' && {
+        additionalInstructions: finalInstructions + '\n\n【精选套图-强调布局图】\n请为每一页自动配Gamma内置的强调布局图（Emphasize布局），这些是Gamma模板自带的免费装饰性图片，不需要额外credits。每页使用不同的强调图，保持视觉丰富度。'
       }),
     };
 
