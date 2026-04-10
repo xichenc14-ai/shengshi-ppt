@@ -6,12 +6,6 @@ import { useRouter } from 'next/navigation';
 
 import Navbar from '@/components/Navbar';
 import HeroSection from '@/components/HeroSection';
-import SceneCards from '@/components/SceneCards';
-import FeaturesSection from '@/components/FeaturesSection';
-import ProcessSection from '@/components/ProcessSection';
-import PricingSection from '@/components/PricingSection';
-import TestimonialSection from '@/components/TestimonialSection';
-import FAQSection from '@/components/FAQSection';
 import Footer from '@/components/Footer';
 import ProPanel from '@/components/ProPanel';
 import LoginModal from '@/components/LoginModal';
@@ -487,19 +481,23 @@ export default function Home() {
             </div>
           </div>
 
-          <SceneCards />
-          <FeaturesSection />
-          <ProcessSection />
-          <PricingSection />
-          <TestimonialSection />
-          <FAQSection />
+          {/* 底部极简导航 */}
+          <div className="max-w-3xl mx-auto px-4 pt-6 pb-4">
+            <div className="flex items-center justify-center gap-6 text-xs text-gray-400">
+              <a href="/pricing" className="hover:text-[#5B4FE9] transition-colors">定价</a>
+              <span>·</span>
+              <a href="/account" className="hover:text-[#5B4FE9] transition-colors">用户中心</a>
+              <span>·</span>
+              <span>© 2026 省心PPT</span>
+            </div>
+          </div>
           <Footer />
         </>
       )}
 
       {/* ===== GENERATE FLOW ===== */}
       {(phase === 'input' || phase === 'outline') && (
-        <div className="flex-1">
+        <div className="flex-1 bg-white min-h-screen">
           <div className="max-w-3xl mx-auto px-4 md:px-6 pt-8 pb-24">
             {/* Back button */}
             <button onClick={backToLanding} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 mb-6 transition-colors">
