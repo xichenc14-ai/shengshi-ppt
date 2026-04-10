@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 
 import Navbar from '@/components/Navbar';
 import HeroSection from '@/components/HeroSection';
+import FAQSection from '@/components/FAQSection';
+import TestimonialSection from '@/components/TestimonialSection';
 import Footer from '@/components/Footer';
 import ProPanel from '@/components/ProPanel';
 import LoginModal from '@/components/LoginModal';
@@ -481,6 +483,8 @@ export default function Home() {
             </div>
           </div>
 
+          <FAQSection />
+          <TestimonialSection />
           {/* 底部极简导航 */}
           <div className="max-w-3xl mx-auto px-4 pt-6 pb-4">
             <div className="flex items-center justify-center gap-6 text-xs text-gray-400">
