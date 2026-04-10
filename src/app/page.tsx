@@ -626,15 +626,30 @@ export default function Home() {
                         </div>
                       </div>
                       <div className="mt-3">
-                        <label className="text-xs text-gray-500 mb-1 block">页数：{pages} 页</label>
-                        <input
-                          type="range"
-                          min="5"
-                          max="30"
-                          value={pages}
-                          onChange={e => setPages(Number(e.target.value))}
-                          className="w-full"
-                        />
+                        <label className="text-xs text-gray-500 mb-1 block">页数</label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setPages(Math.max(5, pages - 1))}
+                            className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:border-[#5B4FE9] hover:text-[#5B4FE9] transition-colors"
+                          >
+                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+                          </button>
+                          <input
+                            type="number"
+                            min="5"
+                            max="30"
+                            value={pages}
+                            onChange={e => setPages(Math.min(30, Math.max(5, Number(e.target.value))))}
+                            className="w-16 h-8 text-center border border-gray-200 rounded-lg text-sm font-medium text-gray-700 outline-none focus:border-[#5B4FE9]"
+                          />
+                          <span className="text-xs text-gray-400">页</span>
+                          <button
+                            onClick={() => setPages(Math.min(30, pages + 1))}
+                            className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:border-[#5B4FE9] hover:text-[#5B4FE9] transition-colors"
+                          >
+                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 15l-6-6-6 6"/></svg>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -693,7 +708,7 @@ export default function Home() {
           {/* Floating button */}
           {!loading && (
             <FloatingButton
-              label={phase === 'input' && mode === 'direct' ? '🛠️ 专业生成' : phase === 'input' ? '✨ 省心生成' : '确认生成'}
+              label={phase === 'input' && mode === 'direct' ? '专业生成' : phase === 'input' ? '省心生成' : '确认生成'}
               icon={phase === 'input' ? (mode === 'direct' ? '🛠️' : '✨') : '🛠️'}
               onClick={phase === 'input' ? (mode === 'direct' ? generateDirect : generateOutline) : confirmAndGenerate}
               disabled={phase === 'input' && !hasInput}

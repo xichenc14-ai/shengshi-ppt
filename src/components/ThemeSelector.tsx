@@ -27,9 +27,9 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
             }`}
             title={cat.name}
           >
-            <div className="flex gap-0.5 mb-1">
+            <div className="flex gap-1 mb-1">
               {cat.colors.slice(0, 3).map((c, i) => (
-                <div key={i} className="w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: c }} />
+                <div key={i} className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: c }} />
               ))}
             </div>
             <span className="text-[10px] font-medium text-gray-600 whitespace-nowrap">{cat.name}</span>
@@ -42,9 +42,9 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
         <div className="bg-[#FAFBFE] rounded-xl p-4 mb-4 animate-fade-in">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <div className="flex gap-0.5">
+              <div className="flex gap-1">
                 {(COLOR_CATEGORIES.find(c => c.id === selectedCategory)?.colors || []).slice(0, 3).map((c, i) => (
-                  <div key={i} className="w-3 h-3 rounded-sm" style={{ backgroundColor: c }} />
+                  <div key={i} className="w-3 h-3 rounded-full" style={{ backgroundColor: c }} />
                 ))}
               </div>
               <span className="text-sm font-medium text-gray-600">
@@ -76,9 +76,9 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
                     <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20,6 9,17 4,12"/></svg>
                   </span>
                 )}
-                <div className="flex gap-0.5 mb-1.5">
+                <div className="flex gap-0.5 mb-1">
                   {theme.colors.slice(0, 3).map((c, i) => (
-                    <div key={i} className="w-5 h-5 rounded-sm shadow-sm" style={{ backgroundColor: c }} />
+                    <div key={i} className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: c }} />
                   ))}
                 </div>
                 <span className="text-[10px] font-medium text-gray-700 text-center leading-tight">{theme.nameZh}</span>
@@ -94,7 +94,7 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
           <span className="text-gray-400">已选：</span>
           <div className="flex gap-0.5">
             {currentTheme.colors.map((c, i) => (
-              <div key={i} className="w-3.5 h-3.5 rounded-sm shadow-sm" style={{ backgroundColor: c }} />
+              <div key={i} className="w-3.5 h-3.5 rounded-full shadow-sm" style={{ backgroundColor: c }} />
             ))}
           </div>
           <span className="font-medium text-gray-700">{currentTheme.nameZh}</span>
