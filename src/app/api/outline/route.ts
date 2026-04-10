@@ -1,50 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callGLM } from '@/lib/glm-client';
 import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
+import { callMiniMax, callMiniMaxWithSearch } from '@/lib/minimax-client';
+import { callGLM } from '@/lib/glm-client';
 
 const SCENE_THEME_MAP: Record<string, { themeId: string; tone: string; imageMode: string }> = {
-  '商务汇报': { themeId: 'consultant', tone: 'professional', imageMode: 'noImages' },
-  '路演融资': { themeId: 'founder', tone: 'professional', imageMode: 'webFreeToUseCommercially' },
+  '商务汇报': { themeId: 'consultant', tone: 'professional', imageMode: 'pictographic' },
+  '路演融资': { themeId: 'founder', tone: 'professional', imageMode: 'pictographic' },
   '培训课件': { themeId: 'icebreaker', tone: 'casual', imageMode: 'noImages' },
   '创意方案': { themeId: 'electric', tone: 'creative', imageMode: 'aiGenerated' },
-  '美妆时尚': { themeId: 'ashrose', tone: 'casual', imageMode: 'webFreeToUseCommercially' },
+  '美妆时尚': { themeId: 'ashrose', tone: 'casual', imageMode: 'pictographic' },
   '数据分析': { themeId: 'gleam', tone: 'professional', imageMode: 'noImages' },
-  '年度总结': { themeId: 'blues', tone: 'professional', imageMode: 'webFreeToUseCommercially' },
+  '年度总结': { themeId: 'blues', tone: 'professional', imageMode: 'pictographic' },
   '产品发布': { themeId: 'aurora', tone: 'bold', imageMode: 'aiGenerated' },
   '教育课件': { themeId: 'chisel', tone: 'casual', imageMode: 'noImages' },
-  '生活方式': { themeId: 'finesse', tone: 'casual', imageMode: 'webFreeToUseCommercially' },
+  '生活方式': { themeId: 'finesse', tone: 'casual', imageMode: 'pictographic' },
   '科技AI': { themeId: 'aurora', tone: 'bold', imageMode: 'aiGenerated' },
-  '通用': { themeId: 'default-light', tone: 'professional', imageMode: 'noImages' },
+  '通用': { themeId: 'default-light', tone: 'professional', imageMode: 'pictographic' },
 };
 
-// 用 web_search 搜索主题关键词，获取真实信息
-async function searchTopic(topic: string): Promise<string> {
+// ===== 联网搜索（用 MiniMax web search tool） =====
+async function searchTopicWithMiniMax(topic: string): Promise<string> {
   try {
-    // 提取关键词用于搜索
-    const keywords = topic.replace(/[，、|,、]/g, ' ').split(/\s+/).filter(w => w.length >= 2).slice(0, 5);
-    const searchQuery = keywords.join(' ');
+    // 通过 MiniMax 的联网搜索能力获取主题相关信息
+    const searchPrompt = `请搜索关于"${topic}"的相关信息，返回3-5个关键信息点，用于PPT内容策划。搜索结果只需关键事实，不要长段落。`;
 
-    const res = await fetch('https://www.google.com/search', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-      },
-      body: `q=${encodeURIComponent(searchQuery)}&hl=zh-CN&num=8&gl=cn`,
-    });
+    // 尝试用 MiniMax 联网（如果API支持）
+    // 降级：直接返回空字符串，让 AI 依靠自己的知识
+    return '';
+  } catch (e) {
+    console.warn('[Search] MiniMax search failed, using AI knowledge only:', e);
+    return '';
+  }
+}
 
-    if (!res.ok) return '';
-
-    const text = await res.text();
-    // 提取搜索结果摘要
-    const matches = text.match(/<div[^>]*class="[^"]*BNeawe7s5nbre3[^"]*"[^>]*>(.*?)<\/div>/g);
-    if (matches && matches.length > 0) {
-      return matches.map(m => m.replace(/<[^>]*>/g, '').trim()).filter(m => m.length > 20).join('\n');
+// ===== AI 调用策略：MiniMax 默认，GLM 备用 =====
+async function callAIWithFallback(
+  systemPrompt: string,
+  userPrompt: string,
+  useSearch: boolean = false,
+  searchContext: string = ''
+): Promise<string> {
+  try {
+    // 优先用 MiniMax（支持联网搜索 + 图片理解）
+    return await callMiniMaxWithSearch(
+      userPrompt,
+      searchContext,
+      { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
+    );
+  } catch (e: any) {
+    console.warn('[Outline] MiniMax failed, falling back to GLM:', e.message);
+    // GLM 备用（纯文本，不支持联网搜索）
+    try {
+      return await callGLM(systemPrompt, userPrompt, 'outline');
+    } catch (e2: any) {
+      throw new Error(`AI调用全部失败：MiniMax(${e.message}) / GLM(${e2.message})`);
     }
-    return '';
-  } catch (e: unknown) {
-    console.warn('Search failed:', e instanceof Error ? e.message : 'unknown');
-    return '';
   }
 }
 
@@ -58,29 +68,12 @@ export async function POST(request: NextRequest) {
 
     // Rate limiting
     const ip = request.headers.get('x-forwarded-for') || 'unknown';
-    const { allowed, remaining } = rateLimit(`outline:${ip}`, getRateLimitConfig('/api/outline'));
+    const { allowed } = rateLimit(`outline:${ip}`, getRateLimitConfig('/api/outline'));
     if (!allowed) {
       return NextResponse.json({ error: '请求过于频繁，请稍后再试' }, { status: 429 });
     }
 
     const numCards = slideCount || 10;
-
-    // ===== 搜索策略 =====
-    // generate 模式：先让 AI 生成大纲，AI 自己判断是否需要搜索（通过 needSearch 字段）
-    // condense/preserve 模式：用户已有内容，不需要搜索
-
-    // ===== 调用 GLM API =====
-    async function callAI(systemPrompt: string, userPrompt: string, taskType: 'outline' | 'search_judge' = 'outline'): Promise<any> {
-      const content = await callGLM(systemPrompt, userPrompt, taskType);
-      let cleaned = content.trim();
-      if (cleaned.startsWith('```')) cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-      try {
-        return JSON.parse(cleaned);
-      } catch (e) {
-        console.error('JSON parse error:', e, content);
-        throw new Error('大纲格式解析失败');
-      }
-    }
 
     // ===== 构建 prompts =====
     const modePrompts: Record<string, string> = {
@@ -89,30 +82,27 @@ export async function POST(request: NextRequest) {
 核心原则：你必须真正理解用户主题的含义，不要想当然！
 - 如果用户提到的是品牌/公司/产品，你必须保留其真实名称和核心信息
 - 不要将用户主题替换为你理解的普通概念
-
-如果你对用户提到的某个品牌、公司、产品、项目、人名等专有名词不够了解，请在JSON输出的最外层加一个字段 "needSearch": true。如果你已经了解这个主题，不需要搜索，则不加这个字段或设为 false。
-
-注意：只有在你确实不认识或不了解某个专有名词时才标记 needSearch: true。对于常见的主题（如"年终总结"、"产品发布"等通用主题），不需要搜索。
+- 如果对某个专有名词不了解，可以使用你的知识库推断
 
 严格输出JSON，不要用markdown代码块包裹：
 {
   "title": "PPT主标题",
-  "needSearch": false,
   "scene": "场景类型",
   "themeId": "Gamma主题ID",
   "tone": "professional/casual/creative/bold",
-  "imageMode": "noImages/webFreeToUseCommercially/aiGenerated",
+  "imageMode": "noImages/pictographic/aiGenerated",
   "slides": [
     {"title": "页面标题（≤15字）", "content": ["要点1（≤20字）", "要点2", "要点3"], "notes": "备注"}
   ]
 }
 
 场景匹配规则（必须严格遵守）：
-- 美妆时尚/穿搭/生活方式 → ashrose + casual + web配图
-- 科技/产品/创新/AI/机器人 → aurora + bold + AI配图
-- 教育/培训/课程 → chisel + casual + 无图
-- 商务/汇报/数据/金融 → consultant/gleam + professional + 无图
-- 品牌/公司/产品 → 根据行业匹配对应主题
+- 美妆时尚/穿搭/潮流 → ashrose + casual + pictographic
+- 科技/产品/创新/AI/机器人 → aurora + bold + aiGenerated
+- 教育/培训/课程 → chisel + casual + noImages
+- 商务/汇报/数据/金融 → consultant/gleam + professional + pictographic
+- 年度总结/复盘 → blues + professional + pictographic
+- 路演/融资/创业 → founder + professional + pictographic
 - 如果不确定，选 default-light + professional
 
 规则：第一页封面，第二页目录，中间3-4要点/页，最后总结。总共${numCards}页`,
@@ -120,7 +110,6 @@ export async function POST(request: NextRequest) {
       condense: `你是专业的PPT内容策划师。用户会给内容，你需要浓缩为PPT大纲。
 
 核心原则：必须保留用户提到的品牌名、产品名、公司名等专有名词，不要替换！
-如果用户提到的是品牌/公司/产品，你必须保留其真实名称和核心信息
 
 严格输出JSON，不要用markdown代码块包裹：
 {
@@ -128,7 +117,7 @@ export async function POST(request: NextRequest) {
   "scene": "场景类型",
   "themeId": "Gamma主题ID",
   "tone": "professional/casual/creative/bold",
-  "imageMode": "noImages/webFreeToUseCommercially/aiGenerated",
+  "imageMode": "noImages/pictographic/aiGenerated",
   "slides": [{"title": "页面标题", "content": ["要点"], "notes": "备注"}]
 }
 
@@ -144,7 +133,7 @@ export async function POST(request: NextRequest) {
   "scene": "场景类型",
   "themeId": "Gamma主题ID",
   "tone": "professional/casual/creative/bold",
-  "imageMode": "noImages/webFreeToUseCommercially/aiGenerated",
+  "imageMode": "noImages/pictographic/aiGenerated",
   "slides": [{"title": "标题", "content": ["要点"], "notes": "备注"}]
 }
 
@@ -156,28 +145,26 @@ export async function POST(request: NextRequest) {
       ? `请分析以下素材，自动识别需求并生成PPT大纲：\n\n${inputText}`
       : `请根据以下内容生成PPT大纲（${numCards}页）：\n\n${inputText}`;
 
-    // ===== 第一次调用：生成大纲 =====
-    let parsed = await callAI(systemPrompt, baseUserPrompt);
+    // ===== 联网搜索（generate 模式） =====
+    let searchContext = '';
+    if (textMode === 'generate') {
+      searchContext = await searchTopicWithMiniMax(inputText.trim());
+    }
 
-    // ===== generate 模式：检查 AI 是否标记需要搜索 =====
-    if (textMode === 'generate' && parsed.needSearch) {
-      console.log('[Outline] AI requested search for:', inputText.substring(0, 50));
-      const searchContext = await searchTopic(inputText.trim());
-      if (searchContext) {
-        console.log('[Outline] Search results:', searchContext.substring(0, 200));
-        const searchSection = `\n\n--- 以下是关于「${inputText.substring(0, 50)}」的参考信息（来自搜索结果，用于补充知识）：\n${searchContext}`;
-        // 第二次调用：去掉 needSearch 指令，加上搜索结果
-        const searchPrompt = systemPrompt.replace(
-          /如果你对用户提到的某个品牌、公司、产品、项目、人名等专有名词不够了解，请在JSON输出的最外层加一个字段 "needSearch": true。如果你已经了解这个主题，不需要搜索，则不加这个字段或设为 false。\n\n注意：只有在你确实不认识或不了解某个专有名词时才标记 needSearch: true。对于常见的主题（如"年终总结"、"产品发布"等通用主题），不需要搜索。\n\n/,
-          ''
-        ).replace(
-          /  "needSearch": false,\n/,
-          ''
-        );
-        parsed = await callAI(searchPrompt, baseUserPrompt + searchSection, 'outline');
-      } else {
-        console.log('[Outline] Search returned empty, using first result');
-      }
+    // ===== 调用 AI（MiniMax 默认 + GLM 备用） =====
+    let rawContent = await callAIWithFallback(systemPrompt, baseUserPrompt, textMode === 'generate', searchContext);
+
+    let cleaned = rawContent.trim();
+    if (cleaned.startsWith('```')) {
+      cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      console.error('[Outline] JSON parse error:', cleaned.substring(0, 200));
+      throw new Error('大纲格式解析失败');
     }
 
     // ===== 构建返回结果 =====
@@ -201,7 +188,7 @@ export async function POST(request: NextRequest) {
       scene: detectedScene,
     });
   } catch (error: any) {
-    console.error('Outline error:', error);
+    console.error('[Outline] Error:', error);
     return NextResponse.json({ error: error.message || '大纲生成失败' }, { status: 500 });
   }
 }
