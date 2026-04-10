@@ -86,35 +86,27 @@ export default function HeroSection({ topic, setTopic, files, setFiles, onGenera
 
         {/* Input card */}
         <div className="bg-white rounded-2xl shadow-xl shadow-gray-200/50 border border-gray-100 p-4 md:p-6 max-w-2xl mx-auto">
-          {/* Textarea with inline upload + generate button in one row */}
+          {/* Textarea with drag-to-upload + generate button */}
           <div className="flex flex-col sm:flex-row gap-3">
-            {/* Left: textarea wrapper with drag support */}
+            {/* Left: textarea wrapper - click or drag to upload */}
             <div
-              className="flex-1 relative"
+              className="flex-1 relative cursor-pointer"
               onDragOver={e => { e.preventDefault(); setDragging(true); }}
               onDragLeave={() => setDragging(false)}
-              onDrop={onDrop}
+              onDrop={e => { onDrop(e); if (e.dataTransfer.files.length === 0) fileRef.current?.click(); }}
+              onClick={() => fileRef.current?.click()}
             >
               <textarea
                 value={topic}
                 onChange={e => setTopic(e.target.value)}
-                placeholder="✍️ 描述你的PPT需求，例如：帮我做一份Q1季度销售工作汇报..."
-                className={`w-full h-32 px-4 py-3 pr-10 rounded-xl bg-[#FAFBFE] border outline-none resize-none text-sm text-gray-800 placeholder:text-gray-400 transition-all ${
+                onClick={e => e.stopPropagation()}
+                placeholder="✍️ 描述你的PPT需求，例如：帮我做一份Q1季度销售工作汇报...（支持拖拽或点击上传附件）"
+                className={`w-full h-32 px-4 py-3 rounded-xl bg-[#FAFBFE] border outline-none resize-none text-sm text-gray-800 placeholder:text-gray-400 transition-all cursor-pointer ${
                   dragging
                     ? 'border-[#8B5CF6] bg-[#F5F3FF]/30 ring-2 ring-[#EDE9FE]'
                     : 'border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white'
                 }`}
               />
-              {/* Inline attach button */}
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="absolute top-2.5 right-2.5 w-8 h-8 flex items-center justify-center rounded-lg text-gray-300 hover:text-[#5B4FE9] hover:bg-[#F5F3FF] transition-all"
-                title="上传附件"
-              >
-                <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-                </svg>
-              </button>
             </div>
             {/* Right: generate button */}
             <button

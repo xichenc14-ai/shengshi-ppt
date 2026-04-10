@@ -464,7 +464,6 @@ export default function Home() {
                 <div className="flex flex-wrap gap-1">
                   <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px]">主题色系</span>
                   <span className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded text-[10px]">自选配图</span>
-                  <span className="px-2 py-0.5 bg-green-50 text-green-600 rounded text-[10px]">零等待</span>
                 </div>
               </button>
 
