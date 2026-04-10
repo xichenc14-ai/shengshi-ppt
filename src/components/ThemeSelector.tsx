@@ -10,7 +10,6 @@ interface ThemeSelectorProps {
 export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const themes = selectedCategory ? getThemesByCategory(selectedCategory) : [];
-  const currentTheme = THEME_DATABASE.find(t => t.id === value);
 
   return (
     <div>
@@ -88,20 +87,7 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
         </div>
       )}
 
-      {/* Current selection preview */}
-      {currentTheme && (
-        <div className="flex items-center gap-2.5 text-xs text-gray-500">
-          <span className="text-gray-400">已选：</span>
-          <div className="flex gap-0.5">
-            {currentTheme.colors.map((c, i) => (
-              <div key={i} className="w-3.5 h-3.5 rounded-full shadow-sm" style={{ backgroundColor: c }} />
-            ))}
-          </div>
-          <span className="font-medium text-gray-700">{currentTheme.nameZh}</span>
-          <span className="text-gray-300">·</span>
-          <span className="text-gray-400">{currentTheme.style}</span>
-        </div>
-      )}
+
     </div>
   );
 }
