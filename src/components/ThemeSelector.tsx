@@ -1,6 +1,6 @@
 'use client';
 import React, { useState } from 'react';
-import { THEME_DATABASE, COLOR_CATEGORIES, getThemesByCategory, GammaTheme } from '@/lib/theme-database';
+import { THEME_DATABASE, COLOR_CATEGORIES, getThemesByCategory, getThemeById, GammaTheme } from '@/lib/theme-database';
 
 interface ThemeSelectorProps {
   value: string;
@@ -10,9 +10,28 @@ interface ThemeSelectorProps {
 export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const themes = selectedCategory ? getThemesByCategory(selectedCategory) : [];
+  const selectedTheme = getThemeById(value);
+
+  // 色系说明标签
+  const colorLabels = ['背景', '强调', '字体'];
 
   return (
     <div>
+      {/* Selected theme color info */}
+      {selectedTheme && (
+        <div className="flex items-center gap-3 px-1 py-2">
+          <span className="text-xs text-gray-400 flex-shrink-0">色系说明</span>
+          <div className="flex items-center gap-2">
+            {selectedTheme.colors.map((color, i) => (
+              <span key={i} className="flex items-center gap-1">
+                <span className="text-[11px] text-gray-500">{colorLabels[i]}</span>
+                <span className="w-3 h-3 rounded-full border border-gray-200 shadow-sm" style={{ backgroundColor: color }} />
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Color category swatches — horizontal scroll on mobile */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide">
         {COLOR_CATEGORIES.map(cat => (
