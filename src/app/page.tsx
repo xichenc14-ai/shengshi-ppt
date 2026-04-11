@@ -43,7 +43,7 @@ export default function Home() {
   const [directTextMode, setDirectTextMode] = useState<'generate' | 'condense' | 'preserve'>('generate');
 
   // Landing page vs generate flow
-  const [phase, setPhase] = useState<'landing' | 'input' | 'streaming' | 'outline' | 'generating' | 'direct-generating' | 'result'>('landing');
+  const [phase, setPhase] = useState<'landing' | 'input' | 'streaming' | 'outline' | 'generating' | 'direct-generating' | 'result'>('input');
 
   // Input state
   const [topic, setTopic] = useState('');
@@ -497,31 +497,40 @@ export default function Home() {
       {(phase === 'input' || phase === 'outline') && (
         <div className="flex-1 bg-white min-h-screen">
           <div className="max-w-3xl mx-auto px-4 md:px-6 pt-8 pb-24">
-            {/* Back button */}
-            <button onClick={backToLanding} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 mb-6 transition-colors">
-              <span>←</span> 返回首页
-            </button>
 
             {phase === 'input' && (
               <>
                 {/* Input card */}
                 <div className="relative bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-                  <textarea
-                    value={topic}
-                    onChange={e => setTopic(e.target.value)}
-                    placeholder="输入你想创建的 PPT 主题，例如：2024年度营销策略汇报"
-                    className="w-full min-h-[120px] px-4 py-3 pr-10 rounded-xl bg-[#FAFBFE] border border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-400 transition-all"
-                  />
-                  {/* Inline attach button */}
-                  <button
-                    onClick={() => fileRef.current?.click()}
-                    className="absolute top-[4.5rem] right-[1.6rem] w-8 h-8 flex items-center justify-center rounded-lg text-gray-300 hover:text-[#5B4FE9] hover:bg-[#F5F3FF] transition-all"
-                    title="上传附件"
-                  >
-                    <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-                    </svg>
-                  </button>
+                  {/* Input row: attach (left) + textarea (center) + generate (right) */}
+                  <div className="flex items-start gap-2">
+                    <button
+                      onClick={() => fileRef.current?.click()}
+                      className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl text-gray-300 hover:text-[#5B4FE9] hover:bg-[#F5F3FF] border border-gray-200 hover:border-[#5B4FE9] transition-all mt-0.5"
+                      title="上传附件"
+                    >
+                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+                      </svg>
+                    </button>
+                    <textarea
+                      value={topic}
+                      onChange={e => setTopic(e.target.value)}
+                      placeholder="输入你想创建的 PPT 主题，例如：2024年度营销策略汇报"
+                      className="flex-1 min-h-[120px] px-4 py-3 rounded-xl bg-[#FAFBFE] border border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-400 transition-all"
+                    />
+                    <button
+                      onClick={() => { if (!user) { openLogin(); return; } if (mode === 'direct') generateDirect(); else generateOutline(); }}
+                      disabled={!hasInput}
+                      className={`flex-shrink-0 px-4 h-10 flex items-center gap-1.5 rounded-xl text-sm font-semibold transition-all mt-0.5 ${
+                        hasInput
+                          ? 'bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white shadow-md shadow-purple-200/50 hover:shadow-lg hover:shadow-purple-300/50 active:scale-95'
+                          : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      }`}
+                    >
+                      🪄 生成
+                    </button>
+                  </div>
                   <input ref={fileRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={async e => { if (e.target.files?.length) { const processed = await fileProcess(e.target.files); setFiles(prev => [...prev, ...processed]); } e.target.value = ''; }} className="hidden" />
 
                   {files.length > 0 && (
@@ -541,16 +550,6 @@ export default function Home() {
                   {/* Mode indicator */}
                   <div className="flex gap-2 mt-1">
                     <button
-                      onClick={() => setMode('smart')}
-                      className={`flex-1 py-2.5 rounded-xl border text-center transition-all text-sm font-medium ${
-                        mode === 'smart'
-                          ? 'border-[#5B4FE9] bg-[#F5F3FF] text-[#4338CA] shadow-sm'
-                          : 'border-gray-200 text-gray-400 hover:border-gray-300'
-                      }`}
-                    >
-                      ✨ 省心定制
-                    </button>
-                    <button
                       onClick={() => setMode('direct')}
                       className={`flex-1 py-2.5 rounded-xl border text-center transition-all text-sm font-medium ${
                         mode === 'direct'
@@ -559,6 +558,16 @@ export default function Home() {
                       }`}
                     >
                       🛠️ 专业模式
+                    </button>
+                    <button
+                      onClick={() => setMode('smart')}
+                      className={`flex-1 py-2.5 rounded-xl border text-center transition-all text-sm font-medium ${
+                        mode === 'smart'
+                          ? 'border-[#5B4FE9] bg-[#F5F3FF] text-[#4338CA] shadow-sm'
+                          : 'border-gray-200 text-gray-400 hover:border-gray-300'
+                      }`}
+                    >
+                      ✨ 省心定制
                     </button>
                   </div>
 
@@ -592,19 +601,19 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* Simplified params */}
-                      <div className="grid grid-cols-2 gap-3 mt-3">
+                      {/* Simplified params — 3 columns: 配图 / 风格 / 页数 */}
+                      <div className="grid grid-cols-3 gap-3 mt-3">
                         <div>
-                          <label className="text-xs text-gray-500 mb-1 block">配图模式</label>
+                          <label className="text-xs text-gray-500 mb-1 block">配图风格</label>
                           <select
                             value={directImgMode}
                             onChange={e => setDirectImgMode(e.target.value)}
                             className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
                           >
-                            <option value="none">1. 纯净无图</option>
-                            <option value="emphasis">2. 精选套图</option>
-                            <option value="web">3. 定制网图</option>
-                            <option value="ai">4. 定制AI图</option>
+                            <option value="none">纯净无图</option>
+                            <option value="emphasis">精选套图</option>
+                            <option value="web">定制网图</option>
+                            <option value="ai">定制AI图</option>
                           </select>
                         </div>
                         <div>
@@ -620,31 +629,17 @@ export default function Home() {
                             <option value="bold">大胆</option>
                           </select>
                         </div>
-                      </div>
-                      <div className="mt-3">
-                        <label className="text-xs text-gray-500 mb-1 block">页数</label>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => setPages(Math.max(5, pages - 1))}
-                            className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:border-[#5B4FE9] hover:text-[#5B4FE9] transition-colors"
-                          >
-                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
-                          </button>
-                          <input
-                            type="number"
-                            min="5"
-                            max="30"
+                        <div>
+                          <label className="text-xs text-gray-500 mb-1 block">页数</label>
+                          <select
                             value={pages}
-                            onChange={e => setPages(Math.min(30, Math.max(5, Number(e.target.value))))}
-                            className="w-16 h-8 text-center border border-gray-200 rounded-lg text-sm font-medium text-gray-700 outline-none focus:border-[#5B4FE9]"
-                          />
-                          <span className="text-xs text-gray-400">页</span>
-                          <button
-                            onClick={() => setPages(Math.min(30, pages + 1))}
-                            className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:border-[#5B4FE9] hover:text-[#5B4FE9] transition-colors"
+                            onChange={e => setPages(Number(e.target.value))}
+                            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
                           >
-                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 15l-6-6-6 6"/></svg>
-                          </button>
+                            {[5,6,7,8,9,10,12,15,20,25,30].map(n => (
+                              <option key={n} value={n}>{n} 页</option>
+                            ))}
+                          </select>
                         </div>
                       </div>
                     </div>
@@ -694,6 +689,16 @@ export default function Home() {
                     </div>
                   ))}
                   <button onClick={addSlide} className="w-full py-2.5 border border-dashed border-gray-200 rounded-xl text-xs text-gray-400 hover:text-[#5B4FE9] hover:border-[#5B4FE9] transition-colors">+ 添加幻灯片</button>
+
+                  {/* Inline generate button for outline phase */}
+                  {!loading && (
+                    <button
+                      onClick={confirmAndGenerate}
+                      className="w-full mt-4 py-3 rounded-xl bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white text-sm font-semibold shadow-md shadow-purple-200/50 hover:shadow-lg hover:shadow-purple-300/50 active:scale-[0.98] transition-all"
+                    >
+                      🪄 确认生成 PPT
+                    </button>
+                  )}
                 </div>
 
                 {error && <div className="mb-4 px-3 py-2 bg-red-50 text-red-500 rounded-lg text-xs">❌ {error}</div>}
@@ -701,15 +706,7 @@ export default function Home() {
             )}
           </div>
 
-          {/* Floating button */}
-          {!loading && (
-            <FloatingButton
-              label='✨ 生成'
-              icon={phase === 'input' ? (mode === 'direct' ? '🛠️' : '✨') : '🛠️'}
-              onClick={phase === 'input' ? (mode === 'direct' ? generateDirect : generateOutline) : confirmAndGenerate}
-              disabled={phase === 'input' && !hasInput}
-            />
-          )}
+          {/* Floating button removed — generate is now inline in the input row */}
         </div>
       )}
 
