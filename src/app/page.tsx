@@ -502,29 +502,34 @@ export default function Home() {
               <>
                 {/* Input card */}
                 <div className="relative bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-                  {/* Input row: attach (left) + textarea (center) + generate (right) */}
-                  <div className="flex items-start gap-2">
-                    <button
-                      onClick={() => fileRef.current?.click()}
-                      className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl text-gray-300 hover:text-[#5B4FE9] hover:bg-[#F5F3FF] border border-gray-200 hover:border-[#5B4FE9] transition-all mt-0.5"
-                      title="上传附件"
-                    >
-                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-                      </svg>
-                    </button>
-                    <textarea
-                      value={topic}
-                      onChange={e => setTopic(e.target.value)}
-                      placeholder="输入你想创建的 PPT 主题，例如：2024年度营销策略汇报"
-                      className="flex-1 min-h-[120px] px-4 py-3 rounded-xl bg-[#FAFBFE] border border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-400 transition-all"
-                    />
+                  {/* Input row: textarea (with inline attach) + generate button (height aligned) */}
+                  <div className="flex gap-2">
+                    {/* Textarea container with attach button inside */}
+                    <div className="relative flex-1">
+                      <textarea
+                        value={topic}
+                        onChange={e => setTopic(e.target.value)}
+                        placeholder="输入你想创建的 PPT 主题，例如：2024年度营销策略汇报"
+                        className="w-full min-h-[120px] px-4 py-3 rounded-xl bg-[#FAFBFE] border border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-400 transition-all"
+                      />
+                      {/* Attach button inside textarea (bottom-left) */}
+                      <button
+                        onClick={() => fileRef.current?.click()}
+                        className="absolute bottom-2.5 left-2.5 w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 hover:text-[#5B4FE9] hover:bg-[#F5F3FF]/80 transition-all"
+                        title="上传附件"
+                      >
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+                        </svg>
+                      </button>
+                    </div>
+                    {/* Generate button - height aligned with textarea */}
                     <button
                       onClick={() => { if (!user) { openLogin(); return; } if (mode === 'direct') generateDirect(); else generateOutline(); }}
                       disabled={!hasInput}
-                      className={`flex-shrink-0 px-4 h-10 flex items-center gap-1.5 rounded-xl text-sm font-semibold transition-all mt-0.5 ${
+                      className={`flex-shrink-0 min-h-[120px] px-5 flex items-center justify-center gap-1.5 rounded-xl text-sm font-semibold transition-all ${
                         hasInput
-                          ? 'bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white shadow-md shadow-purple-200/50 hover:shadow-lg hover:shadow-purple-300/50 active:scale-95'
+                          ? 'bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white shadow-md shadow-purple-200/50 hover:shadow-lg hover:shadow-purple-300/50 active:scale-[0.98]'
                           : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                       }`}
                     >
