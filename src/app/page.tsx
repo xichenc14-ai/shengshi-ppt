@@ -173,7 +173,7 @@ export default function Home() {
 
         let finalGammaUrl = '';
 
-        while (Date.now() - startTime < 180000) {
+        while (Date.now() - startTime < 120000) {
           await new Promise(r => setTimeout(r, pollInterval));
 
           const statusRes = await fetch(`/api/gamma?id=${gd.generationId}`);
@@ -198,7 +198,7 @@ export default function Home() {
         }
 
         if (!finalExportUrl) {
-          throw new Error('生成超时，请重试');
+          throw new Error('生成超时（2分钟），PPT内容较复杂，请稍后重试');
         }
 
         await new Promise(r => setTimeout(r, 500));
@@ -434,13 +434,13 @@ export default function Home() {
         setGenProgress(60);
         setStepText('正在等待 AI 渲染 PPT...');
 
-        // 轮询状态（最多 3 分钟）
+        // 轮询状态（最多 2 分钟）
         const startTime = Date.now();
         const pollInterval = 4000;
         let finalExportUrl = '';
         let finalGammaUrl = '';
 
-        while (Date.now() - startTime < 180000) {
+        while (Date.now() - startTime < 120000) {
           await new Promise(r => setTimeout(r, pollInterval));
 
           const statusRes = await fetch(`/api/gamma?id=${gd.generationId}`);
@@ -466,7 +466,7 @@ export default function Home() {
         }
 
         if (!finalExportUrl) {
-          throw new Error('生成超时，请重试');
+          throw new Error('生成超时（2分钟），PPT内容较复杂，请稍后重试');
         }
 
         await new Promise(r => setTimeout(r, 500));
