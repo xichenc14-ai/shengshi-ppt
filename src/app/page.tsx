@@ -32,7 +32,7 @@ type SlideItem = { id: string; title: string; content?: string[]; notes?: string
 // 在 confirmAndGenerate 中直接传 slides 给 /api/gamma
 
 export default function Home() {
-  const { user, showLogin, showPayment, paymentPlan, openPayment, openLogin, closeLogin, closePayment } = useAuth();
+  const { user, showLogin, showPayment, paymentPlan, openPayment, openLogin, closeLogin, closePayment, updateCredits } = useAuth();
   const router = useRouter();
 
   // Dual-track mode
@@ -137,9 +137,7 @@ export default function Home() {
         throw new Error(deductData.error || '积分扣除失败');
       }
       const updatedUser = { ...user, credits: deductData.balance };
-      localStorage.setItem('sx_user', JSON.stringify(updatedUser));
-
-      // Step 1: Create AI generation task
+      updateCredits(deductData.balance);
       setGenStep(1);
       setGenProgress(25);
       setStepText('AI 正在渲染 PPT 页面...');
@@ -379,7 +377,7 @@ export default function Home() {
       }
       // Update credits locally
       const updatedUser = { ...user, credits: deductData.balance };
-      localStorage.setItem('sx_user', JSON.stringify(updatedUser));
+      updateCredits(deductData.balance);
 
       // Step 1: Prepare
       setGenStep(1);

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 
 export default function AccountPage() {
-  const { user, logout, openPayment } = useAuth();
+  const { user, logout, openPayment, updateUser } = useAuth();
   const router = useRouter();
   const [nickname, setNickname] = useState('');
   const [editing, setEditing] = useState(false);
@@ -29,7 +29,7 @@ export default function AccountPage() {
       if (data.user) {
         // Update local state
         const updatedUser = { ...user, nickname: nickname.trim() };
-        localStorage.setItem('sx_user', JSON.stringify(updatedUser));
+        updateUser({ nickname: nickname.trim() });
         window.location.reload();
       }
     } catch {}

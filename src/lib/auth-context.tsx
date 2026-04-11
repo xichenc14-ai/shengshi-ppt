@@ -48,30 +48,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [showPayment, setShowPayment] = useState(false);
   const [paymentPlan, setPaymentPlan] = useState<PaymentPlan | null>(null);
 
+  // 从服务端session恢复用户状态
   useEffect(() => {
-    try {
-      const s = localStorage.getItem('sx_user');
-      if (s) setUser(JSON.parse(s));
-    } catch {}
-    setLoading(false);
+    fetch('/api/session')
+      .then(res => res.json())
+      .then(data => {
+        if (data.isLoggedIn && data.user) {
+          setUser(data.user);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
+
+  // 迁移旧localStorage用户到cookie（一次性）
+  useEffect(() => {
+    if (loading) return;
+    try {
+      const old = localStorage.getItem('sx_user');
+      if (old && !user) {
+        const parsed = JSON.parse(old);
+        // 一次性迁移：写入服务端session，然后清理localStorage
+        fetch('/api/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'login', user: parsed }),
+        }).then(() => {
+          localStorage.removeItem('sx_user');
+          setUser(parsed);
+        }).catch(() => {});
+      } else if (!old && user) {
+        // 已有session，确保localStorage干净
+        localStorage.removeItem('sx_user');
+      }
+    } catch {}
+  }, [loading, user]);
 
   const login = useCallback((u: UserInfo) => {
     setUser(u);
-    localStorage.setItem('sx_user', JSON.stringify(u));
     setShowLogin(false);
+    // 写入服务端httpOnly cookie
+    fetch('/api/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'login', user: u }),
+    }).catch(() => {});
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
-    localStorage.removeItem('sx_user');
+    // 销毁服务端session
+    fetch('/api/session', { method: 'DELETE' }).catch(() => {});
   }, []);
 
   const updateCredits = useCallback((credits: number) => {
     setUser(prev => {
       if (!prev) return prev;
       const updated = { ...prev, credits };
-      localStorage.setItem('sx_user', JSON.stringify(updated));
+      fetch('/api/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update', user: { credits } }),
+      }).catch(() => {});
       return updated;
     });
   }, []);
@@ -80,7 +118,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(prev => {
       if (!prev) return prev;
       const updated = { ...prev, ...data };
-      localStorage.setItem('sx_user', JSON.stringify(updated));
+      fetch('/api/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update', user: data }),
+      }).catch(() => {});
       return updated;
     });
   }, []);

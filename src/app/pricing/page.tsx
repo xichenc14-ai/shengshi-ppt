@@ -117,16 +117,16 @@ function PlanCard({ plan, user, openPayment, openLogin }: { plan: Plan; user: an
           <div className="flex items-center justify-center gap-2 mt-3 mb-1">
             <button
               onClick={() => setIsAnnual(false)}
-              className={`text-[11px] px-3 py-1 rounded-full transition-all ${
-                !isAnnual ? 'bg-[#5B4FE9] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              className={`text-[11px] px-3 py-1 rounded-full transition-all active:scale-95 disabled:opacity-50 ${
+                !isAnnual ? 'bg-[#5B4FE9] text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}
             >
               月付
             </button>
             <button
               onClick={() => setIsAnnual(true)}
-              className={`text-[11px] px-3 py-1 rounded-full transition-all ${
-                isAnnual ? 'bg-[#5B4FE9] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              className={`text-[11px] px-3 py-1 rounded-full transition-all active:scale-95 disabled:opacity-50 ${
+                isAnnual ? 'bg-[#5B4FE9] text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}
             >
               年付

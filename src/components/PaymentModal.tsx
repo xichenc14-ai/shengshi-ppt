@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 
 interface PaymentModalProps {
   open: boolean;
@@ -15,8 +15,27 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
   const [payMethod, setPayMethod] = useState<'wechat' | 'alipay'>('wechat');
   const [step, setStep] = useState<Step>('select');
   const [submitting, setSubmitting] = useState(false);
+  const [isClient, setIsClient] = useState(false);
 
-  const handleNext = async () => {
+  // 仅在客户端渲染，避免hydration问题
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // 重置状态当Modal打开时
+  useEffect(() => {
+    if (open) {
+      setStep('select');
+      setPayMethod('wechat');
+      setSubmitting(false);
+    }
+  }, [open]);
+
+  const handlePayMethodChange = useCallback((method: 'wechat' | 'alipay') => {
+    setPayMethod(method);
+  }, []);
+
+  const handleNext = useCallback(async () => {
     if (!plan) return;
     setSubmitting(true);
     try {
@@ -33,14 +52,19 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
       }
     } catch {
       alert('创建订单失败');
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
-  };
+  }, [plan, payMethod]);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setStep('select');
     onClose();
-  };
+  }, [onClose]);
+
+  const handleBack = useCallback(() => {
+    setStep('select');
+  }, []);
 
   // ESC key to close
   React.useEffect(() => {
