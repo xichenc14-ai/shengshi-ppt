@@ -523,17 +523,27 @@ export default function Home() {
                         </svg>
                       </button>
                     </div>
-                    {/* Generate button - height aligned with textarea */}
+                    {/* Generate button - height aligned with textarea, more attractive */}
                     <button
                       onClick={() => { if (!user) { openLogin(); return; } if (mode === 'direct') generateDirect(); else generateOutline(); }}
                       disabled={!hasInput}
-                      className={`flex-shrink-0 min-h-[120px] px-5 flex items-center justify-center gap-1.5 rounded-xl text-sm font-semibold transition-all ${
+                      className={`relative flex-shrink-0 min-h-[120px] px-5 flex flex-col items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-all overflow-hidden ${
                         hasInput
-                          ? 'bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white shadow-md shadow-purple-200/50 hover:shadow-lg hover:shadow-purple-300/50 active:scale-[0.98]'
+                          ? 'bg-gradient-to-br from-[#5B4FE9] via-[#7C3AED] to-[#8B5CF6] text-white shadow-lg shadow-purple-300/40 hover:shadow-xl hover:shadow-purple-400/50 active:scale-[0.97]'
                           : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                       }`}
                     >
-                      🪄 生成
+                      {/* Breathing glow ring for active state */}
+                      {hasInput && (
+                        <span className="absolute inset-0 rounded-xl bg-gradient-to-br from-[#5B4FE9]/30 to-[#8B5CF6]/30 animate-pulse" />
+                      )}
+                      {/* Sparkle icons */}
+                      <span className={`relative z-10 text-2xl ${hasInput ? 'animate-bounce' : ''}`}>🪄</span>
+                      <span className="relative z-10 font-bold tracking-wide">生成</span>
+                      {/* Decorative sparkles */}
+                      {hasInput && (
+                        <span className="absolute top-2 right-2 text-xs animate-ping">✨</span>
+                      )}
                     </button>
                   </div>
                   <input ref={fileRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={async e => { if (e.target.files?.length) { const processed = await fileProcess(e.target.files); setFiles(prev => [...prev, ...processed]); } e.target.value = ''; }} className="hidden" />
