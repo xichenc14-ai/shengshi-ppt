@@ -110,7 +110,6 @@ export async function POST(request: NextRequest) {
       // 恢复技术部验证的关键参数
       cardOptions: {
         dimensions: '16x9',
-        cardSplit: 'inputTextBreaks' // ⭐ 精确分页控制
       },
     };
 
