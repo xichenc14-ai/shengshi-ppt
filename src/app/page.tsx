@@ -71,7 +71,7 @@ export default function Home() {
   const [streamingSlides, setStreamingSlides] = useState<SlideItem[]>([]);
 
   // Result
-  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; dlUrl: string; gammaUrl?: string } | null>(null);
+  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; dlUrl: string; actualPages?: number } | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -104,7 +104,7 @@ export default function Home() {
     setPhase('direct-generating');
     setGenStep(0);
     setGenProgress(10);
-    setStepText('AI 正在提交 Gamma 直通任务...');
+    setStepText('AI 正在提交生成任务...');
 
     try {
       // Step 0: Deduct credits
@@ -134,7 +134,7 @@ export default function Home() {
       const updatedUser = { ...user, credits: deductData.balance };
       localStorage.setItem('sx_user', JSON.stringify(updatedUser));
 
-      // Step 1: Create Gamma task
+      // Step 1: Create AI generation task
       setGenStep(1);
       setGenProgress(25);
       setStepText('AI 正在渲染 PPT 页面...');
@@ -159,15 +159,14 @@ export default function Home() {
       const gd = await gRes.json();
 
       if (gd.generationId) {
-        // Gamma API 是异步的，需要前端轮询状态
+        // API 是异步的，需要前端轮询状态
         setGenStep(2);
         setGenProgress(50);
-        setStepText('正在等待 Gamma 生成 PPT...');
+        setStepText('正在等待 AI 渲染 PPT...');
 
         const startTime = Date.now();
         const pollInterval = 4000;
         let finalExportUrl = '';
-        let finalGammaUrl = '';
 
         while (Date.now() - startTime < 180000) {
           await new Promise(r => setTimeout(r, pollInterval));
@@ -179,27 +178,26 @@ export default function Home() {
 
           if (statusData.status === 'completed') {
             finalExportUrl = statusData.exportUrl || '';
-            finalGammaUrl = statusData.gammaUrl || '';
             setGenProgress(90);
             setStepText('PPT 生成完成，准备下载...');
             break;
           }
 
           if (statusData.status === 'failed') {
-            throw new Error(statusData.error || 'Gamma 生成失败');
+            throw new Error(statusData.error || '生成失败');
           }
 
           const elapsed = Math.floor((Date.now() - startTime) / 1000);
           setStepText(`AI 渲染中... ${elapsed}秒`);
         }
 
-        if (!finalExportUrl && !finalGammaUrl) {
-          throw new Error('Gamma 生成超时，请重试');
+        if (!finalExportUrl) {
+          throw new Error('生成超时，请重试');
         }
 
         await new Promise(r => setTimeout(r, 500));
         const topicText = inputText.split('\n')[0].replace(/^#\s*/, '').trim();
-        setResult({ title: topicText || 'PPT', slides: [], dlUrl: finalExportUrl, gammaUrl: finalGammaUrl });
+        setResult({ title: topicText || 'PPT', slides: [], dlUrl: finalExportUrl, actualPages: pages });
         setGenProgress(100);
         setPhase('result');
       }
@@ -337,16 +335,15 @@ export default function Home() {
       const gd = await gRes.json();
 
       if (gd.generationId) {
-        // Gamma API 是异步的，需要轮询状态
+        // API 是异步的，需要轮询状态
         setGenStep(3);
         setGenProgress(60);
-        setStepText('正在等待 Gamma 生成 PPT...');
+        setStepText('正在等待 AI 渲染 PPT...');
 
-        // 轮询 Gamma 状态（最多 3 分钟）
+        // 轮询状态（最多 3 分钟）
         const startTime = Date.now();
         const pollInterval = 4000;
         let finalExportUrl = '';
-        let finalGammaUrl = '';
 
         while (Date.now() - startTime < 180000) {
           await new Promise(r => setTimeout(r, pollInterval));
@@ -358,14 +355,13 @@ export default function Home() {
 
           if (statusData.status === 'completed') {
             finalExportUrl = statusData.exportUrl || '';
-            finalGammaUrl = statusData.gammaUrl || '';
             setGenProgress(90);
             setStepText('PPT 生成完成，准备下载...');
             break;
           }
 
           if (statusData.status === 'failed') {
-            throw new Error(statusData.error || 'Gamma 生成失败');
+            throw new Error(statusData.error || '生成失败');
           }
 
           // pending / processing - 继续轮询，显示进度
@@ -374,11 +370,11 @@ export default function Home() {
         }
 
         if (!finalExportUrl) {
-          throw new Error('Gamma 生成超时，请重试');
+          throw new Error('生成超时，请重试');
         }
 
         await new Promise(r => setTimeout(r, 500));
-        setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalExportUrl, gammaUrl: finalGammaUrl });
+        setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalExportUrl, actualPages: editedSlides.length });
         setGenProgress(100);
         setPhase('result');
       }
@@ -708,7 +704,7 @@ export default function Home() {
           {/* Floating button */}
           {!loading && (
             <FloatingButton
-              label={phase === 'input' && mode === 'direct' ? '专业生成' : phase === 'input' ? '省心生成' : '确认生成'}
+              label='✨ 生成'
               icon={phase === 'input' ? (mode === 'direct' ? '🛠️' : '✨') : '🛠️'}
               onClick={phase === 'input' ? (mode === 'direct' ? generateDirect : generateOutline) : confirmAndGenerate}
               disabled={phase === 'input' && !hasInput}
@@ -761,13 +757,13 @@ export default function Home() {
           <div className="max-w-2xl mx-auto px-4 md:px-6 pt-16 text-center animate-fade-in">
             <div className="text-5xl mb-4">🎉</div>
             <h2 className="text-xl font-bold text-gray-900 mb-1">PPT 已生成！</h2>
-            <p className="text-xs text-gray-400 mb-8">{result.title} · {result.slides.length} 页</p>
+            <p className="text-xs text-gray-400 mb-8">{result.title} · {result.actualPages || result.slides.length || pages} 页</p>
 
             <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
               <div className="grid grid-cols-3 gap-4 mb-6">
                 <div className="text-center">
                   <div className="text-2xl mb-1">📄</div>
-                  <p className="text-xs text-gray-500">{result.slides.length} 页</p>
+                  <p className="text-xs text-gray-500">{result.actualPages || result.slides.length || pages} 页</p>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl mb-1">🎨</div>
@@ -789,7 +785,7 @@ export default function Home() {
                       document.body.appendChild(link);
                       link.click();
                       document.body.removeChild(link);
-                    } else if (result.dlUrl.includes('assets.api.gamma.app')) {
+                    } else if (result.dlUrl.includes('assets.api')) {
                       const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
                       const proxyUrl = `/api/export?url=${encodeURIComponent(result.dlUrl)}&name=${encodeURIComponent(filename)}`;
                       const link = document.createElement('a');
@@ -804,12 +800,6 @@ export default function Home() {
                   }} className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 transition-all">
                     📥 下载 PPTX
                   </button>
-                )}
-                {result.gammaUrl && (
-                  <a href={result.gammaUrl} target="_blank" rel="noopener noreferrer"
-                    className="w-full sm:w-auto px-8 py-3.5 text-purple-600 hover:text-purple-700 text-sm font-medium border border-purple-200 hover:border-purple-300 rounded-xl transition-all">
-                    🔗 在 Gamma 查看
-                  </a>
                 )}
                 <button onClick={reset} className="w-full sm:w-auto px-8 py-3.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">
                   继续创建
