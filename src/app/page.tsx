@@ -159,14 +159,47 @@ export default function Home() {
       const gd = await gRes.json();
 
       if (gd.generationId) {
-        // 本地生成是同步的，直接返回 downloadUrl
+        // Gamma API 是异步的，需要前端轮询状态
         setGenStep(2);
-        setGenProgress(80);
-        setStepText('PPT 生成完成，准备下载...');
-        await new Promise(r => setTimeout(r, 500));
+        setGenProgress(50);
+        setStepText('正在等待 Gamma 生成 PPT...');
 
+        const startTime = Date.now();
+        const pollInterval = 4000;
+        let finalExportUrl = '';
+        let finalGammaUrl = '';
+
+        while (Date.now() - startTime < 180000) {
+          await new Promise(r => setTimeout(r, pollInterval));
+
+          const statusRes = await fetch(`/api/gamma?id=${gd.generationId}`);
+          if (!statusRes.ok) continue;
+
+          const statusData = await statusRes.json();
+
+          if (statusData.status === 'completed') {
+            finalExportUrl = statusData.exportUrl || '';
+            finalGammaUrl = statusData.gammaUrl || '';
+            setGenProgress(90);
+            setStepText('PPT 生成完成，准备下载...');
+            break;
+          }
+
+          if (statusData.status === 'failed') {
+            throw new Error(statusData.error || 'Gamma 生成失败');
+          }
+
+          const elapsed = Math.floor((Date.now() - startTime) / 1000);
+          setStepText(`AI 渲染中... ${elapsed}秒`);
+        }
+
+        if (!finalExportUrl && !finalGammaUrl) {
+          throw new Error('Gamma 生成超时，请重试');
+        }
+
+        await new Promise(r => setTimeout(r, 500));
         const topicText = inputText.split('\n')[0].replace(/^#\s*/, '').trim();
-        setResult({ title: topicText || 'PPT', slides: [], dlUrl: gd.downloadUrl || '' });
+        setResult({ title: topicText || 'PPT', slides: [], dlUrl: finalExportUrl, gammaUrl: finalGammaUrl });
         setGenProgress(100);
         setPhase('result');
       }

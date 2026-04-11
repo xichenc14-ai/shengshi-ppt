@@ -137,42 +137,10 @@ export async function POST(request: NextRequest) {
     const createData = await createRes.json();
     const generationId = createData.generationId || createData.id;
 
-    // 步骤2：轮询等待完成（最多 3 分钟）
-    const startTime = Date.now();
-    const timeoutMs = 180000;
-    const pollInterval = 5000;
-
-    while (Date.now() - startTime < timeoutMs) {
-      await new Promise(r => setTimeout(r, pollInterval));
-
-      const statusRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
-        headers: { 'X-API-KEY': apiKey, 'User-Agent': GAMMA_UA },
-      });
-
-      if (!statusRes.ok) {
-        continue;
-      }
-
-      const statusData = await statusRes.json();
-
-      if (statusData.status === 'completed') {
-        return NextResponse.json({
-          generationId,
-          downloadUrl: statusData.exportUrl || null,
-          gammaUrl: statusData.gammaUrl || null,
-          title: statusData.title || null,
-        });
-      }
-
-      if (statusData.status === 'failed') {
-        return NextResponse.json(
-          { error: statusData.error || 'Gamma 生成失败' },
-          { status: 502 }
-        );
-      }
-    }
-
-    return NextResponse.json({ error: 'Gamma 生成超时' }, { status: 504 });
+    return NextResponse.json({
+      generationId,
+      message: '直通生成任务已创建',
+    });
   } catch (error: any) {
     console.error('Gamma direct error:', error);
     return NextResponse.json({ error: error.message || '生成失败' }, { status: 500 });
