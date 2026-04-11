@@ -103,11 +103,11 @@ export async function POST(request: NextRequest) {
       textMode,
       format: 'presentation',
       numCards,
+      exportAs,
       themeId: finalThemeId,
       additionalInstructions: finalInstructions,
       textOptions: { amount: 'medium', tone, language: 'zh-cn' },
       imageOptions,
-      // 恢复技术部验证的关键参数
       cardOptions: {
         dimensions: '16x9',
       },

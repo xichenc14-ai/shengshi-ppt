@@ -303,6 +303,7 @@ export async function POST(request: NextRequest) {
       textMode, // generate=标准/g直通，preserve=省心定制
       format,
       numCards,
+      exportAs,
       themeId: finalThemeId,
       additionalInstructions: finalInstructions,
       textOptions: {
