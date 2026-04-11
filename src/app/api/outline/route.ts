@@ -178,17 +178,35 @@ ${inputText}`
     // ===== 调用 AI（MiniMax 默认 + GLM 备用） =====
     let rawContent = await callAIWithFallback(systemPrompt, baseUserPrompt, finalTextMode === 'generate', searchContext);
 
+    // 清理 AI 返回内容
     let cleaned = rawContent.trim();
-    if (cleaned.startsWith('```')) {
-      cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    
+    // 移除 markdown 代码块标记（可能有多层）
+    while (cleaned.startsWith('```')) {
+      cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+    }
+    
+    // 移除可能的前后缀文字
+    const jsonStart = cleaned.indexOf('{');
+    const jsonEnd = cleaned.lastIndexOf('}');
+    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+      cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
     }
 
     let parsed: any;
     try {
       parsed = JSON.parse(cleaned);
     } catch (e) {
-      console.error('[Outline] JSON parse error:', cleaned.substring(0, 200));
-      throw new Error('大纲格式解析失败');
+      console.error('[Outline] JSON parse error. Raw content (first 500 chars):', cleaned.substring(0, 500));
+      console.error('[Outline] Full raw content:', rawContent);
+      // 尝试修复常见问题
+      try {
+        // 尝试移除控制字符
+        const fixed = cleaned.replace(/[\x00-\x1F\x7F]/g, '');
+        parsed = JSON.parse(fixed);
+      } catch (e2) {
+        throw new Error('大纲格式解析失败，请重试或简化输入内容');
+      }
     }
 
     // ===== 构建返回结果 =====
