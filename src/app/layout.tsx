@@ -15,6 +15,8 @@ export const metadata: Metadata = {
   },
 };
 
+const BAIDU_TONGJI_ID = process.env.NEXT_PUBLIC_BAIDU_TONGJI_ID;
+
 export default function RootLayout({
   children,
 }: {
@@ -23,11 +25,12 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <head>
-        {/* 百度统计 - 生产环境替换为真实 ID */}
-        <Script
-          src="https://hm.baidu.com/hm.js?PLACEHOLDER_BAIDU_TONGJI_ID"
-          strategy="afterInteractive"
-        />
+        {BAIDU_TONGJI_ID ? (
+          <Script
+            src={`https://hm.baidu.com/hm.js?${BAIDU_TONGJI_ID}`}
+            strategy="afterInteractive"
+          />
+        ) : null}
       </head>
       <body className="antialiased">
         <AuthProvider>
