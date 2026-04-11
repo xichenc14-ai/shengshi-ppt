@@ -71,6 +71,10 @@ export default function Home() {
   const [editedSlides, setEditedSlides] = useState<SlideItem[]>([]);
   const [streamingSlides, setStreamingSlides] = useState<SlideItem[]>([]);
 
+  // Drag-and-drop state for outline reordering
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
   // Result
   const [result, setResult] = useState<{ title: string; slides: SlideItem[]; dlUrl: string; actualPages?: number } | null>(null);
 
@@ -524,6 +528,33 @@ export default function Home() {
     setEditedSlides(prev => { const arr = [...prev]; [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]]; return arr; });
   };
 
+  // Drag-and-drop handlers for outline reordering
+  const handleDragStart = (idx: number) => {
+    setDragIndex(idx);
+  };
+  const handleDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    if (dragIndex !== null && dragIndex !== idx) {
+      setDragOverIndex(idx);
+    }
+  };
+  const handleDrop = (idx: number) => {
+    if (dragIndex !== null && dragIndex !== idx) {
+      setEditedSlides(prev => {
+        const arr = [...prev];
+        const [removed] = arr.splice(dragIndex, 1);
+        arr.splice(idx, 0, removed);
+        return arr;
+      });
+    }
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
+  const handleDragEnd = () => {
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
+
   const fileProcess = async (fl: FileList | File[]) => {
     const r: UploadedFile[] = [];
     for (const f of Array.from(fl)) {
@@ -771,7 +802,21 @@ export default function Home() {
 
                 <div className="space-y-2 mb-4">
                   {editedSlides.map((slide, idx) => (
-                    <div key={slide.id} className="bg-white rounded-xl border border-gray-100 p-3 group hover:border-[#EDE9FE] transition-colors">
+                    <div
+                      key={slide.id}
+                      draggable={true}
+                      onDragStart={() => handleDragStart(idx)}
+                      onDragOver={(e) => handleDragOver(e, idx)}
+                      onDrop={() => handleDrop(idx)}
+                      onDragEnd={handleDragEnd}
+                      className={`bg-white rounded-xl border p-3 group transition-all ${
+                        dragIndex === idx
+                          ? 'border-[#5B4FE9] bg-[#F5F3FF] opacity-50 scale-[0.98]'
+                          : dragOverIndex === idx
+                            ? 'border-[#5B4FE9] bg-[#FAF5FF] shadow-md shadow-purple-100/50'
+                            : 'border-gray-100 hover:border-[#EDE9FE]'
+                      }`}
+                    >
                       <div className="flex items-start gap-2">
                         <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[#F5F3FF] text-[#5B4FE9] text-[10px] font-bold flex items-center justify-center mt-0.5">{idx + 1}</div>
                         <div className="flex-1 min-w-0">
