@@ -94,11 +94,14 @@ export async function POST(req: NextRequest) {
         expires_at: expiresAt,
       });
 
-      // TODO: 接入短信服务商（阿里云/腾讯云短信）后取消这行
-      // MVP 阶段：直接返回验证码给前端展示
-      console.log(`[SMS] 验证码 ${phone}: ${code}`);
-
-      return NextResponse.json({ success: true, code, message: '验证码已发送' });
+      // TODO: 接入短信服务商（阿里云/腾讯云短信）后启用
+      // MVP 阶段：开发环境返回验证码，生产环境不返回
+      const isDev = process.env.NODE_ENV !== 'production';
+      return NextResponse.json({
+        success: true,
+        ...(isDev && { code }), // 仅开发环境返回验证码
+        message: '验证码已发送',
+      });
     }
 
     // ===== 验证码登录/注册 =====
