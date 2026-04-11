@@ -146,19 +146,32 @@ function buildAdditionalInstructions(config: any, analysis: any): string {
   return instructions.join('\n');
 }
 
-// ===== AI调用：Kimi K2.5 优先 → MiniMax 备用 → GLM 兜底 =====
-async function callAIWithFallback(systemPrompt: string, userPrompt: string): Promise<string> {
-  // 1️⃣ Kimi K2.5
+// ===== AI调用：Kimi K2-thinking(深度分析) → K2(标准) → MiniMax → GLM =====
+async function callAIWithFallback(systemPrompt: string, userPrompt: string, useThinking = false): Promise<string> {
+  // 1️⃣ Kimi K2-thinking（深度需求分析场景：thinking 模型推理更精准）
+  if (useThinking) {
+    try {
+      const result = await callKimi(
+        [{ role: 'user', content: userPrompt }],
+        { system: systemPrompt, maxTokens: 8192, model: 'kimi-k2-thinking', timeoutMs: 180000 }
+      );
+      console.log('[SmartOutline] Kimi K2-thinking reasoning:', result.reasoning?.substring(0, 200));
+      return result.content;
+    } catch (e: any) {
+      console.warn('[SmartOutline] Kimi K2-thinking failed, falling back to K2:', e.message);
+    }
+  }
+  // 2️⃣ Kimi K2（标准模型，速度快）
   try {
     const result = await callKimi(
       [{ role: 'user', content: userPrompt }],
       { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
     );
-    return result;
+    return result.content;
   } catch (e: any) {
     console.warn('[SmartOutline] Kimi failed, falling back to MiniMax:', e.message);
   }
-  // 2️⃣ MiniMax M2.7
+  // 3️⃣ MiniMax M2.7
   try {
     return await callMiniMax(
       [{ role: 'user', content: userPrompt }],
@@ -167,7 +180,7 @@ async function callAIWithFallback(systemPrompt: string, userPrompt: string): Pro
   } catch (e2: any) {
     console.warn('[SmartOutline] MiniMax failed, falling back to GLM:', e2.message);
   }
-  // 3️⃣ GLM-5-turbo
+  // 4️⃣ GLM-5-turbo
   try {
     return await callGLM(systemPrompt, userPrompt, 'outline');
   } catch (e3: any) {
@@ -195,8 +208,8 @@ export async function POST(request: NextRequest) {
       ? `用户输入：\n${inputText}\n\n上传文件信息：\n${uploadedFiles.map((f: { name: string; type: string; size: number }) => `- ${f.name} (${f.type})`).join('\n')}`
       : `用户输入：\n${inputText}`;
 
-    // 调用 AI 深度分析
-    const rawContent = await callAIWithFallback(ANALYSIS_SYSTEM_PROMPT, userPrompt);
+    // 调用 AI 深度分析（省心模式用 thinking 模型深度推理）
+    const rawContent = await callAIWithFallback(ANALYSIS_SYSTEM_PROMPT, userPrompt, true);
 
     // 清理并解析 JSON
     let cleaned = rawContent.trim();

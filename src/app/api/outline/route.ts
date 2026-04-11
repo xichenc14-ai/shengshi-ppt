@@ -34,11 +34,12 @@ async function callAIWithFallback(
 ): Promise<string> {
   // 1️⃣ Kimi K2.5（默认首选：多模态+长上下文）
   try {
-    return await callKimiWithSearch(
+    const result = await callKimiWithSearch(
       userPrompt,
       searchContext,
       { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
     );
+    return result.content;
   } catch (e: any) {
     console.warn('[Outline] Kimi failed, falling back to MiniMax:', e.message);
   }
