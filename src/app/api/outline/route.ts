@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
-import { callMiniMax, callMiniMaxWithSearch } from '@/lib/minimax-client';
+import { callKimi, callKimiWithSearch } from '@/lib/kimi-client';
+import { callMiniMax } from '@/lib/minimax-client';
 import { callGLM } from '@/lib/glm-client';
 
 const SCENE_THEME_MAP: Record<string, { themeId: string; tone: string; imageMode: string }> = {
@@ -18,43 +19,45 @@ const SCENE_THEME_MAP: Record<string, { themeId: string; tone: string; imageMode
   '通用': { themeId: 'default-light', tone: 'professional', imageMode: 'pictographic' },
 };
 
-// ===== 联网搜索（用 MiniMax web search tool） =====
-async function searchTopicWithMiniMax(topic: string): Promise<string> {
-  try {
-    // 通过 MiniMax 的联网搜索能力获取主题相关信息
-    const searchPrompt = `请搜索关于"${topic}"的相关信息，返回3-5个关键信息点，用于PPT内容策划。搜索结果只需关键事实，不要长段落。`;
-
-    // 尝试用 MiniMax 联网（如果API支持）
-    // 降级：直接返回空字符串，让 AI 依靠自己的知识
-    return '';
-  } catch (e) {
-    console.warn('[Search] MiniMax search failed, using AI knowledge only:', e);
-    return '';
-  }
+// ===== 联网搜索（降级：直接返回空，让AI依靠知识库） =====
+async function searchTopic(topic: string): Promise<string> {
+  // Kimi K2.5 自身知识库足够丰富，暂不需要额外搜索
+  return '';
 }
 
-// ===== AI 调用策略：MiniMax 默认，GLM 备用 =====
+// ===== AI 调用策略：Kimi K2.5 优先 → MiniMax 备用 → GLM 兜底 =====
 async function callAIWithFallback(
   systemPrompt: string,
   userPrompt: string,
   useSearch: boolean = false,
   searchContext: string = ''
 ): Promise<string> {
+  // 1️⃣ Kimi K2.5（默认首选：多模态+长上下文）
   try {
-    // 优先用 MiniMax（支持联网搜索 + 图片理解）
-    return await callMiniMaxWithSearch(
+    return await callKimiWithSearch(
       userPrompt,
       searchContext,
       { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
     );
   } catch (e: any) {
-    console.warn('[Outline] MiniMax failed, falling back to GLM:', e.message);
-    // GLM 备用（纯文本，不支持联网搜索）
-    try {
-      return await callGLM(systemPrompt, userPrompt, 'outline');
-    } catch (e2: any) {
-      throw new Error(`AI调用全部失败：MiniMax(${e.message}) / GLM(${e2.message})`);
-    }
+    console.warn('[Outline] Kimi failed, falling back to MiniMax:', e.message);
+  }
+
+  // 2️⃣ MiniMax M2.7（备用：图片理解+联网）
+  try {
+    return await callMiniMax(
+      [{ role: 'user', content: userPrompt }],
+      { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
+    );
+  } catch (e2: any) {
+    console.warn('[Outline] MiniMax failed, falling back to GLM:', e2.message);
+  }
+
+  // 3️⃣ GLM-5-turbo（兜底：纯文本）
+  try {
+    return await callGLM(systemPrompt, userPrompt, 'outline');
+  } catch (e3: any) {
+    throw new Error(`AI调用全部失败：Kimi / MiniMax / GLM(${e3.message})`);
   }
 }
 
@@ -172,7 +175,7 @@ ${inputText}`
     // ===== 联网搜索（generate 模式或需要补充信息时） =====
     let searchContext = '';
     if (finalTextMode === 'generate' || smartModeAnalysis.needsSearch) {
-      searchContext = await searchTopicWithMiniMax(inputText.trim());
+      searchContext = await searchTopic(inputText.trim());
     }
 
     // ===== 调用 AI（MiniMax 默认 + GLM 备用） =====

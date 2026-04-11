@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
+import { callKimi } from '@/lib/kimi-client';
 import { callMiniMax } from '@/lib/minimax-client';
 import { callGLM } from '@/lib/glm-client';
 
@@ -145,21 +146,32 @@ function buildAdditionalInstructions(config: any, analysis: any): string {
   return instructions.join('\n');
 }
 
-// ===== AI调用 =====
+// ===== AI调用：Kimi K2.5 优先 → MiniMax 备用 → GLM 兜底 =====
 async function callAIWithFallback(systemPrompt: string, userPrompt: string): Promise<string> {
+  // 1️⃣ Kimi K2.5
   try {
-    const result = await callMiniMax(
+    const result = await callKimi(
       [{ role: 'user', content: userPrompt }],
       { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
     );
     return result;
   } catch (e: any) {
-    console.warn('[SmartOutline] MiniMax failed, falling back to GLM:', e.message);
-    try {
-      return await callGLM(systemPrompt, userPrompt, 'outline');
-    } catch (e2: any) {
-      throw new Error(`AI调用失败：${e.message} / ${e2.message}`);
-    }
+    console.warn('[SmartOutline] Kimi failed, falling back to MiniMax:', e.message);
+  }
+  // 2️⃣ MiniMax M2.7
+  try {
+    return await callMiniMax(
+      [{ role: 'user', content: userPrompt }],
+      { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
+    );
+  } catch (e2: any) {
+    console.warn('[SmartOutline] MiniMax failed, falling back to GLM:', e2.message);
+  }
+  // 3️⃣ GLM-5-turbo
+  try {
+    return await callGLM(systemPrompt, userPrompt, 'outline');
+  } catch (e3: any) {
+    throw new Error(`AI调用全部失败：Kimi / MiniMax / GLM(${e3.message})`);
   }
 }
 

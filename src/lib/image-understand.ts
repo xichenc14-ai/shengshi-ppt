@@ -1,38 +1,73 @@
-// MiniMax Vision 图片理解
-// 统一使用 api.minimaxi.com 端点
+// 图片理解：Kimi K2.5 优先 → MiniMax VL 备用
+// Kimi 多模态能力强，128K 上下文
+
 export async function understandImage(base64Data: string, mimeType: string): Promise<string> {
-  const apiKey = process.env.MINIMAX_API_KEY;
-  if (!apiKey) return '[图片内容无法识别：未配置API Key]';
+  // 1️⃣ Kimi K2.5（首选：多模态+长上下文）
+  const kimiKey = process.env.KIMI_API_KEY;
+  if (kimiKey) {
+    try {
+      const response = await fetch('https://api.moonshot.cn/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${kimiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'kimi-k2-0711',
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Data}` } },
+              { type: 'text', text: '请详细描述这张图片的内容，包括文字、图表数据、关键信息。如果这是一张PPT截图或网页截图，请提取其中的关键内容。' }
+            ]
+          }],
+          max_tokens: 4096,
+        }),
+      });
 
-  try {
-    const response = await fetch('https://api.minimaxi.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'MiniMax-VL-01',
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Data}` } },
-            { type: 'text', text: '请详细描述这张图片的内容，包括文字、图表数据、关键信息。如果这是一张PPT截图或网页截图，请提取其中的关键内容。' }
-          ]
-        }],
-        max_tokens: 4096,
-      }),
-    });
-
-    if (!response.ok) {
-      console.error('MiniMax Vision error:', response.status, await response.text());
-      return '[图片内容无法识别]';
+      if (response.ok) {
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content) return content;
+      }
+      console.warn('[ImageUnderstand] Kimi failed, falling back to MiniMax');
+    } catch (e) {
+      console.warn('[ImageUnderstand] Kimi error:', e);
     }
-
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || '[图片内容无法识别]';
-  } catch (error: any) {
-    console.error('Image understand error:', error);
-    return '[图片内容无法识别]';
   }
+
+  // 2️⃣ MiniMax VL-01（备用）
+  const minimaxKey = process.env.MINIMAX_API_KEY;
+  if (minimaxKey) {
+    try {
+      const response = await fetch('https://api.minimaxi.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${minimaxKey}`,
+        },
+        body: JSON.stringify({
+          model: 'MiniMax-VL-01',
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Data}` } },
+              { type: 'text', text: '请详细描述这张图片的内容，包括文字、图表数据、关键信息。' }
+            ]
+          }],
+          max_tokens: 4096,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content) return content;
+      }
+    } catch (e) {
+      console.error('[ImageUnderstand] MiniMax error:', e);
+    }
+  }
+
+  return '[图片内容无法识别]';
 }
