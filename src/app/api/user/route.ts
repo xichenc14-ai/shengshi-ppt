@@ -161,14 +161,22 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ===== 账号密码登录（测试用） =====
+    // ===== 账号密码登录（测试用，商用前移除） =====
     if (action === 'password_login') {
+      // ⚠️ 仅限开发环境使用，生产环境应通过 SUPABASE_DISABLE_TEST_LOGIN 禁用
+      if (process.env.NODE_ENV === 'production') {
+        return NextResponse.json({ error: '生产环境不支持密码登录' }, { status: 403 });
+      }
       const { username, password } = body;
       if (!username || !password) {
         return NextResponse.json({ error: '请输入用户名和密码' }, { status: 400 });
       }
-      // 硬编码测试账号
-      if (username !== 'xichen' || password !== '123456') {
+      // 测试账号（仅开发环境）
+      const TEST_USERS: Record<string, string> = {
+        'admin': process.env.TEST_ADMIN_PWD || 'changeme',
+        'xichen': process.env.TEST_XICHEN_PWD || 'changeme',
+      };
+      if (!TEST_USERS[username] || TEST_USERS[username] !== password) {
         return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
       }
 
@@ -237,18 +245,27 @@ export async function POST(req: NextRequest) {
       let totalCredit = baseCredit;
       if (numPages && numPages > 15) totalCredit += Math.ceil((numPages - 15) / 5) * 6;
 
-      const { data: u } = await sb.from('users').select('id,credits,total_credits_used').eq('id', userId).single();
-      if (!u) return NextResponse.json({ error: '用户不存在' }, { status: 404 });
-      if (u.credits < totalCredit) return NextResponse.json({ error: '积分不足', needed: totalCredit, balance: u.credits });
+      // 原子性扣除：使用条件更新防止并发超扣
+      // UPDATE users SET credits = credits - X WHERE id = Y AND credits >= X
+      const { data: updated, error: updErr } = await sb.rpc('deduct_credits_atomic', {
+        p_user_id: userId,
+        p_amount: totalCredit,
+        p_description: `${mode === 'generate' ? 'AI创作' : mode === 'condense' ? '智能摘要' : '原文排版'}-${numPages || 10}页`,
+      }).single();
 
-      const newBalance = u.credits - totalCredit;
-      await sb.from('users').update({ credits: newBalance, total_credits_used: (u.total_credits_used || 0) + totalCredit }).eq('id', userId);
-      await sb.from('credit_transactions').insert({
-        user_id: userId, amount: -totalCredit, balance_after: newBalance,
-        type: 'generation', description: `${mode === 'generate' ? 'AI创作' : mode === 'condense' ? '智能摘要' : '原文排版'}-${numPages || 10}页`,
-      });
+      if (updErr) {
+        console.error('Deduct credits error:', updErr);
+        return NextResponse.json({ error: '积分扣除失败' }, { status: 500 });
+      }
 
-      return NextResponse.json({ success: true, creditsUsed: totalCredit, balance: newBalance });
+      const result = updated as { new_balance: number } | null;
+      // RPC 返回 null 表示余额不足
+      if (!result) {
+        const { data: u } = await sb.from('users').select('credits').eq('id', userId).single();
+        return NextResponse.json({ error: '积分不足', needed: totalCredit, balance: u?.credits || 0 });
+      }
+
+      return NextResponse.json({ success: true, creditsUsed: totalCredit, balance: result.new_balance });
     }
 
     return NextResponse.json({ error: '未知操作' }, { status: 400 });

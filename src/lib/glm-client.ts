@@ -1,13 +1,9 @@
 // GLM API 多 Key 轮询 + 模型智能调度
-// 3个 API Key 轮询处理高并发，根据任务类型选择最优模型
+// Key 从环境变量读取，逗号分隔：GLM_API_KEYS=key1,key2,key3
 
-const API_KEYS = [
-  'sk-aYkgax1UyvuZvHXmWznc7S7DOV5FHgdEcGgmqEzgIGPxfdaP',
-  'sk-QeoWnTYka7JnpVPIwoHsPjpNpZjDKRyC5tAnTKvMmqxUkW7E',
-  'sk-MEq0JrenSHdKlwHXaHjHJBp892mrVman5V78ywjO7frdY88n',
-];
+const API_KEYS = (process.env.GLM_API_KEYS || '').split(',').filter(Boolean);
 
-const API_BASE = 'https://mydamoxing.cn/v1/chat/completions';
+const API_BASE = process.env.GLM_API_BASE || 'https://mydamoxing.cn/v1/chat/completions';
 
 // Key 轮询计数器
 let keyIndex = 0;

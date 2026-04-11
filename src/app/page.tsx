@@ -16,7 +16,7 @@ import LoginModal from '@/components/LoginModal';
 import PaymentModal from '@/components/PaymentModal';
 import StreamingOutline from '@/components/StreamingOutline';
 import GenerationProgress from '@/components/GenerationProgress';
-import FloatingButton from '@/components/FloatingButton';
+// FloatingButton removed (unused)
 import SkeletonCard from '@/components/SkeletonCard';
 import ThemeSelector from '@/components/ThemeSelector';
 import { buildMdV2 } from '@/lib/build-md-v2';
