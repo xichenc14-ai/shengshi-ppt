@@ -65,8 +65,9 @@ export default function Home() {
   const [genProgress, setGenProgress] = useState(0);
   const [genStep, setGenStep] = useState(0);
 
-  // Outline
+  // Outline & 省心模式 Payload
   const [outlineResult, setOutlineResult] = useState<{ title: string; slides: SlideItem[]; themeId?: string } | null>(null);
+  const [smartGammaPayload, setSmartGammaPayload] = useState<any>(null); // 省心模式 AI 生成的完整参数
   const [editedSlides, setEditedSlides] = useState<SlideItem[]>([]);
   const [streamingSlides, setStreamingSlides] = useState<SlideItem[]>([]);
 
@@ -208,8 +209,81 @@ export default function Home() {
     setLoading(false);
   }, [user, collectText, directTheme, directTone, directImgMode, directTextMode, pages, openPayment]);
 
-  // Step 1: Generate outline (with streaming feel)
+  // 省心模式生成流程：调用 smart-outline API（深度理解需求 + 自动确定参数）
+  const generateSmartOutline = useCallback(async () => {
+    const inputText = collectText();
+    if (!inputText.trim()) return;
+    if (!user) return;
+
+    setLoading(true);
+    setError('');
+    setPhase('streaming');
+    setGenStep(0);
+    setGenProgress(5);
+    setStepText('AI 正在深度理解你的需求...');
+
+    try {
+      // Step 1: 调用 smart-outline API（自动分析需求 + 确定参数 + 生成大纲）
+      setGenProgress(15);
+      setStepText('AI 正在分析场景和确定最佳方案...');
+
+      const smartRes = await fetch('/api/smart-outline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inputText,
+          uploadedFiles: files.map(f => ({ name: f.name, type: f.type, size: f.size }))
+        }),
+      });
+
+      if (!smartRes.ok) {
+        const d = await smartRes.json();
+        throw new Error(d.error || '需求分析失败');
+      }
+
+      const smartData = await smartRes.json();
+
+      // Step 2: 显示分析结果
+      setGenProgress(30);
+      setStepText(`识别场景: ${smartData.analysis?.scene || '通用'} · 主题: ${smartData.config?.themeName || '商务蓝'}`);
+
+      await new Promise(r => setTimeout(r, 800));
+
+      // Step 3: 显示大纲
+      setGenProgress(50);
+      setStreamingSlides(smartData.outline?.slides || []);
+      setStepText('生成专业大纲...');
+
+      await new Promise(r => setTimeout(r, smartData.outline?.slides?.length * 200 + 400));
+
+      // Step 4: 进入大纲编辑阶段
+      setOutlineResult({
+        title: smartData.outline?.title || 'PPT',
+        slides: smartData.outline?.slides || [],
+        themeId: smartData.config?.themeId,
+      });
+      setEditedSlides(smartData.outline?.slides || []);
+
+      // 保存 Gamma Payload（后续生成时直接使用）
+      setSmartGammaPayload(smartData.gammaPayload);
+
+      setGenProgress(100);
+      setPhase('outline');
+    } catch (e: any) {
+      setError(e.message);
+      setPhase('input');
+    }
+    setLoading(false);
+  }, [user, files, topic, collectText]);
+
+  // 专业模式生成流程：调用 outline API（用户手动选择参数）
   const generateOutline = useCallback(async () => {
+    // 如果是省心模式，调用新的智能流程
+    if (mode === 'smart') {
+      return generateSmartOutline();
+    }
+
+    // 专业模式：原流程
     const inputText = collectText();
     if (!inputText.trim()) return;
 
@@ -254,7 +328,7 @@ export default function Home() {
       setPhase('input');
     }
     setLoading(false);
-  }, [user, files, topic, showPro, genMode, pages, collectText]);
+  }, [user, files, topic, showPro, genMode, pages, collectText, mode, generateSmartOutline]);
 
   // Step 2: Confirm and generate PPT
   const confirmAndGenerate = useCallback(async () => {
@@ -267,8 +341,7 @@ export default function Home() {
     setStepText('AI 正在准备渲染...');
 
     try {
-      const isEasy = !showPro;
-      const tm = isEasy ? 'generate' : genMode;
+      const tm = mode === 'smart' ? 'preserve' : genMode;
 
       // Step 0: Deduct credits
       setGenStep(0);
@@ -310,26 +383,42 @@ export default function Home() {
       // Step 2: Generate
       setGenStep(2);
       setGenProgress(40);
-      setStepText('AI 正在渲染 PPT 页面...');
+      setStepText(mode === 'smart' && smartGammaPayload ? '正在精准渲染...' : 'AI 正在渲染 PPT 页面...');
 
-      // 🚨 关键改进：用 buildMdV2 构建高质量 Markdown，传 slides 给 API
-      const { markdown: md, visualMetaphor } = buildMdV2(outlineResult.title, editedSlides, imgMode);
-      const gRes = await fetch('/api/gamma', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // 🚨 省心模式：直接用 AI 生成的完整参数
+      // 🚨 专业模式：用 buildMdV2 构建内容
+      let gammaRequestBody: any;
+
+      if (mode === 'smart' && smartGammaPayload) {
+        // 省心模式：用 smartGammaPayload（AI 已分析并生成完整参数）
+        // 用户可能编辑了大纲，需要重建 inputText
+        const { markdown: rebuiltMd } = buildMdV2(outlineResult.title, editedSlides, smartGammaPayload.imageOptions?.source || 'pictographic');
+        gammaRequestBody = {
+          ...smartGammaPayload,
+          inputText: rebuiltMd, // 用用户编辑后的大纲
+          numCards: editedSlides.length, // 更新页数
+        };
+      } else {
+        // 专业模式：用用户选择的参数
+        const { markdown: md, visualMetaphor } = buildMdV2(outlineResult.title, editedSlides, imgMode);
+        gammaRequestBody = {
           inputText: md,
-          textMode: isEasy ? 'generate' : 'preserve',  // 🚨 省心定制用 preserve！
+          textMode: 'preserve',
           format: 'presentation',
           numCards: editedSlides.length,
           exportAs: 'pptx',
-          themeId: isEasy ? undefined : (theme === 'auto' ? outlineResult.themeId : theme),
-          scene: isEasy ? 'biz' : (tone === 'traditional' ? 'traditional' : 'biz'),
-          tone: isEasy ? 'professional' : tone,
-          imageMode: isEasy ? 'none' : imgMode,
-          slides: editedSlides,  // 🚨 传结构化数据，让 API 用 buildMdV2
+          themeId: theme === 'auto' ? outlineResult.themeId : theme,
+          tone,
+          imageMode: imgMode,
+          slides: editedSlides,
           visualMetaphor,
-        }),
+        };
+      }
+
+      const gRes = await fetch('/api/gamma', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(gammaRequestBody),
       });
       if (!gRes.ok) throw new Error('PPT 生成失败');
       const gd = await gRes.json();
