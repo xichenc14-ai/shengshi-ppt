@@ -4,7 +4,7 @@ import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-// 场景 → 推荐配置映射（恢复技术部验证的 pictographic）
+// 场景 → 推荐配置映射(恢复技术部验证的 pictographic)
 const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource: string; imageModel: string }> = {
   biz: { themeId: 'consultant', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
   pitch: { themeId: 'founder', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
@@ -18,189 +18,189 @@ const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource
 };
 
 const INSTRUCTION_TEMPLATES: Record<string, string> = {
-  professional: `【排版规则 — 严格遵守】
+  professional: `【排版规则 - 严格遵守】
 
-📐 字号规范（必须精确）：
-- 主标题（#）：≥ 44pt，加粗，居中
-- 页面标题（##）：≥ 32pt，加粗
-- 大文本要点（###）：≥ 24pt，加粗（正文必须是大文本，禁止小字）
-- 卡片标题（- **标题**）：≥ 20pt，加粗
+📐 字号规范(必须精确):
+- 主标题(#):≥ 44pt,加粗,居中
+- 页面标题(##):≥ 32pt,加粗
+- 大文本要点(###):≥ 24pt,加粗(正文必须是大文本,禁止小字)
+- 卡片标题(- **标题**):≥ 20pt,加粗
 
-📝 内容密度（铁律）：
+📝 内容密度(铁律):
 - 单页正文严格控制在50-80字以内
 - 超出80字必须拆分到下一页
 - 禁止出现大段文本堆积
 - 每页只放3-4个核心要点
-- 神奇数字3与4：归纳为3或4个并列项，触发三列/四宫格布局
+- 神奇数字3与4:归纳为3或4个并列项,触发三列/四宫格布局
 
-🎨 布局触发规则（核心技巧）：
+🎨 布局触发规则(核心技巧):
 - 3-4个并列要点 → 使用三列/四宫格卡片布局
-- 有序列表（1. 2. 3.）→ 时间轴/流程布局
-- ### 大文本短句 → 独占一行的大字正文（非普通小字）
-- **粗体短句** → 视觉强调（放大显示）
-- 对比内容（### 优势 / ### 劣势）→ 左右对照布局
+- 有序列表(1. 2. 3.)→ 时间轴/流程布局
+- ### 大文本短句 → 独占一行的大字正文(非普通小字)
+- **粗体短句** → 视觉强调(放大显示)
+- 对比内容(### 优势 / ### 劣势)→ 左右对照布局
 
-📊 数据可视化（铁律）：
-- 提到数据/统计/比例时必须分配图表类型（折线图/饼图/柱状图）
+📊 数据可视化(铁律):
+- 提到数据/统计/比例时必须分配图表类型(折线图/饼图/柱状图)
 - 所有图表必须显示数据标签
 
-📌 禁止事项（绝对禁止）：
-- 禁止普通小字正文（必须是大文本）
+📌 禁止事项(绝对禁止):
+- 禁止普通小字正文(必须是大文本)
 - 禁止将列表排成表格
 - 禁止表格嵌套超过2层
 - 禁止在内容页堆砌超过4个要点
 
-【风格：专业商务】
-配色：克制优雅，主色（深蓝/深灰）+ 1个强调色（金色/橙色），大面积留白
-字体：无衬线字体（思源黑体/PingFang SC/Microsoft YaHei）
-布局：规整对称，信息密度适中，视觉层次清晰
-感觉：麦肯锡/BCG/贝恩咨询PPT风格，权威可信
+【风格:专业商务】
+配色:克制优雅,主色(深蓝/深灰)+ 1个强调色(金色/橙色),大面积留白
+字体:无衬线字体(思源黑体/PingFang SC/Microsoft YaHei)
+布局:规整对称,信息密度适中,视觉层次清晰
+感觉:麦肯锡/BCG/贝恩咨询PPT风格,权威可信
 
 【配图规则】
 - 封面页和结尾页必须配图
-- 配图风格（必须包含）：Minimalist, clean background, negative space, professional, high quality
-- 配图位置：右图或上图，禁止左图布局
+- 配图风格(必须包含):Minimalist, clean background, negative space, professional, high quality
+- 配图位置:右图或上图,禁止左图布局
 - 适度使用 Icons 提高可视化
 
 【语言规则】
 - 所有文字使用简体中文
-- 保持演讲者备注（通过 > 引用块）`,
+- 保持演讲者备注(通过 > 引用块)`,
 
-  casual: `【排版规则 — 严格遵守】
+  casual: `【排版规则 - 严格遵守】
 
-📐 字号规范（必须精确）：
-- 主标题（#）：≥ 44pt，加粗，居中
-- 页面标题（##）：≥ 32pt，加粗
-- 大文本要点（###）：≥ 24pt，加粗（正文必须是大文本，禁止小字）
+📐 字号规范(必须精确):
+- 主标题(#):≥ 44pt,加粗,居中
+- 页面标题(##):≥ 32pt,加粗
+- 大文本要点(###):≥ 24pt,加粗(正文必须是大文本,禁止小字)
 
-📝 内容密度（铁律）：
+📝 内容密度(铁律):
 - 单页正文严格控制在50-80字以内
-- 神奇数字3与4：归纳为3或4个并列项，触发三列/四宫格布局
+- 神奇数字3与4:归纳为3或4个并列项,触发三列/四宫格布局
 
-🎨 布局触发规则：
+🎨 布局触发规则:
 - 3-4个并列要点 → 使用三列/四宫格卡片布局
 - ### 大文本短句 → 独占一行的大字正文
 
-📌 禁止事项：
-- 禁止普通小字正文（必须是大文本）
+📌 禁止事项:
+- 禁止普通小字正文(必须是大文本)
 - 禁止在内容页堆砌超过4个要点
 
-【风格：简洁友好】
-配色：明亮清新，主色（蓝/绿）+ 浅色背景，适当使用圆角元素
-字体：无衬线字体，现代感强
-感觉：Notion/Figma/Slack官方演示风格，友好亲切
+【风格:简洁友好】
+配色:明亮清新,主色(蓝/绿)+ 浅色背景,适当使用圆角元素
+字体:无衬线字体,现代感强
+感觉:Notion/Figma/Slack官方演示风格,友好亲切
 
 【配图规则】
-- 不使用外部图片，纯文字+图标+色块设计
+- 不使用外部图片,纯文字+图标+色块设计
 - 用色块、图标、几何图形填充视觉空间
-- 可使用图标库（Font Awesome / Material Icons）
+- 可使用图标库(Font Awesome / Material Icons)
 
 【语言规则】
 - 所有文字使用简体中文
-- 保持演讲者备注（通过 > 引用块）`,
+- 保持演讲者备注(通过 > 引用块)`,
 
-  creative: `【排版规则 — 严格遵守】
+  creative: `【排版规则 - 严格遵守】
 
-📐 字号规范（必须精确）：
-- 主标题（#）：≥ 44pt，加粗，居中
-- 大文本要点（###）：≥ 24pt，加粗（正文必须是大文本，禁止小字）
+📐 字号规范(必须精确):
+- 主标题(#):≥ 44pt,加粗,居中
+- 大文本要点(###):≥ 24pt,加粗(正文必须是大文本,禁止小字)
 
-📝 内容密度（铁律）：
+📝 内容密度(铁律):
 - 单页正文严格控制在50-80字以内
-- 神奇数字3与4：归纳为3或4个并列项，触发三列/四宫格布局
+- 神奇数字3与4:归纳为3或4个并列项,触发三列/四宫格布局
 
-🎨 布局触发规则：
+🎨 布局触发规则:
 - 3-4个并列要点 → 使用三列/四宫格卡片布局
 - ### 大文本短句 → 独占一行的大字正文
 
-📊 数据可视化：
-- 提到数据/统计时必须分配图表类型，强制显示数据标签
+📊 数据可视化:
+- 提到数据/统计时必须分配图表类型,强制显示数据标签
 
-📌 禁止事项：
-- 禁止普通小字正文（必须是大文本）
+📌 禁止事项:
+- 禁止普通小字正文(必须是大文本)
 - 禁止在内容页堆砌超过4个要点
 
-【风格：大胆创意】
-配色：大丰富，2-3个亮色（渐变粉/紫/橙），允许大色块背景
-字体：无衬线字体，粗体突出
-感觉：Apple/特斯拉发布会风格，前卫震撼
+【风格:大胆创意】
+配色:大丰富,2-3个亮色(渐变粉/紫/橙),允许大色块背景
+字体:无衬线字体,粗体突出
+感觉:Apple/特斯拉发布会风格,前卫震撼
 
 【配图规则】
 - 封面页使用AI生成配图
-- 配图风格：creative, vibrant, modern, bold colors, minimalist, negative space
-- 配图位置：右图或上图
+- 配图风格:creative, vibrant, modern, bold colors, minimalist, negative space
+- 配图位置:右图或上图
 
 【语言规则】
 - 所有文字使用简体中文
-- 保持演讲者备注（通过 > 引用块）`,
+- 保持演讲者备注(通过 > 引用块)`,
 
-  bold: `【排版规则 — 严格遵守】
+  bold: `【排版规则 - 严格遵守】
 
-📐 字号规范（必须精确）：
-- 主标题（#）：≥ 44pt，加粗，居中
-- 大文本要点（###）：≥ 24pt，加粗（正文必须是大文本，禁止小字）
+📐 字号规范(必须精确):
+- 主标题(#):≥ 44pt,加粗,居中
+- 大文本要点(###):≥ 24pt,加粗(正文必须是大文本,禁止小字)
 
-📝 内容密度（铁律）：
+📝 内容密度(铁律):
 - 单页正文严格控制在50-80字以内
-- 神奇数字3与4：归纳为3或4个并列项，触发三列/四宫格布局
+- 神奇数字3与4:归纳为3或4个并列项,触发三列/四宫格布局
 
-🎨 布局触发规则：
+🎨 布局触发规则:
 - 3-4个并列要点 → 使用三列/四宫格卡片布局
 - ### 大文本短句 → 独占一行的大字正文
 
-📊 数据可视化：
-- 提到数据/统计时必须分配图表类型，强制显示数据标签
+📊 数据可视化:
+- 提到数据/统计时必须分配图表类型,强制显示数据标签
 
-📌 禁止事项：
-- 禁止普通小字正文（必须是大文本）
+📌 禁止事项:
+- 禁止普通小字正文(必须是大文本)
 - 禁止在内容页堆砌超过4个要点
 
-【风格：高端科技】
-配色：深色主题，深蓝/深灰背景 + 亮色文字，大量使用渐变和光效
-字体：无衬线字体，极细/极粗字重对比
-感觉：高端科技公司品牌发布，引领未来
+【风格:高端科技】
+配色:深色主题,深蓝/深灰背景 + 亮色文字,大量使用渐变和光效
+字体:无衬线字体,极细/极粗字重对比
+感觉:高端科技公司品牌发布,引领未来
 
 【配图规则】
 - 封面页使用震撼的AI生成配图
-- 配图风格：futuristic, technology, modern, sleek, minimalist, negative space
-- 配图位置：右图或上图
+- 配图风格:futuristic, technology, modern, sleek, minimalist, negative space
+- 配图位置:右图或上图
 
 【语言规则】
 - 所有文字使用简体中文
-- 保持演讲者备注（通过 > 引用块）`,
+- 保持演讲者备注(通过 > 引用块)`,
 
-  traditional: `【排版规则 — 严格遵守】
+  traditional: `【排版规则 - 严格遵守】
 
-📐 字号规范（必须精确）：
-- 主标题（#）：≥ 44pt，加粗，居中
-- 页面标题（##）：≥ 32pt，加粗
-- 大文本要点（###）：≥ 24pt，加粗（正文必须是大文本，禁止小字）
+📐 字号规范(必须精确):
+- 主标题(#):≥ 44pt,加粗,居中
+- 页面标题(##):≥ 32pt,加粗
+- 大文本要点(###):≥ 24pt,加粗(正文必须是大文本,禁止小字)
 
-📝 内容密度（铁律）：
+📝 内容密度(铁律):
 - 单页正文严格控制在50-80字以内
-- 神奇数字3与4：归纳为3或4个并列项，触发三列/四宫格布局
+- 神奇数字3与4:归纳为3或4个并列项,触发三列/四宫格布局
 
-🎨 布局触发规则：
+🎨 布局触发规则:
 - 3-4个并列要点 → 使用三列/四宫格卡片布局
 - ### 大文本短句 → 独占一行的大字正文
 
-📌 禁止事项：
-- 禁止普通小字正文（必须是大文本）
+📌 禁止事项:
+- 禁止普通小字正文(必须是大文本)
 - 禁止在内容页堆砌超过4个要点
 
-【风格：中国传统】
-配色：古典配色，红/金/墨/米白，祥云/水墨/古典边框装饰
-字体：标题粗体，正文宋体/黑体
-感觉：故宫/国潮品牌发布风格，典雅大气
+【风格:中国传统】
+配色:古典配色,红/金/墨/米白,祥云/水墨/古典边框装饰
+字体:标题粗体,正文宋体/黑体
+感觉:故宫/国潮品牌发布风格,典雅大气
 
 【配图规则】
 - 封面页使用中国风配图
-- 配图风格：Chinese traditional, ink wash, classical Chinese art, elegant, minimalist, negative space
-- 配图位置：右图或上图
+- 配图风格:Chinese traditional, ink wash, classical Chinese art, elegant, minimalist, negative space
+- 配图位置:右图或上图
 
 【语言规则】
 - 所有文字使用简体中文
-- 保持演讲者备注（通过 > 引用块）`,
+- 保持演讲者备注(通过 > 引用块)`,
 };
 
 // POST: 创建 Gamma 生成任务
@@ -208,7 +208,7 @@ export async function POST(request: NextRequest) {
   const ip = request.headers.get('x-forwarded-for') || 'unknown';
   const { allowed } = rateLimit(`gamma:${ip}`, getRateLimitConfig('/api/gamma'));
   if (!allowed) {
-    return NextResponse.json({ error: '生成请求过于频繁，请稍后再试' }, { status: 429 });
+    return NextResponse.json({ error: '生成请求过于频繁,请稍后再试' }, { status: 429 });
   }
 
   try {
@@ -225,12 +225,17 @@ export async function POST(request: NextRequest) {
       imageMode = 'auto',
       slides,
       visualMetaphor,
+      // 省心模式传的完整参数
+      additionalInstructions,
+      imageOptions,
+      cardOptions,
+      textOptions,
     } = body;
 
     // 支持结构化 slides 数据或纯文本 inputText
     let finalInputText: string;
     if (inputText && inputText.trim()) {
-      // 优先使用 inputText（已由前端 buildMdV2 处理过的高质量 markdown）
+      // 优先使用 inputText(已由前端 buildMdV2 处理过的高质量 markdown)
       finalInputText = inputText.trim();
       // 短内容自动增强结构
       if (finalInputText.length < 100) {
@@ -239,7 +244,7 @@ export async function POST(request: NextRequest) {
         finalInputText = finalInputText.split(/\n\n+/).filter((p: string) => p.trim()).join('\n\n---\n\n');
       }
     } else if (slides && Array.isArray(slides) && slides.length > 0) {
-      // 兜底：从结构化 slides 构建 markdown
+      // 兜底:从结构化 slides 构建 markdown
       const markdown = slides.map((s: any) => {
         const content = (s.content || []).map((c: string) => `- ${c}`).join('\n');
         return `## ${s.title}\n\n${content}`;
@@ -270,32 +275,32 @@ export async function POST(request: NextRequest) {
     const finalThemeId = themeId || sceneConfig.themeId;
     const finalTone = tone || sceneConfig.tone;
 
-    // 图片模式（按照技术部 gamma-phase2-report.md 验证的11种图片源）
-    // pictographic 是技术部验证有效的免费插图源（0 credits）
-    let imageOptions: Record<string, any> = {};
-    if (imageMode === 'none') {
-      // 1-纯净无图
-      imageOptions = { source: 'noImages' };
+    // ===== 图片模式处理 =====
+    // 如果已传入完整的 imageOptions(省心模式),直接使用
+    // 否则根据 imageMode 字符串生成
+    let finalImageOptions: Record<string, any>;
+    if (imageOptions && typeof imageOptions === 'object' && imageOptions.source) {
+      // 省心模式:直接使用传入的 imageOptions
+      finalImageOptions = imageOptions;
+    } else if (imageMode === 'none') {
+      finalImageOptions = { source: 'noImages' };
     } else if (imageMode === 'emphasis' || imageMode === 'pictographic') {
-      // 2-精选套图：技术部验证的 pictographic（免费摘要图）
-      imageOptions = { source: 'pictographic' }; // ⭐ 推荐！免费插图
+      finalImageOptions = { source: 'pictographic' }; // ⭐ 推荐!免费插图
     } else if (imageMode === 'web') {
-      // 3-定制网图（商用免费图）
-      imageOptions = { source: 'webFreeToUseCommercially' };
+      finalImageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageMode === 'ai') {
-      // 4-定制AI图（只用普通模型：imagen-3-flash/flux-kontext-fast，禁用高级模型）
-      imageOptions = { source: 'aiGenerated', model: 'imagen-3-flash', style: 'flat illustration, minimalist, clean background, negative space' };
+      finalImageOptions = { source: 'aiGenerated', model: 'imagen-3-flash', style: 'flat illustration, minimalist, clean background, negative space' };
     } else {
-      // 默认：pictographic（技术部推荐）
-      imageOptions = { source: 'pictographic' }; // 免费且效果好
+      finalImageOptions = { source: 'pictographic' }; // 免费且效果好
     }
 
     const instructions = INSTRUCTION_TEMPLATES[finalTone] || INSTRUCTION_TEMPLATES.professional;
     // P0修复：追加全局视觉隐喻（如果提供）
     const metaphorAppend = visualMetaphor
       ? `\n\n【全局视觉隐喻】\n贯穿全演示的统一意象：${visualMetaphor}。\n所有配图、图标、色块风格应与此意象一致，配图描述中必须体现该意象关键词。`
-      : '';
-    const finalInstructions = instructions + metaphorAppend;
+      : '';    
+    // 如果已传入 additionalInstructions（省心模式），直接使用；否则生成
+    const finalInstructions = additionalInstructions || (instructions + metaphorAppend);
 
     // V8修复：恢复技术部验证的完整参数
     const gammaPayload: Record<string, any> = {
@@ -306,23 +311,24 @@ export async function POST(request: NextRequest) {
       exportAs,
       themeId: finalThemeId,
       additionalInstructions: finalInstructions,
-      textOptions: {
+      // 如果已传入 textOptions（省心模式），直接使用
+      textOptions: textOptions || {
         amount: 'medium',
         tone: finalTone,
         language: 'zh-cn',
       },
-      imageOptions,
-      // 恢复技术部验证的关键参数
-      cardOptions: {
+      imageOptions: finalImageOptions,
+      // 如果已传入 cardOptions（省心模式），直接使用
+      cardOptions: cardOptions || {
         dimensions: '16x9',
       },
-      // V6新增：preserve模式（省心定制）追加强布局指令
+      // V6新增:preserve模式(省心定制)追加强布局指令
       ...(textMode === 'preserve' && {
-        additionalInstructions: finalInstructions + '\n\n【省心定制-强化规则】\n严格保持原文结构，每页内容不超过3-4个要点，用---分页的位置必须保留，不要自动合并或拆分页面。'
+        additionalInstructions: finalInstructions + '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。'
       }),
-      // 精选套图：追加Gamma内置强调布局图指令
+      // 精选套图:追加Gamma内置强调布局图指令
       ...(imageMode === 'emphasis' && {
-        additionalInstructions: finalInstructions + '\n\n【精选套图-强调布局图】\n请为每一页自动配Gamma内置的强调布局图（Emphasize布局），这些是Gamma模板自带的免费装饰性图片，不需要额外credits。每页使用不同的强调图，保持视觉丰富度。'
+        additionalInstructions: finalInstructions + '\n\n【精选套图-强调布局图】\n请为每一页自动配Gamma内置的强调布局图(Emphasize布局),这些是Gamma模板自带的免费装饰性图片,不需要额外credits。每页使用不同的强调图,保持视觉丰富度。'
       }),
     };
 
@@ -365,7 +371,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET: 查询 Gamma 生成状态（前端轮询）
+// GET: 查询 Gamma 生成状态(前端轮询)
 export async function GET(request: NextRequest) {
   try {
     const apiKey = process.env.GAMMA_API_KEY;
