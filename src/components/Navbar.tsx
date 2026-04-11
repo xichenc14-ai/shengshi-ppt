@@ -4,16 +4,27 @@ import React from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 
-export default function Navbar() {
+interface NavbarProps {
+  onLogoClick?: () => void;
+}
+
+export default function Navbar({ onLogoClick }: NavbarProps) {
   const { user, logout, openLogin } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
+
+  const handleLogoClick = (e: React.MouseEvent) => {
+    if (onLogoClick) {
+      e.preventDefault();
+      onLogoClick();
+    }
+  };
 
   return (
     <>
       <nav className="h-16 bg-white/90 backdrop-blur-xl border-b border-gray-100/60 px-4 md:px-8 flex items-center justify-between sticky top-0 z-50">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2.5 group">
+        <Link href="/" className="flex items-center gap-2.5 group" onClick={handleLogoClick}>
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#5B4FE9] to-[#8B5CF6] flex items-center justify-center shadow-lg shadow-purple-200/50 group-hover:shadow-purple-300/60 transition-shadow">
             <span className="text-white text-sm font-bold">P</span>
           </div>
