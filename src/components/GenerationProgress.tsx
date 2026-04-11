@@ -98,14 +98,14 @@ export default function GenerationProgress({ currentStep, progress, subtext }: G
                         : 'bg-gray-50 border-2 border-gray-100'
                   }`}>
                     {isDone ? (
-                      <span className="text-xl text-white animate-bounce" style={{ animationDuration: '0.5s' }}>✓</span>
+                      <span className="text-xl text-white">✓</span>
                     ) : (
                       <span className={`text-xl ${isCurrent ? 'text-white animate-bounce' : 'text-gray-300'}`} style={{ animationDuration: isCurrent ? '1s' : '0s' }}>
                         {step.icon}
                       </span>
                     )}
-                    {/* Active pulse ring */}
-                    {isCurrent && (
+                    {/* Active pulse ring — only for current step */}
+                    {isCurrent && !isDone && (
                       <div className="absolute inset-0 rounded-xl bg-purple-400/30 animate-ping" style={{ animationDuration: '1.5s' }} />
                     )}
                   </div>
@@ -126,11 +126,11 @@ export default function GenerationProgress({ currentStep, progress, subtext }: G
                   
                   {/* Status badge */}
                   {isDone && (
-                    <span className="px-2 py-1 bg-green-100 text-green-600 text-xs rounded-full font-medium animate-fade-in">
+                    <span className="px-2 py-1 bg-green-100 text-green-600 text-xs rounded-full font-medium">
                       ✓ 完成
                     </span>
                   )}
-                  {isCurrent && (
+                  {isCurrent && !isDone && (
                     <span className="px-2 py-1 bg-purple-100 text-purple-600 text-xs rounded-full font-medium animate-pulse">
                       ⏳ 处理中
                     </span>

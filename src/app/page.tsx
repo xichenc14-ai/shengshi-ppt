@@ -626,12 +626,12 @@ export default function Home() {
                       {hasInput && (
                         <span className="absolute inset-0 rounded-xl bg-gradient-to-br from-[#5B4FE9]/30 to-[#8B5CF6]/30 animate-pulse" />
                       )}
-                      {/* Sparkle icons */}
-                      <span className={`relative z-10 text-2xl ${hasInput ? 'animate-bounce' : ''}`}>🪄</span>
+                      {/* Magic star icon */}
+                      <span className={`relative z-10 text-2xl ${hasInput ? 'animate-bounce' : ''}`}>✨</span>
                       <span className="relative z-10 font-bold tracking-wide">生成</span>
                       {/* Decorative sparkles */}
                       {hasInput && (
-                        <span className="absolute top-2 right-2 text-xs animate-ping">✨</span>
+                        <span className="absolute top-2 right-2 text-xs animate-ping">💫</span>
                       )}
                     </button>
                   </div>
@@ -678,6 +678,11 @@ export default function Home() {
                   {/* Direct mode: show ThemeSelector + simplified params */}
                   {mode === 'direct' && (
                     <div className="mt-4 pt-4 border-t border-gray-100">
+                      {/* 主题色说明 */}
+                      <div className="flex items-center gap-2 mb-3">
+                        <label className="text-xs text-gray-500">主题色系</label>
+                        <span className="text-xs text-gray-400">· 第一色：背景色 | 第二色：强调色 | 第三色：字体色</span>
+                      </div>
                       <ThemeSelector value={directTheme} onChange={setDirectTheme} />
 
                       {/* 直通三模式 */}
@@ -705,8 +710,20 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* Simplified params — 3 columns: 配图 / 风格 / 页数 */}
+                      {/* Simplified params — 3 columns: 页数(左) / 配图(中) / 风格(右) */}
                       <div className="grid grid-cols-3 gap-3 mt-3">
+                        <div>
+                          <label className="text-xs text-gray-500 mb-1 block">页数</label>
+                          <select
+                            value={pages}
+                            onChange={e => setPages(Number(e.target.value))}
+                            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                          >
+                            {[5,6,7,8,9,10,12,15,20,25,30].map(n => (
+                              <option key={n} value={n}>{n} 页</option>
+                            ))}
+                          </select>
+                        </div>
                         <div>
                           <label className="text-xs text-gray-500 mb-1 block">配图风格</label>
                           <select
@@ -731,18 +748,6 @@ export default function Home() {
                             <option value="casual">轻松</option>
                             <option value="creative">创意</option>
                             <option value="bold">大胆</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500 mb-1 block">页数</label>
-                          <select
-                            value={pages}
-                            onChange={e => setPages(Number(e.target.value))}
-                            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
-                          >
-                            {[5,6,7,8,9,10,12,15,20,25,30].map(n => (
-                              <option key={n} value={n}>{n} 页</option>
-                            ))}
                           </select>
                         </div>
                       </div>
