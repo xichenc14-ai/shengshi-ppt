@@ -25,6 +25,22 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const action = searchParams.get('action');
 
+  // ===== 清理测试数据（仅开发/调试用） =====
+  if (action === 'cleanup_test') {
+    const phone = searchParams.get('phone');
+    if (!phone || !/^1[3-9]\d{9}$/.test(phone)) {
+      return NextResponse.json({ error: '请提供正确手机号' }, { status: 400 });
+    }
+    
+    // 删除用户
+    await sb.from('users').delete().eq('phone', phone);
+    // 删除验证码
+    await sb.from('verification_codes').delete().eq('phone', phone);
+    
+    return NextResponse.json({ success: true, message: '已清理该手机号的所有数据' });
+  }
+
+  // ===== 检查手机号是否已注册 =====
   if (action === 'check_phone') {
     const phone = searchParams.get('phone');
     if (!phone || !/^1[3-9]\d{9}$/.test(phone)) {

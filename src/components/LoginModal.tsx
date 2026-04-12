@@ -27,13 +27,10 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
 
   // 手机号登录
   const [phone, setPhone] = useState('');
-  const [phoneChecked, setPhoneChecked] = useState<boolean | null>(null); // null=未检查
-  const [phoneNickname, setPhoneNickname] = useState('');
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [countdown, setCountdown] = useState(0);
   const [codeSent, setCodeSent] = useState(false);
   const [phoneStep, setPhoneStep] = useState<PhoneStep>('input');
-  const [usePasswordSub, setUsePasswordSub] = useState(false); // 已注册用户切换密码登录
 
   // 注册设置资料
   const [regUsername, setRegUsername] = useState('');
@@ -66,19 +63,11 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
     return () => document.removeEventListener('keydown', h);
   }, [open]);
 
-  // ===== 手机号：检查是否注册 =====
-  const checkPhone = useCallback(async () => {
+  // ===== 手机号：直接进入验证页（不预判断新老用户） =====
+  const goToVerify = useCallback(() => {
     if (!phone || !/^1[3-9]\d{9}$/.test(phone)) { setError('请输入正确的手机号'); return; }
-    setLoading(true); setError('');
-    try {
-      const res = await fetch(`/api/user?action=check_phone&phone=${encodeURIComponent(phone)}`);
-      const data = await res.json();
-      if (data.error) { setError(data.error); setLoading(false); return; }
-      setPhoneChecked(data.registered);
-      setPhoneNickname(data.nickname || '');
-      setPhoneStep('verify');
-    } catch { setError('网络错误'); }
-    setLoading(false);
+    setPhoneStep('verify');
+    setError('');
   }, [phone]);
 
   // ===== 发送验证码 =====
@@ -114,7 +103,6 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
       const data = await res.json();
       if (data.error === 'NOT_REGISTERED') {
         // 手机号未注册 → 走注册流程
-        setPhoneChecked(false);
         setPhoneStep('set_profile');
         setLoading(false);
         return;
@@ -146,22 +134,6 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
   }, [phone, code, regUsername, regPassword, regConfirmPwd, login]);
 
   // ===== 密码子模式登录（手机号Tab内） =====
-  const handlePhonePasswordLogin = useCallback(async () => {
-    if (!password) { setError('请输入密码'); return; }
-    setLoading(true); setError('');
-    try {
-      const res = await fetch('/api/user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'password_login', account: phone, password }),
-      });
-      const data = await res.json();
-      if (data.error) { setError(data.error); setLoading(false); return; }
-      if (data.user) { login(data.user); handleClose(); }
-    } catch { setError('登录失败'); }
-    setLoading(false);
-  }, [phone, password, login]);
-
   // ===== 账号密码登录（独立Tab） =====
   const handleAccountLogin = useCallback(async () => {
     if (!account.trim()) { setError('请输入用户名或手机号'); return; }
@@ -196,9 +168,9 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
   // ===== 重置 =====
   const handleClose = () => {
     onClose();
-    setPhone(''); setPhoneChecked(null); setPhoneNickname('');
+    setPhone('');
     setCode(['', '', '', '', '', '']); setCountdown(0); setCodeSent(false);
-    setPhoneStep('input'); setUsePasswordSub(false);
+    setPhoneStep('input');
     setRegUsername(''); setRegPassword(''); setRegConfirmPwd('');
     setAccount(''); setPassword(''); setShowPassword(false);
     setError(''); setSuccess('');
@@ -255,14 +227,14 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                     placeholder="请输入手机号"
                     maxLength={11}
                     className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] outline-none text-sm transition-all mb-3"
-                    onKeyDown={e => { if (e.key === 'Enter') checkPhone(); }}
+                    onKeyDown={e => { if (e.key === 'Enter') goToVerify(); }}
                   />
                   <button
-                    onClick={checkPhone}
+                    onClick={goToVerify}
                     disabled={!phone || !/^1[3-9]\d{9}$/.test(phone) || loading}
                     className="w-full py-3 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-purple-200/40 active:scale-[0.98] transition-all disabled:opacity-40"
                   >
-                    {loading ? '检查中...' : '下一步'}
+                    {loading ? '...' : '下一步'}
                   </button>
                   {error && <p className="text-center text-xs text-red-500 mt-3">{error}</p>}
                 </div>
@@ -272,98 +244,50 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
               {phoneStep === 'verify' && (
                 <div className="animate-fade-in">
                   <div className="flex items-center gap-2 mb-3">
-                    <button onClick={() => { setPhoneStep('input'); setPhoneChecked(null); setError(''); }} className="text-xs text-gray-400 hover:text-gray-600">← 返回</button>
+                    <button onClick={() => { setPhoneStep('input'); setError(''); }} className="text-xs text-gray-400 hover:text-gray-600">← 返回</button>
                     <span className="text-xs text-gray-400">手机号：{phone}</span>
-                    {phoneChecked && <span className="text-[10px] text-green-500 bg-green-50 px-2 py-0.5 rounded-full">已注册</span>}
-                    {!phoneChecked && <span className="text-[10px] text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">新用户</span>}
                   </div>
 
-                  {/* 已注册用户：切换验证码/密码 */}
-                  {phoneChecked && (
-                    <div className="flex gap-1 bg-gray-50 rounded-lg p-0.5 mb-3">
+                  {/* 验证码输入区域 */}
+                  <>
+                    {!codeSent ? (
                       <button
-                        onClick={() => setUsePasswordSub(false)}
-                        className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-all ${!usePasswordSub ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'}`}
+                        onClick={sendCode}
+                        disabled={loading}
+                        className="w-full py-3 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-purple-200/40 active:scale-[0.98] transition-all disabled:opacity-40 mb-3"
                       >
-                        验证码登录
+                        {loading ? '发送中...' : '获取验证码'}
                       </button>
-                      <button
-                        onClick={() => setUsePasswordSub(true)}
-                        className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-all ${usePasswordSub ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'}`}
-                      >
-                        密码登录
-                      </button>
-                    </div>
-                  )}
-
-                  {/* 验证码方式 */}
-                  {!usePasswordSub && (
-                    <>
-                      {!codeSent ? (
-                        <button
-                          onClick={sendCode}
-                          disabled={loading}
-                          className="w-full py-3 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-purple-200/40 active:scale-[0.98] transition-all disabled:opacity-40 mb-3"
-                        >
-                          {loading ? '发送中...' : '获取验证码'}
-                        </button>
-                      ) : (
-                        <div className="mb-3">
-                          <div className="flex gap-2 justify-center mb-2">
-                            {code.map((c, i) => (
-                              <input
-                                key={i}
-                                ref={el => { codeRefs.current[i] = el; }}
-                                type="text" inputMode="numeric" maxLength={1}
-                                value={c}
-                                onChange={e => handleCodeInput(i, e.target.value)}
-                                onKeyDown={e => handleCodeKeyDown(i, e)}
-                                className="w-10 h-12 text-center text-lg font-bold rounded-xl border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] outline-none transition-all"
-                              />
-                            ))}
-                          </div>
-                          <button onClick={sendCode} disabled={countdown > 0} className="text-xs text-[#5B4FE9] hover:underline disabled:text-gray-300 disabled:no-underline">
-                            {countdown > 0 ? `${countdown}s 后重新发送` : '重新发送验证码'}
-                          </button>
+                    ) : (
+                      <div className="mb-3">
+                        <div className="flex gap-2 justify-center mb-2">
+                          {code.map((c, i) => (
+                            <input
+                              key={i}
+                              ref={el => { codeRefs.current[i] = el; }}
+                              type="text" inputMode="numeric" maxLength={1}
+                              value={c}
+                              onChange={e => handleCodeInput(i, e.target.value)}
+                              onKeyDown={e => handleCodeKeyDown(i, e)}
+                              className="w-10 h-12 text-center text-lg font-bold rounded-xl border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] outline-none transition-all"
+                            />
+                          ))}
                         </div>
-                      )}
-                      {codeSent && (
-                        <button
-                          onClick={handleVerifyLogin}
-                          disabled={code.join('').length !== 6 || loading}
-                          className="w-full py-3 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-purple-200/40 active:scale-[0.98] transition-all disabled:opacity-40"
-                        >
-                          {loading ? '验证中...' : '验证'}
-                        </button>
-                      )}
-                    </>
-                  )}
-
-                  {/* 密码方式（已注册用户） */}
-                  {usePasswordSub && phoneChecked && (
-                    <div>
-                      <div className="relative mb-3">
-                        <input
-                          type={showPassword ? 'text' : 'password'}
-                          value={password}
-                          onChange={e => { setPassword(e.target.value); setError(''); }}
-                          placeholder="请输入密码"
-                          className="w-full px-4 py-3 pr-12 rounded-xl bg-gray-50 border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] outline-none text-sm transition-all"
-                          onKeyDown={e => { if (e.key === 'Enter') handlePhonePasswordLogin(); }}
-                        />
-                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs px-1">
-                          {showPassword ? '🙈' : '👁️'}
+                        <button onClick={sendCode} disabled={countdown > 0} className="text-xs text-[#5B4FE9] hover:underline disabled:text-gray-300 disabled:no-underline">
+                          {countdown > 0 ? `${countdown}s 后重新发送` : '重新发送验证码'}
                         </button>
                       </div>
+                    )}
+                    {codeSent && (
                       <button
-                        onClick={handlePhonePasswordLogin}
-                        disabled={!password || loading}
+                        onClick={handleVerifyLogin}
+                        disabled={code.join('').length !== 6 || loading}
                         className="w-full py-3 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-purple-200/40 active:scale-[0.98] transition-all disabled:opacity-40"
                       >
-                        {loading ? '...' : '登录'}
+                        {loading ? '验证中...' : '验证'}
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </>
 
                   {error && <p className="text-center text-xs text-red-500 mt-3">{error}</p>}
                 </div>
