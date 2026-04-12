@@ -66,27 +66,31 @@ export async function POST(req: NextRequest) {
       // 清理过期验证码
       await sb.from('verification_codes').delete().eq('phone', phone).lt('expires_at', new Date().toISOString());
 
-      const code = genCode();
-      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-
-      await sb.from('verification_codes').insert({ phone, code, expires_at: expiresAt });
-
-      // 调用短信服务
+      // 调用短信服务（阿里云模式下 API 自动生成验证码）
+      let finalCode = '';
       try {
         const { sendSMS } = await import('@/lib/sms-client');
-        const result = await sendSMS(phone, code);
+        const result = await sendSMS(phone);
         if (!result.success) {
           console.error('[SMS] 发送失败:', result.error);
           if (process.env.NODE_ENV === 'production') {
             return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
           }
+          // 开发模式降级：自己生成验证码
+          finalCode = genCode();
+        } else {
+          finalCode = result.code || genCode();
         }
       } catch (e) {
         console.error('[SMS] 模块异常:', e);
+        finalCode = genCode();
       }
 
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      await sb.from('verification_codes').insert({ phone, code: finalCode, expires_at: expiresAt });
+
       const isDev = process.env.NODE_ENV !== 'production';
-      return NextResponse.json({ success: true, ...(isDev && { code }), message: '验证码已发送' });
+      return NextResponse.json({ success: true, ...(isDev && { code: finalCode }), message: '验证码已发送' });
     }
 
     // ===== 验证验证码（内部复用） =====

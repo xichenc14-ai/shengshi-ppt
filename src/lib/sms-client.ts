@@ -1,14 +1,15 @@
 // SMS Client - 短信验证码发送客户端
-// 支持：阿里云短信服务（dysmsapi）/ Luosimao / 腾讯云
+// 支持：阿里云短信认证（dypnsapi）/ Luosimao / 腾讯云
 // 环境变量：
-//   SMS_PROVIDER=aliyun_sms|luosimao|tencent（默认 aliyun_sms）
+//   SMS_PROVIDER=aliyun_auth|luosimao|tencent（默认 aliyun_auth）
 //   ALIYUN_ACCESS_KEY_ID=xxx  ALIYUN_ACCESS_KEY_SECRET=xxx
-//   ALIYUN_SMS_SIGN_NAME=xxx  ALIYUN_SMS_TEMPLATE_CODE=xxx
+//   ALIYUN_SMS_SIGN_NAME=速通互联验证码  ALIYUN_SMS_TEMPLATE_CODE=100001
 
 type SMSProvider = 'aliyun_auth' | 'luosimao' | 'tencent';
 
 interface SMSSendResult {
   success: boolean;
+  code?: string;       // 阿里云返回的系统生成验证码
   error?: string;
   messageId?: string;
 }
@@ -19,8 +20,8 @@ function getProvider(): SMSProvider {
 
 // ===== 阿里云短信认证（dypnsapi）=====
 // 个人开发者友好：100次免费套餐包
-// 需要：签名名称 + 模板CODE
-async function sendViaAliyunAuth(phone: string, code: string): Promise<SMSSendResult> {
+// 使用系统赠送签名+模板，API自动生成验证码
+async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
   const accessKeyId = process.env.ALIYUN_ACCESS_KEY_ID;
   const accessKeySecret = process.env.ALIYUN_ACCESS_KEY_SECRET;
   const signName = process.env.ALIYUN_SMS_SIGN_NAME;
@@ -32,8 +33,9 @@ async function sendViaAliyunAuth(phone: string, code: string): Promise<SMSSendRe
 
   if (!signName || !templateCode) {
     console.warn('[SMS] ALIYUN_SMS_SIGN_NAME 或 ALIYUN_SMS_TEMPLATE_CODE 未配置，降级为控制台打印');
-    console.log(`[SMS-DEV] 验证码: ${code}，手机号: ${phone}`);
-    return { success: true, messageId: 'dev-mode' };
+    const fallbackCode = String(Math.floor(100000 + Math.random() * 900000));
+    console.log(`[SMS-DEV] 验证码: ${fallbackCode}，手机号: ${phone}`);
+    return { success: true, code: fallbackCode, messageId: 'dev-mode' };
   }
 
   try {
@@ -51,16 +53,21 @@ async function sendViaAliyunAuth(phone: string, code: string): Promise<SMSSendRe
     const client = new Dypnsapi.default(config);
     const sendRes = await client.sendSmsVerifyCode(new Dypnsapi.SendSmsVerifyCodeRequest({
       phoneNumber: phone,
-      code,
       signName,
       templateCode,
-      verifyCodeLength: 6,
-      expireTime: 5, // 5分钟
+      // 模板参数：##code## = 系统自动生成验证码，min = 有效时长(分钟)
+      templateParam: JSON.stringify({ code: '##code##', min: '5' }),
+      codeLength: 6,        // 6位验证码
+      validTime: 300,       // 5分钟有效
+      codeType: 1,          // 1=纯数字
+      returnVerifyCode: true, // 返回验证码，方便存储到数据库
     }));
 
     const body = sendRes.body as Record<string, any>;
     if (body?.Code === 'OK') {
-      return { success: true, messageId: body?.RequestId };
+      // 从返回结果中提取验证码
+      const returnedCode = body?.Model?.VerifyCode || body?.VerifyCode || '';
+      return { success: true, code: returnedCode, messageId: body?.RequestId };
     }
     return { success: false, error: `阿里云短信认证失败: ${body?.Message || body?.Code || '未知错误'}` };
   } catch (e) {
@@ -68,8 +75,9 @@ async function sendViaAliyunAuth(phone: string, code: string): Promise<SMSSendRe
     console.error('[SMS] 阿里云短信认证异常:', msg);
     if (msg.includes('Cannot find module') || msg.includes('MODULE_NOT_FOUND')) {
       console.warn('[SMS] dypnsapi SDK 未安装，降级为控制台打印');
-      console.log(`[SMS-DEV] 验证码: ${code}，手机号: ${phone}`);
-      return { success: true, messageId: 'dev-mode' };
+      const fallbackCode = String(Math.floor(100000 + Math.random() * 900000));
+      console.log(`[SMS-DEV] 验证码: ${fallbackCode}，手机号: ${phone}`);
+      return { success: true, code: fallbackCode, messageId: 'dev-mode' };
     }
     return { success: false, error: `阿里云短信异常: ${msg}` };
   }
@@ -94,9 +102,7 @@ async function sendViaLuosimao(phone: string, code: string): Promise<SMSSendResu
     });
 
     const data = await res.json();
-    if (data.error === 0) {
-      return { success: true, messageId: String(data.id) };
-    }
+    if (data.error === 0) return { success: true, code, messageId: String(data.id) };
     return { success: false, error: `Luosimao错误: ${data.msg || data.error}` };
   } catch (e) {
     return { success: false, error: `Luosimao请求失败: ${e instanceof Error ? e.message : 'unknown'}` };
@@ -130,9 +136,7 @@ async function sendViaTencent(phone: string, code: string): Promise<SMSSendResul
     });
 
     const status = sendRes.SendStatusSet?.[0];
-    if (status?.Code === 'Ok') {
-      return { success: true, messageId: status.SerialNo };
-    }
+    if (status?.Code === 'Ok') return { success: true, code, messageId: status.SerialNo };
     return { success: false, error: `腾讯云短信失败: ${status?.Message || '未知错误'}` };
   } catch (e) {
     return { success: false, error: `腾讯云短信异常: ${e instanceof Error ? e.message : 'unknown'}` };
@@ -140,15 +144,19 @@ async function sendViaTencent(phone: string, code: string): Promise<SMSSendResul
 }
 
 // ===== 统一接口 =====
-export async function sendSMS(phone: string, code: string): Promise<SMSSendResult> {
+// 阿里云：API自动生成验证码，返回 code
+// 其他：需要传入 code 参数
+export async function sendSMS(phone: string, code?: string): Promise<SMSSendResult> {
   const provider = getProvider();
 
   switch (provider) {
     case 'aliyun_auth':
-      return sendViaAliyunAuth(phone, code);
+      return sendViaAliyunAuth(phone);
     case 'luosimao':
+      if (!code) return { success: false, error: 'Luosimao 需要传入验证码' };
       return sendViaLuosimao(phone, code);
     case 'tencent':
+      if (!code) return { success: false, error: '腾讯云短信需要传入验证码' };
       return sendViaTencent(phone, code);
     default:
       return { success: false, error: `不支持的短信服务商: ${provider}` };
