@@ -3,7 +3,7 @@
 // 文档: https://platform.kimi.ai/docs
 
 const KIMI_API_KEY = process.env.KIMI_API_KEY || '';
-const KIMI_BASE = process.env.KIMI_API_BASE || 'https://api.moonshot.ai/v1';
+const KIMI_BASE = process.env.KIMI_API_BASE || 'https://ai.1seey.com/v1';
 
 export type KimiModel = 'Kimi-K2.5' | 'Kimi-K2-Thinking' | 'Kimi-K2.5';
 
