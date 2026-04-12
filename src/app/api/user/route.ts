@@ -234,15 +234,14 @@ export async function POST(req: NextRequest) {
       const { phone, code } = body;
       if (!phone || !code) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
-      // 先验证码校验，不标记已验证（让后续流程决定）
-      const vResult = await verifyCode(phone, code, false);
+      // 验证码校验，标记已验证（无论新老用户）
+      const vResult = await verifyCode(phone, code, true);
       if (!vResult.valid) return NextResponse.json({ error: vResult.error }, { status: 400 });
 
       // 查找用户
       const { data: users } = await sb.from('users').select('id,phone,nickname,username,credits,plan_type,is_active').eq('phone', phone);
       if (users && users.length > 0) {
-        // 已注册用户：标记验证码已用，登录成功
-        await sb.from('verification_codes').update({ verified: true }).eq('id', vResult.recordId!);
+        // 已注册用户：登录成功
         const u = users[0];
         await sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', u.id);
         return NextResponse.json({
@@ -250,7 +249,7 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // 手机号未注册 → 不标记验证码，让 register 流程做最终验证
+      // 手机号未注册 → 进入注册流程设置信息
       return NextResponse.json({ error: 'NOT_REGISTERED', needRegister: true, codeValid: true }, { status: 404 });
     }
 
