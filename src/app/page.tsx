@@ -19,6 +19,7 @@ import GenerationProgress from '@/components/GenerationProgress';
 // FloatingButton removed (unused)
 import SkeletonCard from '@/components/SkeletonCard';
 import ThemeSelector from '@/components/ThemeSelector';
+import ScrollingBanner from '@/components/ScrollingBanner';
 import { buildMdV2 } from '@/lib/build-md-v2';
 import { checkPermission, mapImgModeToSource, getPlan } from '@/lib/membership';
 
@@ -918,6 +919,10 @@ export default function Home() {
           </div>
 
           {/* Floating button removed — generate is now inline in the input row */}
+          {/* 滚动信息栏 */}
+          <div className="mt-6">
+            <ScrollingBanner variant="hero" speed={25000} />
+          </div>
         </div>
       )}
 
