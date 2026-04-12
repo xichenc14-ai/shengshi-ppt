@@ -5,7 +5,7 @@
 //   ALIYUN_ACCESS_KEY_ID=xxx  ALIYUN_ACCESS_KEY_SECRET=xxx
 //   ALIYUN_SMS_SIGN_NAME=xxx  ALIYUN_SMS_TEMPLATE_CODE=xxx
 
-type SMSProvider = 'aliyun_sms' | 'luosimao' | 'tencent';
+type SMSProvider = 'aliyun_auth' | 'luosimao' | 'tencent';
 
 interface SMSSendResult {
   success: boolean;
@@ -14,13 +14,13 @@ interface SMSSendResult {
 }
 
 function getProvider(): SMSProvider {
-  return (process.env.SMS_PROVIDER as SMSProvider) || 'aliyun_sms';
+  return (process.env.SMS_PROVIDER as SMSProvider) || 'aliyun_auth';
 }
 
-// ===== 阿里云短信服务（dysmsapi）=====
+// ===== 阿里云短信认证（dypnsapi）=====
+// 个人开发者友好：100次免费套餐包
 // 需要：签名名称 + 模板CODE
-// 模板变量：${code}（验证码）${time}（有效时间，分钟）
-async function sendViaAliyunSms(phone: string, code: string): Promise<SMSSendResult> {
+async function sendViaAliyunAuth(phone: string, code: string): Promise<SMSSendResult> {
   const accessKeyId = process.env.ALIYUN_ACCESS_KEY_ID;
   const accessKeySecret = process.env.ALIYUN_ACCESS_KEY_SECRET;
   const signName = process.env.ALIYUN_SMS_SIGN_NAME;
@@ -38,35 +38,36 @@ async function sendViaAliyunSms(phone: string, code: string): Promise<SMSSendRes
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const Dysmsapi: any = await import('@alicloud/dysmsapi20170525');
+    const Dypnsapi: any = await import('@alicloud/dypnsapi20170525');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const OpenApi: any = await import('@alicloud/openapi-client');
 
     const config = new OpenApi.Config({
       accessKeyId,
       accessKeySecret,
-      endpoint: 'dysmsapi.aliyuncs.com',
+      endpoint: 'dypnsapi.aliyuncs.com',
     });
 
-    const client = new Dysmsapi.default(config);
-    const sendRes = await client.sendSms(new Dysmsapi.SendSmsRequest({
-      phoneNumbers: phone,
+    const client = new Dypnsapi.default(config);
+    const sendRes = await client.sendSmsVerifyCode(new Dypnsapi.SendSmsVerifyCodeRequest({
+      phoneNumber: phone,
+      code,
       signName,
       templateCode,
-      templateParam: JSON.stringify({ code, time: '5' }),
+      verifyCodeLength: 6,
+      expireTime: 5, // 5分钟
     }));
 
     const body = sendRes.body as Record<string, any>;
     if (body?.Code === 'OK') {
       return { success: true, messageId: body?.RequestId };
     }
-    return { success: false, error: `阿里云短信失败: ${body?.Message || body?.Code || '未知错误'}` };
+    return { success: false, error: `阿里云短信认证失败: ${body?.Message || body?.Code || '未知错误'}` };
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'unknown';
-    console.error('[SMS] 阿里云短信异常:', msg);
-    // 如果是模块未找到，降级为控制台打印
+    console.error('[SMS] 阿里云短信认证异常:', msg);
     if (msg.includes('Cannot find module') || msg.includes('MODULE_NOT_FOUND')) {
-      console.warn('[SMS] dysmsapi SDK 未安装，降级为控制台打印');
+      console.warn('[SMS] dypnsapi SDK 未安装，降级为控制台打印');
       console.log(`[SMS-DEV] 验证码: ${code}，手机号: ${phone}`);
       return { success: true, messageId: 'dev-mode' };
     }
@@ -143,8 +144,8 @@ export async function sendSMS(phone: string, code: string): Promise<SMSSendResul
   const provider = getProvider();
 
   switch (provider) {
-    case 'aliyun_sms':
-      return sendViaAliyunSms(phone, code);
+    case 'aliyun_auth':
+      return sendViaAliyunAuth(phone, code);
     case 'luosimao':
       return sendViaLuosimao(phone, code);
     case 'tencent':
