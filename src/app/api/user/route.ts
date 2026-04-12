@@ -80,6 +80,7 @@ export async function POST(req: NextRequest) {
           finalCode = genCode();
         } else {
           finalCode = result.code || genCode();
+          console.log('[SMS] 发送成功, 验证码:', finalCode, ', messageId:', result.messageId);
         }
       } catch (e) {
         console.error('[SMS] 模块异常:', e);

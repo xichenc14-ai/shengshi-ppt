@@ -64,12 +64,19 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
     }));
 
     const body = sendRes.body as Record<string, any>;
-    if (body?.Code === 'OK') {
-      // 从返回结果中提取验证码
-      const returnedCode = body?.Model?.VerifyCode || body?.VerifyCode || '';
-      return { success: true, code: returnedCode, messageId: body?.RequestId };
+    // SDK 返回结构: body.Code='OK' 或 body.Model.VerifyCode
+    const respCode = body?.Code || body?.code;
+    if (respCode === 'OK' || body?.Success === true) {
+      const returnedCode = body?.Model?.VerifyCode || body?.verifyCode || '';
+      if (!returnedCode) {
+        // API 没返回验证码，用本地生成作为 fallback
+        console.warn('[SMS] API 未返回验证码，使用本地生成');
+        const fallbackCode = String(Math.floor(100000 + Math.random() * 900000));
+        return { success: true, code: fallbackCode, messageId: body?.RequestId || body?.requestId };
+      }
+      return { success: true, code: returnedCode, messageId: body?.RequestId || body?.requestId };
     }
-    return { success: false, error: `阿里云短信认证失败: ${body?.Message || body?.Code || '未知错误'}` };
+    return { success: false, error: `阿里云短信认证失败: ${body?.Message || body?.message || respCode || '未知错误'}` };
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'unknown';
     console.error('[SMS] 阿里云短信认证异常:', msg);
