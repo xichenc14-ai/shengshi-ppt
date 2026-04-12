@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ===== 验证验证码（内部复用） =====
-    async function verifyCode(phone: string, code: string): Promise<{ valid: boolean; error?: string; recordId?: string }> {
+    async function verifyCode(phone: string, code: string, markVerified: boolean = true): Promise<{ valid: boolean; error?: string; recordId?: string }> {
       if (!sb) return { valid: false, error: '服务未配置' };
       const { data: records, error: qErr } = await sb
         .from('verification_codes')
@@ -124,7 +124,10 @@ export async function POST(req: NextRequest) {
       if (qErr) return { valid: false, error: '验证失败' };
       if (!records || records.length === 0) return { valid: false, error: '验证码错误或已过期' };
 
-      await sb.from('verification_codes').update({ verified: true }).eq('id', records[0].id);
+      // 只有 markVerified=true 时才标记已验证
+      if (markVerified) {
+        await sb.from('verification_codes').update({ verified: true }).eq('id', records[0].id);
+      }
       return { valid: true, recordId: records[0].id };
     }
 
@@ -144,8 +147,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '密码至少6位' }, { status: 400 });
       }
 
-      // 验证码校验
-      const vResult = await verifyCode(phone, code);
+      // 验证码校验（注册完成后标记已用）
+      const vResult = await verifyCode(phone, code, true);
       if (!vResult.valid) return NextResponse.json({ error: vResult.error }, { status: 400 });
 
       // 检查手机号是否已注册
@@ -221,12 +224,15 @@ export async function POST(req: NextRequest) {
       const { phone, code } = body;
       if (!phone || !code) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
-      const vResult = await verifyCode(phone, code);
+      // 先验证码校验，不标记已验证（让后续流程决定）
+      const vResult = await verifyCode(phone, code, false);
       if (!vResult.valid) return NextResponse.json({ error: vResult.error }, { status: 400 });
 
       // 查找用户
       const { data: users } = await sb.from('users').select('id,phone,nickname,username,credits,plan_type,is_active').eq('phone', phone);
       if (users && users.length > 0) {
+        // 已注册用户：标记验证码已用，登录成功
+        await sb.from('verification_codes').update({ verified: true }).eq('id', vResult.recordId!);
         const u = users[0];
         await sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', u.id);
         return NextResponse.json({
@@ -234,8 +240,8 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // 手机号未注册 → 提示前端走注册流程
-      return NextResponse.json({ error: 'NOT_REGISTERED', needRegister: true }, { status: 404 });
+      // 手机号未注册 → 不标记验证码，让 register 流程做最终验证
+      return NextResponse.json({ error: 'NOT_REGISTERED', needRegister: true, codeValid: true }, { status: 404 });
     }
 
     // ===== 账号密码登录 =====
