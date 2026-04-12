@@ -25,23 +25,18 @@ async function searchTopic(topic: string): Promise<string> {
   return '';
 }
 
-// ===== AI 调用策略：Kimi K2.5 优先 → MiniMax 备用 → GLM 兜底 =====
+// ===== AI 调用策略：GLM 首选 → MiniMax 备用 =====
 async function callAIWithFallback(
   systemPrompt: string,
   userPrompt: string,
   useSearch: boolean = false,
   searchContext: string = ''
 ): Promise<string> {
-  // 1️⃣ Kimi K2.5（默认首选：多模态+长上下文）
+  // 1️⃣ GLM-5-turbo（首选：稳定可靠）
   try {
-    const result = await callKimiWithSearch(
-      userPrompt,
-      searchContext,
-      { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
-    );
-    return result.content;
+    return await callGLM(systemPrompt, userPrompt, 'outline');
   } catch (e: any) {
-    console.warn('[Outline] Kimi failed, falling back to MiniMax:', e.message);
+    console.warn('[Outline] GLM failed, falling back to MiniMax:', e.message);
   }
 
   // 2️⃣ MiniMax M2.7（备用：图片理解+联网）
@@ -51,14 +46,19 @@ async function callAIWithFallback(
       { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
     );
   } catch (e2: any) {
-    console.warn('[Outline] MiniMax failed, falling back to GLM:', e2.message);
+    console.warn('[Outline] MiniMax failed, falling back to Kimi:', e2.message);
   }
 
-  // 3️⃣ GLM-5-turbo（兜底：纯文本）
+  // 3️⃣ Kimi K2.5（兜底：多模态+长上下文）
   try {
-    return await callGLM(systemPrompt, userPrompt, 'outline');
+    const result = await callKimiWithSearch(
+      userPrompt,
+      searchContext,
+      { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
+    );
+    return result.content;
   } catch (e3: any) {
-    throw new Error(`AI调用全部失败：Kimi / MiniMax / GLM(${e3.message})`);
+    throw new Error(`AI调用全部失败：GLM / MiniMax / Kimi(${e3.message})`);
   }
 }
 
