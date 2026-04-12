@@ -921,7 +921,7 @@ export default function Home() {
           {/* Floating button removed — generate is now inline in the input row */}
           {/* 滚动信息栏 */}
           <div className="mt-6">
-            <ScrollingBanner variant="hero" speed={25000} />
+            <ScrollingBanner variant="hero" />
           </div>
         </div>
       )}
@@ -952,16 +952,22 @@ export default function Home() {
 
       {/* ===== DIRECT GENERATING PROGRESS ===== */}
       {phase === 'direct-generating' && (
-        <GenerationProgress
-          currentStep={genStep}
-          progress={genProgress}
-          subtext={stepText}
-        />
+        <>
+          <ScrollingBanner variant="wait" />
+          <GenerationProgress
+            currentStep={genStep}
+            progress={genProgress}
+            subtext={stepText}
+          />
+        </>
       )}
 
       {/* ===== GENERATING PROGRESS ===== */}
       {phase === 'generating' && loading && (
-        <GenerationProgress currentStep={genStep} progress={genProgress} subtext={stepText} />
+        <>
+          <ScrollingBanner variant="wait" />
+          <GenerationProgress currentStep={genStep} progress={genProgress} subtext={stepText} />
+        </>
       )}
 
       {/* ===== RESULT ===== */}

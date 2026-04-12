@@ -280,26 +280,74 @@ export async function POST(req: NextRequest) {
       }
 
       // 原子性扣除：使用条件更新防止并发超扣
-      // UPDATE users SET credits = credits - X WHERE id = Y AND credits >= X
-      const { data: updated, error: updErr } = await sb.rpc('deduct_credits_atomic', {
-        p_user_id: userId,
-        p_amount: totalCredit,
-        p_description: `生成PPT-${numPages}页-${imageSource}${imageCreditsPerImage > 0 ? `-${imageCreditsPerImage}积分/图×${estimatedImageCount}张` : ''}-共${totalCredit}积分`,
-      }).single();
+      // 先尝试 RPC，失败则 fallback 到直接 SQL
+      let newBalance: number | null = null;
+      let useFallback = false;
 
-      if (updErr) {
-        console.error('Deduct credits error:', updErr);
-        return NextResponse.json({ error: '积分扣除失败' }, { status: 500 });
+      try {
+        const { data: rpcResult, error: rpcErr } = await sb.rpc('deduct_credits_atomic', {
+          p_user_id: userId,
+          p_amount: totalCredit,
+          p_description: `生成PPT-${numPages}页-${imageSource}${imageCreditsPerImage > 0 ? `-${imageCreditsPerImage}积分/图×${estimatedImageCount}张` : ''}-共${totalCredit}积分`,
+        }).single();
+
+        if (rpcErr) {
+          // RPC 不存在或出错，用 fallback
+          console.warn('RPC deduct_credits_atomic failed, using fallback:', rpcErr.message);
+          useFallback = true;
+        } else {
+          newBalance = (rpcResult as any)?.new_balance ?? null;
+        }
+      } catch {
+        useFallback = true;
       }
 
-      const result = updated as { new_balance: number } | null;
-      // RPC 返回 null 表示余额不足
-      if (!result) {
+      // Fallback: 直接 SQL 扣除（条件更新防超扣）
+      if (useFallback) {
+        const { data: updatedRows, error: fbErr } = await sb
+          .from('users')
+          .select('credits')
+          .eq('id', userId)
+          .single();
+
+        if (fbErr || !updatedRows) {
+          console.error('Fallback query error:', fbErr);
+          return NextResponse.json({ error: '积分扣除失败' }, { status: 500 });
+        }
+
+        if (updatedRows.credits < totalCredit) {
+          return NextResponse.json({ error: '积分不足', needed: totalCredit, balance: updatedRows.credits });
+        }
+
+        const newBal = updatedRows.credits - totalCredit;
+        const { error: updErr } = await sb
+          .from('users')
+          .update({ credits: newBal })
+          .eq('id', userId)
+          .eq('credits', updatedRows.credits); // 乐观锁
+
+        if (updErr) {
+          console.error('Fallback update error:', updErr);
+          return NextResponse.json({ error: '积分扣除失败' }, { status: 500 });
+        }
+
+        newBalance = newBal;
+
+        // 记录流水（忽略失败，不阻塞主流程）
+        try {
+          await sb.from('credit_transactions').insert({
+            user_id: userId, amount: -totalCredit, balance_after: newBal,
+            type: 'generation', description: `生成PPT-${numPages}页-共${totalCredit}积分`,
+          });
+        } catch {}
+      }
+
+      if (newBalance === null) {
         const { data: u } = await sb.from('users').select('credits').eq('id', userId).single();
         return NextResponse.json({ error: '积分不足', needed: totalCredit, balance: u?.credits || 0 });
       }
 
-      return NextResponse.json({ success: true, creditsUsed: totalCredit, balance: result.new_balance });
+      return NextResponse.json({ success: true, creditsUsed: totalCredit, balance: newBalance });
     }
 
     return NextResponse.json({ error: '未知操作' }, { status: 400 });

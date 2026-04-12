@@ -57,7 +57,7 @@ const PLANS: Plan[] = [
     ],
     cta: '当前方案',
     ctaDisabled: true,
-    pptCount10Pages: 12,
+    pptCount10Pages: 12,  // 100÷8=12份（免费最多8页）
     costPerPage: '免费',
   },
   {
@@ -86,7 +86,7 @@ const PLANS: Plan[] = [
     ],
     cta: '立即开通',
     ctaDisabled: false,
-    pptCount10Pages: 50,
+    pptCount10Pages: 50,  // 500÷10=50份
     costPerPage: '¥0.06',
   },
   {
@@ -112,7 +112,7 @@ const PLANS: Plan[] = [
     ],
     cta: '立即开通',
     ctaDisabled: false,
-    pptCount10Pages: 100,
+    pptCount10Pages: 100,  // 1000÷10=100份
     costPerPage: '¥0.05',
   },
   {
@@ -137,7 +137,7 @@ const PLANS: Plan[] = [
     ],
     cta: '立即开通',
     ctaDisabled: false,
-    pptCount10Pages: 200,
+    pptCount10Pages: 200,  // 2000÷10=200份
     costPerPage: '¥0.05',
   },
 ];
@@ -153,7 +153,7 @@ const IMAGE_CREDIT_TABLE = [
   { mode: '尊享AI图', source: 'aiGenerated + flux-kontext-pro', credits: '20/张', note: '🏆尊享会员专属' },
 ];
 
-function PlanCard({ plan, user, openPayment, openLogin, isSelected }: { plan: Plan; user: any; openPayment: any; openLogin: any; isSelected?: boolean }) {
+function PlanCard({ plan, user, openPayment, openLogin, isSelected, onSelect }: { plan: Plan; user: any; openPayment: any; openLogin: any; isSelected?: boolean; onSelect?: () => void }) {
   const [isAnnual, setIsAnnual] = React.useState(false);
   const currentPrice = isAnnual ? plan.prices.annualMonthly : plan.prices.monthly;
   const period = isAnnual ? '/月 (年付)' : '/月';
@@ -161,6 +161,7 @@ function PlanCard({ plan, user, openPayment, openLogin, isSelected }: { plan: Pl
   const handleCta = () => {
     if (plan.id === 'free') return;
     if (!user) { openLogin(); return; }
+    onSelect?.();
     openPayment({
       id: plan.id,
       name: plan.name,
@@ -172,7 +173,8 @@ function PlanCard({ plan, user, openPayment, openLogin, isSelected }: { plan: Pl
 
   return (
     <div
-      className={`relative bg-white rounded-2xl p-6 border-2 transition-all duration-300 hover:-translate-y-1 ${
+      onClick={onSelect}
+      className={`relative bg-white rounded-2xl p-6 border-2 transition-all duration-200 cursor-pointer hover:-translate-y-1 active:scale-[0.99] ${
         isSelected
           ? 'border-[#5B4FE9] shadow-xl shadow-purple-200/30 ring-4 ring-purple-100'
           : plan.popular
@@ -253,11 +255,11 @@ function PlanCard({ plan, user, openPayment, openLogin, isSelected }: { plan: Pl
         </div>
       </div>
 
-      {/* 参考数据：纯净模式 */}
+      {/* 参考数据：纯净模式（每页1积分，图片0积分） */}
       <div className="flex items-center justify-center gap-3 mb-4 py-2 px-3 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-100/50">
         <div className="text-center">
-          <p className="text-base font-extrabold text-amber-600">{plan.pptCount10Pages}<span className="text-[10px] font-normal ml-0.5">份</span></p>
-          <p className="text-[9px] text-gray-400">每月10页PPT</p>
+          <p className="text-base font-extrabold text-amber-600">~{plan.pptCount10Pages}<span className="text-[10px] font-normal ml-0.5">份</span></p>
+          <p className="text-[9px] text-gray-400">每月{plan.maxPages < 10 ? `${plan.maxPages}页PPT` : '10页PPT'}约</p>
         </div>
         <div className="w-px h-6 bg-amber-200" />
         <div className="text-center">
@@ -313,7 +315,7 @@ export default function PricingPage() {
       <section className="max-w-5xl mx-auto px-4 pb-8">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {PLANS.map((p) => (
-            <PlanCard key={p.id} plan={p} user={user} openPayment={(plan: any) => { setSelectedPlan(p.id); openPayment(plan); }} openLogin={openLogin} isSelected={selectedPlan === p.id} />
+            <PlanCard key={p.id} plan={p} user={user} openPayment={openPayment} openLogin={openLogin} isSelected={selectedPlan === p.id} onSelect={() => setSelectedPlan(p.id)} />
           ))}
         </div>
       </section>

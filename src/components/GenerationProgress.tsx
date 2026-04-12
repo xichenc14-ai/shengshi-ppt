@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import ScrollingBanner from './ScrollingBanner';
 
 interface GenerationProgressProps {
   currentStep: number; // 0-3
@@ -142,8 +141,13 @@ export default function GenerationProgress({ currentStep, progress, subtext }: G
           </div>
         </div>
 
-        {/* 滚动信息栏 */}
-        <ScrollingBanner variant="wait" speed={20000} />
+        {/* Tip */}
+        <div className="mt-8 text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-full">
+            <span className="text-sm">💡</span>
+            <span className="text-xs text-gray-500">AI 正在精心设计，请耐心等待...</span>
+          </div>
+        </div>
       </div>
     </div>
   );
