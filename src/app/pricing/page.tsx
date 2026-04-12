@@ -57,7 +57,7 @@ const PLANS: Plan[] = [
     ],
     cta: '当前方案',
     ctaDisabled: true,
-    pptCount10Pages: 12,  // 100÷8=12份（免费最多8页）
+    pptCount10Pages: 12,  // 100÷8=12份
     costPerPage: '免费',
   },
   {
@@ -86,7 +86,7 @@ const PLANS: Plan[] = [
     ],
     cta: '立即开通',
     ctaDisabled: false,
-    pptCount10Pages: 50,  // 500÷10=50份
+    pptCount10Pages: 62,  // 500÷8=62份
     costPerPage: '¥0.06',
   },
   {
@@ -112,7 +112,7 @@ const PLANS: Plan[] = [
     ],
     cta: '立即开通',
     ctaDisabled: false,
-    pptCount10Pages: 100,  // 1000÷10=100份
+    pptCount10Pages: 125,  // 1000÷8=125份
     costPerPage: '¥0.05',
   },
   {
@@ -137,7 +137,7 @@ const PLANS: Plan[] = [
     ],
     cta: '立即开通',
     ctaDisabled: false,
-    pptCount10Pages: 200,  // 2000÷10=200份
+    pptCount10Pages: 250,  // 2000÷8=250份
     costPerPage: '¥0.05',
   },
 ];
@@ -259,7 +259,7 @@ function PlanCard({ plan, user, openPayment, openLogin, isSelected, onSelect }: 
       <div className="flex items-center justify-center gap-3 mb-4 py-2 px-3 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-100/50">
         <div className="text-center">
           <p className="text-base font-extrabold text-amber-600">~{plan.pptCount10Pages}<span className="text-[10px] font-normal ml-0.5">份</span></p>
-          <p className="text-[9px] text-gray-400">每月{plan.maxPages < 10 ? `${plan.maxPages}页PPT` : '10页PPT'}约</p>
+          <p className="text-[9px] text-gray-400">每月8页PPT约</p>
         </div>
         <div className="w-px h-6 bg-amber-200" />
         <div className="text-center">
