@@ -44,7 +44,7 @@ const PLANS: Plan[] = [
     name: '基础版',
     desc: '职场人的效率神器',
     popular: true,
-    prices: { monthly: '¥29', annual: '¥199/年', annualMonthly: '¥16.6', annualSave: '省¥149' },
+    prices: { monthly: '¥19', annual: '¥99/年', annualMonthly: '¥8.3', annualSave: '省¥129' },
     features: [
       { text: '每月 20 次 PPT 生成', included: true },
       { text: '每次最多 15 页', included: true },
@@ -63,7 +63,7 @@ const PLANS: Plan[] = [
     emoji: '👑',
     name: '专业版',
     desc: '重度用户的首选',
-    prices: { monthly: '¥59', annual: '¥399/年', annualMonthly: '¥33.3', annualSave: '省¥309' },
+    prices: { monthly: '¥49', annual: '¥299/年', annualMonthly: '¥24.9', annualSave: '省¥289' },
     features: [
       { text: '每月 100 次 PPT 生成', included: true },
       { text: '每次最多 30 页', included: true },

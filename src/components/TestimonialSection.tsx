@@ -10,9 +10,9 @@ const TESTIMONIALS = [
 ];
 
 const STATS = [
-  { value: '10,000+', label: '份PPT已生成' },
-  { value: '5,000+', label: '注册用户' },
   { value: '30秒', label: '平均生成时间' },
+  { value: '50+', label: '精选主题' },
+  { value: '4种', label: '配图模式' },
 ];
 
 export default function TestimonialSection() {
@@ -20,7 +20,8 @@ export default function TestimonialSection() {
     <section className="py-20 md:py-24 bg-white">
       <div className="max-w-5xl mx-auto px-4 md:px-6">
         <div className="text-center mb-10">
-          <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 mb-2">已经有用户在用了</h2>
+          <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 mb-2">用户好评</h2>
+          <p className="text-sm text-gray-400">内测用户真实反馈</p>
         </div>
 
         {/* Stats */}

@@ -623,6 +623,14 @@ export default function Home() {
 
             {phase === 'input' && (
               <>
+                {/* Brand header */}
+                <div className="text-center mb-6">
+                  <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">
+                    创建你的<span className="bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] bg-clip-text text-transparent"> PPT</span>
+                  </h1>
+                  <p className="text-sm text-gray-400 mt-1.5">描述你的需求，AI 30秒出稿</p>
+                </div>
+
                 {/* Input card */}
                 <div className="relative bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
                   {/* Input row: textarea (with inline attach) + generate button (height aligned) */}
@@ -712,10 +720,9 @@ export default function Home() {
                   {/* Direct mode: show ThemeSelector + simplified params */}
                   {mode === 'direct' && (
                     <div className="mt-4 pt-4 border-t border-gray-100">
-                      {/* 主题色说明 */}
+                      {/* 主题色系 */}
                       <div className="flex items-center gap-2 mb-3">
-                        <label className="text-xs text-gray-500">主题色系</label>
-                        <span className="text-xs text-gray-400">· 第一色：背景色 | 第二色：强调色 | 第三色：字体色</span>
+                        <label className="text-xs text-gray-500 font-medium">主题风格</label>
                       </div>
                       <ThemeSelector value={directTheme} onChange={setDirectTheme} />
 
@@ -908,7 +915,7 @@ export default function Home() {
       {/* ===== RESULT ===== */}
       {phase === 'result' && result && !loading && (
         <div className="flex-1">
-          <div className="max-w-2xl mx-auto px-4 md:px-6 pt-16 text-center animate-fade-in">
+          <div className="max-w-2xl mx-auto px-4 md:px-6 pt-16 text-center animate-fade-in-up">
             <div className="text-5xl mb-4">🎉</div>
             <h2 className="text-xl font-bold text-gray-900 mb-1">PPT 已生成！</h2>
             <p className="text-xs text-gray-400 mb-8">{result.title} · {result.actualPages || result.slides.length || pages} 页</p>

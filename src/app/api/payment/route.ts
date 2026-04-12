@@ -24,8 +24,8 @@ export async function POST(req: NextRequest) {
       if (!planId) return NextResponse.json({ error: '请选择套餐' }, { status: 400 });
 
       const PLAN_PRICES: Record<string, { name: string; monthly: number; annual: number }> = {
-        basic: { name: '基础版', monthly: 9.9, annual: 99 },
-        pro: { name: '专业版', monthly: 19.9, annual: 199 },
+        basic: { name: '基础版', monthly: 19, annual: 99 },
+        pro: { name: '专业版', monthly: 49, annual: 299 },
       };
 
       const plan = PLAN_PRICES[planId];
