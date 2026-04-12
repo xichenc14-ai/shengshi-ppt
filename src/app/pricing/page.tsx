@@ -28,6 +28,8 @@ type Plan = {
   features: PlanFeature[];
   cta: string;
   ctaDisabled: boolean;
+  pptCount10Pages: number;
+  costPerPage: string;
 };
 
 const PLANS: Plan[] = [
@@ -55,6 +57,8 @@ const PLANS: Plan[] = [
     ],
     cta: '当前方案',
     ctaDisabled: true,
+    pptCount10Pages: 12,
+    costPerPage: '免费',
   },
   {
     id: 'basic',
@@ -82,6 +86,8 @@ const PLANS: Plan[] = [
     ],
     cta: '立即开通',
     ctaDisabled: false,
+    pptCount10Pages: 50,
+    costPerPage: '¥0.06',
   },
   {
     id: 'pro',
@@ -106,6 +112,8 @@ const PLANS: Plan[] = [
     ],
     cta: '立即开通',
     ctaDisabled: false,
+    pptCount10Pages: 100,
+    costPerPage: '¥0.05',
   },
   {
     id: 'vip',
@@ -129,6 +137,8 @@ const PLANS: Plan[] = [
     ],
     cta: '立即开通',
     ctaDisabled: false,
+    pptCount10Pages: 200,
+    costPerPage: '¥0.05',
   },
 ];
 
@@ -231,7 +241,7 @@ function PlanCard({ plan, user, openPayment, openLogin, isSelected }: { plan: Pl
       </div>
 
       {/* Quick specs */}
-      <div className="flex items-center justify-center gap-3 mb-4 py-2 bg-[#FAFBFE] rounded-xl">
+      <div className="flex items-center justify-center gap-3 mb-3 py-2 bg-[#FAFBFE] rounded-xl">
         <div className="text-center">
           <p className="text-sm font-bold text-gray-800">{plan.maxPages}页</p>
           <p className="text-[9px] text-gray-400">单次上限</p>
@@ -240,6 +250,19 @@ function PlanCard({ plan, user, openPayment, openLogin, isSelected }: { plan: Pl
         <div className="text-center">
           <p className="text-xs font-semibold text-gray-800">{plan.imageTier}</p>
           <p className="text-[9px] text-gray-400">图片方案</p>
+        </div>
+      </div>
+
+      {/* 参考数据：纯净模式 */}
+      <div className="flex items-center justify-center gap-3 mb-4 py-2 px-3 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-100/50">
+        <div className="text-center">
+          <p className="text-base font-extrabold text-amber-600">{plan.pptCount10Pages}<span className="text-[10px] font-normal ml-0.5">份</span></p>
+          <p className="text-[9px] text-gray-400">每月10页PPT</p>
+        </div>
+        <div className="w-px h-6 bg-amber-200" />
+        <div className="text-center">
+          <p className="text-base font-extrabold text-amber-600">{plan.costPerPage}<span className="text-[10px] font-normal ml-0.5">/页</span></p>
+          <p className="text-[9px] text-gray-400">纯净模式</p>
         </div>
       </div>
 

@@ -20,6 +20,7 @@ import GenerationProgress from '@/components/GenerationProgress';
 import SkeletonCard from '@/components/SkeletonCard';
 import ThemeSelector from '@/components/ThemeSelector';
 import { buildMdV2 } from '@/lib/build-md-v2';
+import { checkPermission, mapImgModeToSource, getPlan } from '@/lib/membership';
 
 /* ==================== Config ==================== */
 
@@ -103,6 +104,27 @@ export default function Home() {
     const inputText = collectText();
     if (!inputText.trim()) return;
     if (!user) return;
+
+    // 🔐 会员权限检查
+    const imageSource = mapImgModeToSource(directImgMode);
+    const perm = checkPermission(user.plan_type || 'free', {
+      numPages: pages,
+      imageSource,
+      mode: 'direct',
+    });
+    if (!perm.allowed) {
+      setError(perm.reason || '当前套餐权限不足');
+      const reqPlan = perm.requiredPlan || 'basic';
+      const planInfo = getPlan(reqPlan);
+      openPayment({
+        id: reqPlan,
+        name: `${planInfo.name} · ${planInfo.emoji}`,
+        price: planInfo.priceMonthly > 0 ? `¥${planInfo.priceMonthly}/月` : '免费',
+        billing: 'monthly',
+        reason: perm.reason,
+      });
+      return;
+    }
 
     setLoading(true);
     setError('');
@@ -338,6 +360,29 @@ export default function Home() {
   // Step 2: Confirm and generate PPT
   const confirmAndGenerate = useCallback(async () => {
     if (!outlineResult || !user) return;
+
+    // 🔐 会员权限检查
+    const imageSource = imgMode === 'none' ? 'noImages' : imgMode === 'ai' ? 'aiGenerated' : imgMode === 'web' ? 'webFreeToUseCommercially' : 'pictographic';
+    const numPages = editedSlides.length;
+    const perm = checkPermission(user.plan_type || 'free', {
+      numPages,
+      imageSource,
+      mode: mode === 'smart' ? 'smart' : 'direct',
+    });
+    if (!perm.allowed) {
+      setError(perm.reason || '当前套餐权限不足');
+      const reqPlan = perm.requiredPlan || 'basic';
+      const planInfo = getPlan(reqPlan);
+      openPayment({
+        id: reqPlan,
+        name: `${planInfo.name} · ${planInfo.emoji}`,
+        price: planInfo.priceMonthly > 0 ? `¥${planInfo.priceMonthly}/月` : '免费',
+        billing: 'monthly',
+        reason: perm.reason,
+      });
+      return;
+    }
+
     setLoading(true);
     setError('');
     setPhase('generating');
@@ -754,13 +799,15 @@ export default function Home() {
                       {/* Simplified params — 3 columns: 页数(左) / 配图(中) / 风格(右) */}
                       <div className="grid grid-cols-3 gap-3 mt-3">
                         <div>
-                          <label className="text-xs text-gray-500 mb-1 block">页数</label>
+                          <label className="text-xs text-gray-500 mb-1 block">页数{user?.plan_type && user.plan_type !== 'free' ? '' : ' · 免费最多8页'}</label>
                           <select
-                            value={pages}
+                            value={Math.min(pages, getPlan(user?.plan_type || 'free').maxPages)}
                             onChange={e => setPages(Number(e.target.value))}
                             className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
                           >
-                            {[5,6,7,8,9,10,12,15,20,25,30].map(n => (
+                            {[5,6,7,8,9,10,12,15,20,25,30]
+                              .filter(n => n <= getPlan(user?.plan_type || 'free').maxPages)
+                              .map(n => (
                               <option key={n} value={n}>{n} 页</option>
                             ))}
                           </select>
