@@ -13,7 +13,7 @@ export interface SessionData {
 }
 
 export const sessionOptions = {
-  password: process.env.SESSION_PASSWORD || 'complex_password_at_least_32_characters_long',
+  password: process.env.SESSION_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'dev_only_password_change_in_production'),
   cookieName: 'shengxin_session',
   cookieOptions: {
     secure: process.env.NODE_ENV === 'production',
