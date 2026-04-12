@@ -238,22 +238,53 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ user: updated });
     }
 
-    // ===== 扣积分 =====
+    // ===== 扣积分（按Gamma API实际扣费1:1） =====
     if (action === 'deduct') {
-      const { userId, mode, numPages } = body;
-      if (!userId || !mode) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+      const { userId, numPages = 10, imageSource = 'noImages', imageModel, estimatedImages = 0 } = body;
+      if (!userId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
-      const CREDIT_RULES: Record<string, number> = { generate: 30, condense: 24, preserve: 15 };
-      const baseCredit = CREDIT_RULES[mode] || 30;
-      let totalCredit = baseCredit;
-      if (numPages && numPages > 15) totalCredit += Math.ceil((numPages - 15) / 5) * 6;
+      // 基础积分：每页约1积分（Gamma API实际消耗）
+      const BASE_CREDIT_PER_PAGE = 1;
+      let totalCredit = numPages * BASE_CREDIT_PER_PAGE;
+
+      // 图片积分：按实际选择的图片方案计算
+      let imageCreditsPerImage = 0;
+      if (imageSource === 'aiGenerated') {
+        // 高级模型20积分/图，普通模型2积分/图
+        const HIGH_END_MODELS = ['flux-kontext-pro', 'imagen-4-pro', 'ideogram-v3', 'dall-e-3', 'gpt-image-1-high'];
+        if (imageModel && HIGH_END_MODELS.includes(imageModel)) {
+          imageCreditsPerImage = 20;
+        } else {
+          imageCreditsPerImage = 2; // imagen-3-flash, flux-kontext-fast 等
+        }
+      }
+      // 免费图片渠道0积分
+      // noImages, pictographic, pexels, webFreeToUseCommercially, giphy 等
+
+      // 估算图片数量（Gamma平均每2-3页一张图）
+      const estimatedImageCount = estimatedImages > 0 ? estimatedImages : Math.ceil(numPages / 2.5);
+      totalCredit += estimatedImageCount * imageCreditsPerImage;
+
+      // 返回预估积分（让前端确认）
+      if (body.estimate) {
+        return NextResponse.json({
+          estimate: true,
+          baseCredits: numPages * BASE_CREDIT_PER_PAGE,
+          imageCredits: estimatedImageCount * imageCreditsPerImage,
+          imageCreditsPerImage,
+          estimatedImages: estimatedImageCount,
+          totalCredits: totalCredit,
+          imageSource,
+          imageModel,
+        });
+      }
 
       // 原子性扣除：使用条件更新防止并发超扣
       // UPDATE users SET credits = credits - X WHERE id = Y AND credits >= X
       const { data: updated, error: updErr } = await sb.rpc('deduct_credits_atomic', {
         p_user_id: userId,
         p_amount: totalCredit,
-        p_description: `${mode === 'generate' ? 'AI创作' : mode === 'condense' ? '智能摘要' : '原文排版'}-${numPages || 10}页`,
+        p_description: `生成PPT-${numPages}页-${imageSource}${imageCreditsPerImage > 0 ? `-${imageCreditsPerImage}积分/图×${estimatedImageCount}张` : ''}-共${totalCredit}积分`,
       }).single();
 
       if (updErr) {
