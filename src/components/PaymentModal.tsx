@@ -39,23 +39,21 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
     if (!plan) return;
     // 先跳到确认页（立即响应），后台创建订单
     setStep('confirm');
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/payment', {
+    // 不等待API，直接展示确认页
+    setTimeout(() => {
+      fetch('/api/payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ planId: plan.id, payMethod, billing: plan.billing || 'monthly' }),
+      }).then(res => res.json()).then(data => {
+        if (data.error) {
+          setStep('select');
+          alert(data.error);
+        }
+      }).catch(() => {
+        // 网络失败不影响体验，留在确认页
       });
-      const data = await res.json();
-      if (data.error) {
-        setStep('select');
-        alert(data.error);
-      }
-    } catch {
-      // 网络失败也留在确认页，不影响体验
-    } finally {
-      setSubmitting(false);
-    }
+    }, 100);
   }, [plan, payMethod]);
 
   const handleClose = useCallback(() => {

@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 
       const { data: newUser, error: insErr } = await sb
         .from('users')
-        .insert({ phone, credits: 100, plan_type: 'free', nickname: '用户', is_active: true })
+        .insert({ phone, credits: 50, plan_type: 'free', nickname: '用户', is_active: true })
         .select()
         .single();
 
@@ -53,8 +53,8 @@ export async function POST(req: NextRequest) {
       }
 
       await sb.from('credit_transactions').insert({
-        user_id: newUser.id, amount: 100, balance_after: 100,
-        type: 'signup_gift', description: '注册赠送100积分',
+        user_id: newUser.id, amount: 50, balance_after: 50,
+        type: 'signup_gift', description: '注册赠送50积分',
       });
 
       return NextResponse.json({
@@ -142,10 +142,10 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // 新用户注册 + 赠送100积分
+      // 新用户注册 + 赠送50积分
       const { data: newUser, error: insErr } = await sb
         .from('users')
-        .insert({ phone, credits: 100, plan_type: 'free', nickname: '用户', is_active: true })
+        .insert({ phone, credits: 50, plan_type: 'free', nickname: '用户', is_active: true })
         .select()
         .single();
 
@@ -155,8 +155,8 @@ export async function POST(req: NextRequest) {
       }
 
       await sb.from('credit_transactions').insert({
-        user_id: newUser.id, amount: 100, balance_after: 100,
-        type: 'signup_gift', description: '注册赠送100积分',
+        user_id: newUser.id, amount: 50, balance_after: 50,
+        type: 'signup_gift', description: '注册赠送50积分',
       });
 
       return NextResponse.json({

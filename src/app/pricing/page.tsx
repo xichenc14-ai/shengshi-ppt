@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/auth-context';
 
 // ===== 积分与定价体系 =====
 // Gamma订阅：4000积分/月 = 150元（1积分≈0.0375元）
-// 非会员：100积分/月，8页，无收费图
+// 非会员：50积分/月，8页，无收费图
 // 普通会员：500积分/月，20页，普通图（pictographic+pexels，0 credits）
 // 高级会员：1000积分/月，40页，高级图（imagen-3-flash，2 credits/图）
 // 尊享会员：2000积分/月，60页，权益全开（含flux-kontext-pro，20 credits/图）
@@ -38,13 +38,13 @@ const PLANS: Plan[] = [
     emoji: '💚',
     name: '免费体验',
     desc: '零成本体验AI生成PPT',
-    credits: 100,
+    credits: 50,
     maxPages: 8,
     imageTier: '无收费图',
     imageDesc: '仅支持 pictographic 免费插图',
     prices: { monthly: 0, annual: 0, annualMonthly: 0, annualSave: '' },
     features: [
-      { text: '每月 100 积分', included: true },
+      { text: '每月 50 积分', included: true },
       { text: '每次最多 8 页', included: true },
       { text: '免费插图模式', included: true },
       { text: 'PPTX 导出（带水印）', included: true },
@@ -57,7 +57,7 @@ const PLANS: Plan[] = [
     ],
     cta: '当前方案',
     ctaDisabled: true,
-    pptCount10Pages: 12,  // 100÷8=12份
+    pptCount10Pages: 6,  // 50÷8≈6份
     costPerPage: '免费',
   },
   {
@@ -161,14 +161,18 @@ function PlanCard({ plan, user, openPayment, openLogin, isSelected, onSelect }: 
   const handleCta = () => {
     if (plan.id === 'free') return;
     if (!user) { openLogin(); return; }
+    // 先选中的当前套餐
     onSelect?.();
-    openPayment({
-      id: plan.id,
-      name: plan.name,
-      price: currentPrice > 0 ? `¥${currentPrice}` : '免费',
-      billing: isAnnual ? 'annual' : 'monthly',
-      credits: plan.credits,
-    });
+    // 用 setTimeout 确保 state 更新后再打开 PaymentModal
+    setTimeout(() => {
+      openPayment({
+        id: plan.id,
+        name: plan.name,
+        price: currentPrice > 0 ? `¥${currentPrice}` : '免费',
+        billing: isAnnual ? 'annual' : 'monthly',
+        credits: plan.credits,
+      });
+    }, 0);
   };
 
   return (
@@ -365,7 +369,7 @@ export default function PricingPage() {
         <div className="space-y-3">
           {[
             { q: '积分是什么？怎么用？', a: '积分是省心PPT的通用计费单位。每次生成PPT会消耗积分，消耗量 = 基础积分（约1积分/页）+ 图片积分（按所选图片方案计算）。免费插图0积分，AI生图2-20积分/张。' },
-            { q: '免费版有什么限制？', a: '免费版每月100积分，每次最多8页，仅支持免费插图模式（pictographic），导出PPTX带水印。足够体验AI生成PPT的效果。' },
+            { q: '免费版有什么限制？', a: '免费版每月50积分，每次最多8页，仅支持免费插图模式（pictographic），导出PPTX带水印。足够体验AI生成PPT的效果。' },
             { q: '积分用完了怎么办？', a: '可以等待下月自动刷新，也可以升级套餐获得更多积分。积分不会清零，会累计到下月。' },
             { q: '月付和年付有什么区别？', a: '功能完全一样，年付更优惠。普通会员年付¥299（省60），高级年付¥499（省100），尊享年付¥999（省199）。' },
             { q: '可以随时取消订阅吗？', a: '可以，随时取消不影响当前周期使用。取消后下个计费周期自动降为免费版。' },
