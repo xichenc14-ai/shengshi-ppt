@@ -1,12 +1,12 @@
 // SMS Client - 短信验证码发送客户端
-// 支持：Luosimao / 腾讯云 / 阿里云（通过环境变量切换）
+// 支持：阿里云短信认证（个人开发者）/ 腾讯云 / Luosimao
 // 环境变量：
-//   SMS_PROVIDER=luosimao|tencent|aliyun（默认 luosimao）
+//   SMS_PROVIDER=aliyun_auth|luosimao|tencent（默认 aliyun_auth）
+//   ALIYUN_ACCESS_KEY_ID=xxx  ALIYUN_ACCESS_KEY_SECRET=xxx
 //   LUOSIMAO_API_KEY=xxx
 //   TENCENT_SECRET_ID=xxx  TENCENT_SECRET_KEY=xxx  TENCENT_SMS_APP_ID=xxx  TENCENT_SMS_SIGN=xxx  TENCENT_SMS_TEMPLATE_ID=xxx
-//   ALIYUN_ACCESS_KEY_ID=xxx  ALIYUN_ACCESS_KEY_SECRET=xxx  ALIYUN_SMS_SIGN=xxx  ALIYUN_SMS_TEMPLATE_CODE=xxx
 
-type SMSProvider = 'luosimao' | 'tencent' | 'aliyun';
+type SMSProvider = 'aliyun_auth' | 'luosimao' | 'tencent';
 
 interface SMSSendResult {
   success: boolean;
@@ -15,7 +15,48 @@ interface SMSSendResult {
 }
 
 function getProvider(): SMSProvider {
-  return (process.env.SMS_PROVIDER as SMSProvider) || 'luosimao';
+  return (process.env.SMS_PROVIDER as SMSProvider) || 'aliyun_auth';
+}
+
+// ===== 阿里云「短信认证」（号码认证服务）=====
+// 个人开发者友好：无需营业执照、无需签名/模板申请
+// API: dypnsapi.aliyuncs.com → SendSmsVerifyCode
+async function sendViaAliyunAuth(phone: string, code: string): Promise<SMSSendResult> {
+  const accessKeyId = process.env.ALIYUN_ACCESS_KEY_ID;
+  const accessKeySecret = process.env.ALIYUN_ACCESS_KEY_SECRET;
+
+  if (!accessKeyId || !accessKeySecret) {
+    return { success: false, error: 'ALIYUN_ACCESS_KEY_ID / SECRET 未配置' };
+  }
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const Dypnsapi: any = await import('@alicloud/dypnsapi20170525');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const OpenApi: any = await import('@alicloud/openapi-client');
+
+    const config = new OpenApi.Config({
+      accessKeyId,
+      accessKeySecret,
+      endpoint: 'dypnsapi.aliyuncs.com',
+    });
+
+    const client = new Dypnsapi.default(config);
+    const sendRes = await client.sendSmsVerifyCode(new Dypnsapi.SendSmsVerifyCodeRequest({
+      phoneNumber: phone,
+      code,
+      verifyCodeLength: 6,
+      expireTime: 300,
+    }));
+
+    const body = sendRes.body as any;
+    if (body?.Code === 'OK') {
+      return { success: true, messageId: body?.RequestId };
+    }
+    return { success: false, error: `阿里云短信认证失败: ${body?.Message || body?.Code || '未知错误'}` };
+  } catch (e) {
+    return { success: false, error: `阿里云短信认证异常: ${e instanceof Error ? e.message : 'unknown'}` };
+  }
 }
 
 // ===== Luosimao =====
@@ -82,57 +123,17 @@ async function sendViaTencent(phone: string, code: string): Promise<SMSSendResul
   }
 }
 
-// ===== 阿里云短信 =====
-async function sendViaAliyun(phone: string, code: string): Promise<SMSSendResult> {
-  const accessKeyId = process.env.ALIYUN_ACCESS_KEY_ID;
-  const accessKeySecret = process.env.ALIYUN_ACCESS_KEY_SECRET;
-  const sign = process.env.ALIYUN_SMS_SIGN;
-  const templateCode = process.env.ALIYUN_SMS_TEMPLATE_CODE;
-
-  if (!accessKeyId || !accessKeySecret || !sign || !templateCode) {
-    return { success: false, error: '阿里云短信环境变量未配齐' };
-  }
-
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const Dysmsapi: any = await import('@alicloud/dysmsapi20170525');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const OpenApi: any = await import('@alicloud/openapi-client');
-
-    const config = new OpenApi.Config({
-      accessKeyId,
-      accessKeySecret,
-      endpoint: 'dysmsapi.aliyuncs.com',
-    });
-
-    const client = new Dysmsapi.default(config);
-    const sendRes = await client.sendSms(new Dysmsapi.SendSmsRequest({
-      phoneNumbers: phone,
-      signName: sign,
-      templateCode,
-      templateParam: JSON.stringify({ code, expire: '5' }),
-    }));
-
-    if (sendRes.body?.code === 'OK') {
-      return { success: true, messageId: sendRes.body.bizId };
-    }
-    return { success: false, error: `阿里云短信失败: ${sendRes.body?.message || '未知错误'}` };
-  } catch (e) {
-    return { success: false, error: `阿里云短信异常: ${e instanceof Error ? e.message : 'unknown'}` };
-  }
-}
-
 // ===== 统一接口 =====
 export async function sendSMS(phone: string, code: string): Promise<SMSSendResult> {
   const provider = getProvider();
 
   switch (provider) {
+    case 'aliyun_auth':
+      return sendViaAliyunAuth(phone, code);
     case 'luosimao':
       return sendViaLuosimao(phone, code);
     case 'tencent':
       return sendViaTencent(phone, code);
-    case 'aliyun':
-      return sendViaAliyun(phone, code);
     default:
       return { success: false, error: `不支持的短信服务商: ${provider}` };
   }
