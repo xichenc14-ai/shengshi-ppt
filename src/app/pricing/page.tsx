@@ -143,7 +143,7 @@ const IMAGE_CREDIT_TABLE = [
   { mode: '尊享AI图', source: 'aiGenerated + flux-kontext-pro', credits: '20/张', note: '🏆尊享会员专属' },
 ];
 
-function PlanCard({ plan, user, openPayment, openLogin }: { plan: Plan; user: any; openPayment: any; openLogin: any }) {
+function PlanCard({ plan, user, openPayment, openLogin, isSelected }: { plan: Plan; user: any; openPayment: any; openLogin: any; isSelected?: boolean }) {
   const [isAnnual, setIsAnnual] = React.useState(false);
   const currentPrice = isAnnual ? plan.prices.annualMonthly : plan.prices.monthly;
   const period = isAnnual ? '/月 (年付)' : '/月';
@@ -163,9 +163,11 @@ function PlanCard({ plan, user, openPayment, openLogin }: { plan: Plan; user: an
   return (
     <div
       className={`relative bg-white rounded-2xl p-6 border-2 transition-all duration-300 hover:-translate-y-1 ${
-        plan.popular
-          ? 'border-[#5B4FE9] shadow-xl shadow-purple-200/30 md:scale-[1.02]'
-          : 'border-gray-100 hover:border-[#EDE9FE] hover:shadow-lg'
+        isSelected
+          ? 'border-[#5B4FE9] shadow-xl shadow-purple-200/30 ring-4 ring-purple-100'
+          : plan.popular
+            ? 'border-[#5B4FE9] shadow-xl shadow-purple-200/30 md:scale-[1.02]'
+            : 'border-gray-100 hover:border-[#EDE9FE] hover:shadow-lg'
       }`}
     >
       {plan.popular && (
@@ -274,6 +276,7 @@ function PlanCard({ plan, user, openPayment, openLogin }: { plan: Plan; user: an
 
 export default function PricingPage() {
   const { user, openPayment, openLogin } = useAuth();
+  const [selectedPlan, setSelectedPlan] = React.useState<string | null>(null);
 
   return (
     <div className="min-h-screen bg-[#FAFBFE]">
@@ -287,7 +290,7 @@ export default function PricingPage() {
       <section className="max-w-5xl mx-auto px-4 pb-8">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {PLANS.map((p) => (
-            <PlanCard key={p.id} plan={p} user={user} openPayment={openPayment} openLogin={openLogin} />
+            <PlanCard key={p.id} plan={p} user={user} openPayment={(plan: any) => { setSelectedPlan(p.id); openPayment(plan); }} openLogin={openLogin} isSelected={selectedPlan === p.id} />
           ))}
         </div>
       </section>

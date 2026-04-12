@@ -116,7 +116,7 @@ export default function Home() {
       const deductRes = await fetch('/api/user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'deduct', userId: user.id, mode: 'generate', numPages: pages }),
+        body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: pages, imageSource: directImgMode === 'none' ? 'noImages' : directImgMode === 'ai' ? 'aiGenerated' : directImgMode === 'web' ? 'webFreeToUseCommercially' : 'pictographic' }),
       });
       const deductData = await deductRes.json();
       if (!deductRes.ok || deductData.error) {
@@ -126,7 +126,7 @@ export default function Home() {
           openPayment({
             id: 'basic',
             name: '积分不足，请充值',
-            price: '¥9.9/月',
+            price: '¥29.9/月',
             billing: 'monthly',
             reason: '积分不足，无法生成PPT',
             neededCredits: deductData.needed,
@@ -354,7 +354,7 @@ export default function Home() {
       const deductRes = await fetch('/api/user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'deduct', userId: user.id, mode: tm, numPages: editedSlides.length }),
+        body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: editedSlides.length, imageSource: imgMode === 'none' ? 'noImages' : imgMode === 'ai' ? 'aiGenerated' : imgMode === 'web' ? 'webFreeToUseCommercially' : 'pictographic' }),
       });
       const deductData = await deductRes.json();
       if (!deductRes.ok || deductData.error) {
@@ -365,7 +365,7 @@ export default function Home() {
           openPayment({
             id: 'basic',
             name: '积分不足，请充值',
-            price: '¥9.9/月',
+            price: '¥29.9/月',
             billing: 'monthly',
             reason: '积分不足，无法生成PPT',
             neededCredits: deductData.needed,
