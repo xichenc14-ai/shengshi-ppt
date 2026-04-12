@@ -3,6 +3,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import PaymentModal from '@/components/PaymentModal';
+import LoginModal from '@/components/LoginModal';
 
 // ===== 积分与定价体系 =====
 // 积分与定价体系
@@ -161,18 +163,14 @@ function PlanCard({ plan, user, openPayment, openLogin, isSelected, onSelect }: 
   const handleCta = () => {
     if (plan.id === 'free') return;
     if (!user) { openLogin(); return; }
-    // 先选中的当前套餐
     onSelect?.();
-    // 用 setTimeout 确保 state 更新后再打开 PaymentModal
-    setTimeout(() => {
-      openPayment({
-        id: plan.id,
-        name: plan.name,
-        price: currentPrice > 0 ? `¥${currentPrice}` : '免费',
-        billing: isAnnual ? 'annual' : 'monthly',
-        credits: plan.credits,
-      });
-    }, 0);
+    openPayment({
+      id: plan.id,
+      name: plan.name,
+      price: currentPrice > 0 ? `¥${currentPrice}` : '免费',
+      billing: isAnnual ? 'annual' : 'monthly',
+      credits: plan.credits,
+    });
   };
 
   return (
@@ -304,10 +302,11 @@ function PlanCard({ plan, user, openPayment, openLogin, isSelected, onSelect }: 
 }
 
 export default function PricingPage() {
-  const { user, openPayment, openLogin } = useAuth();
+  const { user, openPayment, openLogin, showPayment, closePayment, paymentPlan, showLogin, closeLogin } = useAuth();
   const [selectedPlan, setSelectedPlan] = React.useState<string | null>(null);
 
   return (
+    <>
     <div className="min-h-screen bg-[#FAFBFE]">
       {/* Hero */}
       <section className="pt-16 pb-6 text-center">
@@ -386,5 +385,10 @@ export default function PricingPage() {
         </div>
       </section>
     </div>
+
+    {/* Payment Modal */}
+    <PaymentModal open={showPayment} onClose={closePayment} plan={paymentPlan} />
+    <LoginModal open={showLogin} onClose={closeLogin} />
+    </>
   );
 }

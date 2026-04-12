@@ -21,6 +21,7 @@ import SkeletonCard from '@/components/SkeletonCard';
 import ThemeSelector from '@/components/ThemeSelector';
 import ScrollingBanner from '@/components/ScrollingBanner';
 import { buildMdV2 } from '@/lib/build-md-v2';
+import { getThemeById } from '@/lib/theme-database';
 import { checkPermission, mapImgModeToSource, getPlan } from '@/lib/membership';
 
 /* ==================== Config ==================== */
@@ -444,17 +445,10 @@ export default function Home() {
         // 用户可能编辑了大纲，需要重建 inputText
         const { markdown: rebuiltMd } = buildMdV2(outlineResult.title, editedSlides, smartGammaPayload.imageOptions?.source || 'pictographic');
         gammaRequestBody = {
-          inputText: rebuiltMd, // 用用户编辑后的大纲
+          ...smartGammaPayload,
+          inputText: rebuiltMd, // 用用户编辑后的大纲覆盖
+          numCards: editedSlides.length, // 更新页数覆盖
           textMode: 'preserve', // 省心模式强制 preserve
-          format: 'presentation',
-          numCards: editedSlides.length,
-          exportAs: smartGammaPayload.exportAs || 'pptx',
-          themeId: smartGammaPayload.themeId,
-          tone: smartGammaPayload.tone,
-          additionalInstructions: smartGammaPayload.additionalInstructions,
-          textOptions: smartGammaPayload.textOptions,
-          imageOptions: smartGammaPayload.imageOptions,
-          cardOptions: smartGammaPayload.cardOptions,
         };
       } else {
         // 专业模式：用用户选择的参数
@@ -478,7 +472,7 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(gammaRequestBody),
       });
-      if (!gRes.ok) throw new Error('PPT 生成失败');
+      if (!gRes.ok) { const d = await gRes.json(); throw new Error(d.error || `生成失败(${gRes.status})`); }
       const gd = await gRes.json();
 
       if (gd.generationId) {
@@ -909,6 +903,35 @@ export default function Home() {
                     </div>
                   ))}
                   <button onClick={addSlide} className="w-full py-2.5 border border-dashed border-gray-200 rounded-xl text-xs text-gray-400 hover:text-[#5B4FE9] hover:border-[#5B4FE9] transition-colors">+ 添加幻灯片</button>
+
+                  {/* 省心模式AI参数摘要 */}
+                  {mode === 'smart' && smartGammaPayload && (
+                    <div className="mt-4 bg-gradient-to-br from-[#F5F3FF] to-[#EDE9FE] rounded-xl p-4 border border-purple-100">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-sm">🤖</span>
+                        <span className="text-xs font-semibold text-[#5B4FE9]">AI 已为你定制最优参数</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-white/70 rounded-lg px-3 py-2">
+                          <p className="text-[10px] text-gray-400 mb-0.5">🎨 主题</p>
+                          <p className="text-xs font-medium text-gray-700">{(() => { const t = getThemeById(smartGammaPayload.themeId); return t ? t.name : smartGammaPayload.themeId; })()}</p>
+                        </div>
+                        <div className="bg-white/70 rounded-lg px-3 py-2">
+                          <p className="text-[10px] text-gray-400 mb-0.5">🎭 语气</p>
+                          <p className="text-xs font-medium text-gray-700">{({'professional':'专业','casual':'轻松','creative':'创意','bold':'大胆','traditional':'传统'} as Record<string,string>)[smartGammaPayload.tone] || smartGammaPayload.tone}</p>
+                        </div>
+                        <div className="bg-white/70 rounded-lg px-3 py-2">
+                          <p className="text-[10px] text-gray-400 mb-0.5">🖼️ 配图</p>
+                          <p className="text-xs font-medium text-gray-700">{({'noImages':'纯净无图','pictographic':'精选套图','webFreeToUseCommercially':'定制网图','aiGenerated':'定制AI图'} as Record<string,string>)[smartGammaPayload.imageOptions?.source] || smartGammaPayload.imageOptions?.source}</p>
+                        </div>
+                        <div className="bg-white/70 rounded-lg px-3 py-2">
+                          <p className="text-[10px] text-gray-400 mb-0.5">📄 页数</p>
+                          <p className="text-xs font-medium text-gray-700">{smartGammaPayload.numCards} 页</p>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-purple-400 mt-2">✨ 省心模式会自动为你选择最佳参数，直接确认即可生成</p>
+                    </div>
+                  )}
 
                   {/* Inline generate button for outline phase */}
                   {!loading && (
