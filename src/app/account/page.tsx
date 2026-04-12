@@ -42,9 +42,10 @@ export default function AccountPage() {
   };
 
   const PLAN_NAMES: Record<string, { label: string; emoji: string; color: string }> = {
-    free: { label: '免费体验版', emoji: '💚', color: 'text-gray-500' },
-    basic: { label: '基础版', emoji: '💎', color: 'text-blue-600' },
-    pro: { label: '专业版', emoji: '👑', color: 'text-amber-600' },
+    free: { label: '免费体验', emoji: '💚', color: 'text-gray-500' },
+    basic: { label: '普通会员', emoji: '💎', color: 'text-blue-600' },
+    pro: { label: '高级会员', emoji: '👑', color: 'text-amber-600' },
+    vip: { label: '尊享会员', emoji: '🏆', color: 'text-purple-600' },
   };
 
   if (!user) {
