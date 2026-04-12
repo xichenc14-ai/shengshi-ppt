@@ -329,11 +329,11 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                       )}
                       {codeSent && (
                         <button
-                          onClick={phoneChecked ? handleVerifyLogin : () => setPhoneStep('set_profile')}
+                          onClick={handleVerifyLogin}
                           disabled={code.join('').length !== 6 || loading}
                           className="w-full py-3 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-purple-200/40 active:scale-[0.98] transition-all disabled:opacity-40"
                         >
-                          {loading ? '...' : phoneChecked ? '验证登录' : '下一步'}
+                          {loading ? '验证中...' : '验证'}
                         </button>
                       )}
                     </>
