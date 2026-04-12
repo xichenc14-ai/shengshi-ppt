@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
         finalCode = genCode();
       }
 
-      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();  // 10分钟有效期
       await sb.from('verification_codes').insert({ phone, code: finalCode, expires_at: expiresAt });
 
       const isDev = process.env.NODE_ENV !== 'production';
@@ -147,14 +147,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '密码至少6位' }, { status: 400 });
       }
 
-      // 检查该手机号是否在最近5分钟内有已验证的验证码记录
-      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      // 检查该手机号是否有有效的已验证记录（验证码本身有过期时间）
       const { data: verifiedRecords } = await sb
         .from('verification_codes')
         .select('id')
         .eq('phone', phone)
         .eq('verified', true)
-        .gt('created_at', fiveMinAgo)
+        .gt('expires_at', new Date().toISOString())  // 验证码未过期
         .limit(1);
 
       if (!verifiedRecords || verifiedRecords.length === 0) {
