@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { createHash } from 'crypto';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -8,8 +9,35 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+function hashPassword(password: string): string {
+  return createHash('sha256').update(password + '_sxPPT_salt_2026').digest('hex');
+}
+
 function genCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+// ==================== GET: 检查手机号是否注册 ====================
+export async function GET(req: NextRequest) {
+  const sb = getSupabase();
+  if (!sb) return NextResponse.json({ error: '服务未配置' }, { status: 503 });
+
+  const { searchParams } = new URL(req.url);
+  const action = searchParams.get('action');
+
+  if (action === 'check_phone') {
+    const phone = searchParams.get('phone');
+    if (!phone || !/^1[3-9]\d{9}$/.test(phone)) {
+      return NextResponse.json({ error: '请输入正确的手机号' }, { status: 400 });
+    }
+    const { data: users } = await sb.from('users').select('id, phone, nickname, username').eq('phone', phone).limit(1);
+    if (users && users.length > 0) {
+      return NextResponse.json({ registered: true, nickname: (users[0] as any).nickname || (users[0] as any).username });
+    }
+    return NextResponse.json({ registered: false });
+  }
+
+  return NextResponse.json({ user: null, credits: 0, message: '未登录' });
 }
 
 // ==================== POST: 多动作路由 ====================
@@ -21,113 +49,49 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { action } = body;
 
-    // ===== 手机号直接登录/注册（MVP，待接入短信验证码） =====
-    if (action === 'login') {
-      const { phone } = body;
-      if (!phone || !/^1[3-9]\d{9}$/.test(phone)) {
-        return NextResponse.json({ error: '请输入正确的手机号' }, { status: 400 });
-      }
-
-      const { data: users } = await sb
-        .from('users')
-        .select('id,phone,nickname,credits,plan_type,is_active')
-        .eq('phone', phone);
-
-      if (users && users.length > 0) {
-        const u = users[0];
-        await sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', u.id);
-        return NextResponse.json({
-          user: { id: u.id, phone: u.phone, nickname: u.nickname || '用户', credits: u.credits, plan_type: u.plan_type, has_subscription: u.plan_type !== 'free', is_new: false },
-        });
-      }
-
-      const { data: newUser, error: insErr } = await sb
-        .from('users')
-        .insert({ phone, credits: 50, plan_type: 'free', nickname: '用户', is_active: true })
-        .select()
-        .single();
-
-      if (insErr || !newUser) {
-        console.error('Insert error:', insErr);
-        return NextResponse.json({ error: '注册失败' }, { status: 500 });
-      }
-
-      await sb.from('credit_transactions').insert({
-        user_id: newUser.id, amount: 50, balance_after: 50,
-        type: 'signup_gift', description: '注册赠送50积分',
-      });
-
-      return NextResponse.json({
-        user: { id: newUser.id, phone: newUser.phone, nickname: newUser.nickname, credits: newUser.credits, plan_type: newUser.plan_type, is_active: true, has_subscription: false, is_new: true },
-      });
-    }
-
-    // ===== 发送验证码（接入短信服务商） =====
+    // ===== 发送验证码 =====
     if (action === 'send_code') {
       const { phone } = body;
       if (!phone || !/^1[3-9]\d{9}$/.test(phone)) {
         return NextResponse.json({ error: '请输入正确的手机号' }, { status: 400 });
       }
 
-      // 检查发送频率（60秒内不能重复发送）
-      const thirtySecAgo = new Date(Date.now() - 60000).toISOString();
-      const { data: recent } = await sb
-        .from('verification_codes')
-        .select('id')
-        .eq('phone', phone)
-        .gt('created_at', thirtySecAgo)
-        .limit(1);
-
+      // 60秒频率限制
+      const sixtySecAgo = new Date(Date.now() - 60000).toISOString();
+      const { data: recent } = await sb.from('verification_codes').select('id').eq('phone', phone).gt('created_at', sixtySecAgo).limit(1);
       if (recent && recent.length > 0) {
         return NextResponse.json({ error: '发送太频繁，请60秒后重试' }, { status: 429 });
       }
 
-      // 清理该手机号的旧过期验证码
+      // 清理过期验证码
       await sb.from('verification_codes').delete().eq('phone', phone).lt('expires_at', new Date().toISOString());
 
       const code = genCode();
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
-      // 先存DB
-      await sb.from('verification_codes').insert({
-        phone,
-        code,
-        expires_at: expiresAt,
-      });
+      await sb.from('verification_codes').insert({ phone, code, expires_at: expiresAt });
 
-      // 调用短信服务发送
+      // 调用短信服务
       try {
         const { sendSMS } = await import('@/lib/sms-client');
         const result = await sendSMS(phone, code);
-
         if (!result.success) {
-          console.error('SMS send failed:', result.error);
-          // 短信发送失败，仍然返回成功（避免暴露内部错误）
-          // 生产环境可改为返回错误
+          console.error('[SMS] 发送失败:', result.error);
           if (process.env.NODE_ENV === 'production') {
             return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
           }
         }
       } catch (e) {
-        console.error('SMS module error:', e);
-        // 模块加载失败（可能未安装SDK），降级处理
+        console.error('[SMS] 模块异常:', e);
       }
 
-      // 开发环境返回验证码，生产环境不返回
       const isDev = process.env.NODE_ENV !== 'production';
-      return NextResponse.json({
-        success: true,
-        ...(isDev && { code }),
-        message: '验证码已发送',
-      });
+      return NextResponse.json({ success: true, ...(isDev && { code }), message: '验证码已发送' });
     }
 
-    // ===== 验证码登录/注册 =====
-    if (action === 'verify_code') {
-      const { phone, code } = body;
-      if (!phone || !code) return NextResponse.json({ error: '参数错误' }, { status: 400 });
-
-      // 查询最新有效验证码
+    // ===== 验证验证码（内部复用） =====
+    async function verifyCode(phone: string, code: string): Promise<{ valid: boolean; error?: string; recordId?: string }> {
+      if (!sb) return { valid: false, error: '服务未配置' };
       const { data: records, error: qErr } = await sb
         .from('verification_codes')
         .select('id,code,expires_at,verified')
@@ -138,38 +102,89 @@ export async function POST(req: NextRequest) {
         .order('created_at', { ascending: false })
         .limit(1);
 
-      if (qErr) return NextResponse.json({ error: '验证失败' }, { status: 500 });
-      if (!records || records.length === 0) {
-        return NextResponse.json({ error: '验证码错误或已过期' }, { status: 400 });
-      }
+      if (qErr) return { valid: false, error: '验证失败' };
+      if (!records || records.length === 0) return { valid: false, error: '验证码错误或已过期' };
 
-      // 标记已验证
       await sb.from('verification_codes').update({ verified: true }).eq('id', records[0].id);
+      return { valid: true, recordId: records[0].id };
+    }
 
-      // 查询/创建用户
-      const { data: users } = await sb
-        .from('users')
-        .select('id,phone,nickname,credits,plan_type,is_active')
-        .eq('phone', phone);
-
-      if (users && users.length > 0) {
-        const u = users[0];
-        await sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', u.id);
-        return NextResponse.json({
-          user: { id: u.id, phone: u.phone, nickname: u.nickname || '用户', credits: u.credits, plan_type: u.plan_type, has_subscription: u.plan_type !== 'free', is_new: false },
-        });
+    // ===== 注册（手机号验证码 + 用户名 + 密码） =====
+    if (action === 'register') {
+      const { phone, code, username, password } = body;
+      if (!phone || !code || !username || !password) {
+        return NextResponse.json({ error: '请填写完整信息' }, { status: 400 });
+      }
+      if (!/^1[3-9]\d{9}$/.test(phone)) {
+        return NextResponse.json({ error: '手机号格式不正确' }, { status: 400 });
+      }
+      if (username.trim().length < 2 || username.trim().length > 20) {
+        return NextResponse.json({ error: '用户名需要2-20个字符' }, { status: 400 });
+      }
+      if (password.length < 6) {
+        return NextResponse.json({ error: '密码至少6位' }, { status: 400 });
       }
 
-      // 新用户注册 + 赠送50积分
+      // 验证码校验
+      const vResult = await verifyCode(phone, code);
+      if (!vResult.valid) return NextResponse.json({ error: vResult.error }, { status: 400 });
+
+      // 检查手机号是否已注册
+      const { data: existing } = await sb.from('users').select('id').eq('phone', phone).limit(1);
+      if (existing && existing.length > 0) {
+        return NextResponse.json({ error: '该手机号已注册，请直接登录' }, { status: 409 });
+      }
+
+      // 检查用户名是否已存在
+      const { data: nameExists } = await sb.from('users').select('id').eq('username', username.trim()).limit(1);
+      if (nameExists && nameExists.length > 0) {
+        return NextResponse.json({ error: '该用户名已被使用' }, { status: 409 });
+      }
+
+      const pwdHash = hashPassword(password);
+
+      // 插入用户（password_hash 可能不存在，try-catch 兼容）
       const { data: newUser, error: insErr } = await sb
         .from('users')
-        .insert({ phone, credits: 50, plan_type: 'free', nickname: '用户', is_active: true })
+        .insert({
+          phone,
+          username: username.trim(),
+          nickname: username.trim(),
+          password_hash: pwdHash,
+          credits: 50,
+          plan_type: 'free',
+          is_active: true,
+        })
         .select()
         .single();
 
-      if (insErr || !newUser) {
-        console.error('Insert error:', insErr);
-        return NextResponse.json({ error: '注册失败' }, { status: 500 });
+      if (insErr) {
+        console.error('[Register] Insert error:', insErr);
+        // 如果是 password_hash 列不存在的错误，重试不带该字段
+        if (String(insErr.message || insErr).includes('password_hash')) {
+          console.warn('[Register] password_hash 列不存在，重试不带密码字段');
+          const { data: newUser2, error: insErr2 } = await sb
+            .from('users')
+            .insert({
+              phone,
+              username: username.trim(),
+              nickname: username.trim(),
+              credits: 50,
+              plan_type: 'free',
+              is_active: true,
+            })
+            .select()
+            .single();
+          if (insErr2 || !newUser2) return NextResponse.json({ error: '注册失败，请稍后重试' }, { status: 500 });
+          await sb.from('credit_transactions').insert({
+            user_id: newUser2.id, amount: 50, balance_after: 50,
+            type: 'signup_gift', description: '注册赠送50积分',
+          });
+          return NextResponse.json({
+            user: { id: newUser2.id, phone: newUser2.phone, nickname: newUser2.nickname || username.trim(), username: username.trim(), credits: 50, plan_type: 'free', is_new: true },
+          });
+        }
+        return NextResponse.json({ error: '注册失败，请稍后重试' }, { status: 500 });
       }
 
       await sb.from('credit_transactions').insert({
@@ -178,62 +193,72 @@ export async function POST(req: NextRequest) {
       });
 
       return NextResponse.json({
-        user: { id: newUser.id, phone: newUser.phone, nickname: newUser.nickname, credits: newUser.credits, plan_type: newUser.plan_type, is_active: true, has_subscription: false, is_new: true },
+        user: { id: newUser.id, phone: newUser.phone, nickname: newUser.nickname || username.trim(), username: username.trim(), credits: 50, plan_type: newUser.plan_type, is_new: true },
       });
     }
 
-    // ===== 账号密码登录（测试用，商用前移除） =====
-    if (action === 'password_login') {
-      // ⚠️ 仅限开发环境使用，生产环境应通过 SUPABASE_DISABLE_TEST_LOGIN 禁用
-      if (process.env.NODE_ENV === 'production') {
-        return NextResponse.json({ error: '生产环境不支持密码登录' }, { status: 403 });
-      }
-      const { username, password } = body;
-      if (!username || !password) {
-        return NextResponse.json({ error: '请输入用户名和密码' }, { status: 400 });
-      }
-      // 测试账号（仅开发环境）
-      const TEST_USERS: Record<string, string> = {
-        'admin': process.env.TEST_ADMIN_PWD || 'changeme',
-        'xichen': process.env.TEST_XICHEN_PWD || 'changeme',
-      };
-      if (!TEST_USERS[username] || TEST_USERS[username] !== password) {
-        return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
-      }
+    // ===== 验证码登录 =====
+    if (action === 'verify_code') {
+      const { phone, code } = body;
+      if (!phone || !code) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
-      // 查询 supabase users 表中 phone='xichen' 的用户
-      const { data: users } = await sb
-        .from('users')
-        .select('id,phone,nickname,credits,plan_type,is_active')
-        .eq('phone', 'xichen');
+      const vResult = await verifyCode(phone, code);
+      if (!vResult.valid) return NextResponse.json({ error: vResult.error }, { status: 400 });
 
+      // 查找用户
+      const { data: users } = await sb.from('users').select('id,phone,nickname,username,credits,plan_type,is_active').eq('phone', phone);
       if (users && users.length > 0) {
         const u = users[0];
         await sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', u.id);
         return NextResponse.json({
-          user: { id: u.id, phone: u.phone, nickname: u.nickname || 'xichen', credits: u.credits, plan_type: u.plan_type, has_subscription: u.plan_type !== 'free', is_new: false },
+          user: { id: u.id, phone: u.phone, nickname: u.nickname || (u as any).username || '用户', credits: u.credits, plan_type: u.plan_type, has_subscription: u.plan_type !== 'free', is_new: false },
         });
       }
 
-      // 不存在则创建
-      const { data: newUser, error: insErr } = await sb
-        .from('users')
-        .insert({ phone: 'xichen', credits: 9999, plan_type: 'pro', nickname: 'xichen', is_active: true })
-        .select()
-        .single();
+      // 手机号未注册 → 提示前端走注册流程
+      return NextResponse.json({ error: 'NOT_REGISTERED', needRegister: true }, { status: 404 });
+    }
 
-      if (insErr || !newUser) {
-        console.error('Insert error:', insErr);
-        return NextResponse.json({ error: '创建用户失败' }, { status: 500 });
+    // ===== 账号密码登录 =====
+    if (action === 'password_login') {
+      const { account, password } = body;
+      if (!account || !password) return NextResponse.json({ error: '请输入账号和密码' }, { status: 400 });
+      if (password.length < 6) return NextResponse.json({ error: '密码格式不正确' }, { status: 400 });
+
+      const pwdHash = hashPassword(password);
+
+      // 手机号或用户名登录
+      const isPhone = /^1[3-9]\d{9}$/.test(account);
+      let query;
+      if (isPhone) {
+        query = sb.from('users').select('id,phone,nickname,username,credits,plan_type,is_active,password_hash').eq('phone', account);
+      } else {
+        query = sb.from('users').select('id,phone,nickname,username,credits,plan_type,is_active,password_hash').eq('username', account);
       }
 
-      await sb.from('credit_transactions').insert({
-        user_id: newUser.id, amount: 9999, balance_after: 9999,
-        type: 'signup_gift', description: '测试账号赠送9999积分',
-      });
+      const { data: users, error: qErr } = await query.limit(1);
+      if (qErr) {
+        console.error('[PasswordLogin] Query error:', qErr);
+        return NextResponse.json({ error: '登录失败' }, { status: 500 });
+      }
+      if (!users || users.length === 0) {
+        return NextResponse.json({ error: '账号不存在' }, { status: 404 });
+      }
 
+      const u = users[0] as any;
+
+      // 检查 password_hash 列是否存在
+      if (u.password_hash === undefined || u.password_hash === null) {
+        return NextResponse.json({ error: '该账号未设置密码，请使用手机验证码登录' }, { status: 400 });
+      }
+
+      if (u.password_hash !== pwdHash) {
+        return NextResponse.json({ error: '密码错误' }, { status: 401 });
+      }
+
+      await sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', u.id);
       return NextResponse.json({
-        user: { id: newUser.id, phone: newUser.phone, nickname: newUser.nickname, credits: newUser.credits, plan_type: newUser.plan_type, is_active: true, has_subscription: true, is_new: true },
+        user: { id: u.id, phone: u.phone, nickname: u.nickname || u.username || '用户', credits: u.credits, plan_type: u.plan_type, has_subscription: u.plan_type !== 'free', is_new: false },
       });
     }
 
@@ -245,45 +270,32 @@ export async function POST(req: NextRequest) {
       const updates: Record<string, any> = { last_login_at: new Date().toISOString() };
       if (nickname) updates.nickname = nickname;
 
-      const { data: updated, error: updErr } = await sb
-        .from('users')
-        .update(updates)
-        .eq('id', userId)
-        .select('id,phone,nickname,credits,plan_type')
-        .single();
-
+      const { data: updated, error: updErr } = await sb.from('users').update(updates).eq('id', userId).select('id,phone,nickname,credits,plan_type').single();
       if (updErr || !updated) return NextResponse.json({ error: '更新失败' }, { status: 500 });
       return NextResponse.json({ user: updated });
     }
 
-    // ===== 扣积分（按Gamma API实际扣费1:1） =====
+    // ===== 扣积分 =====
     if (action === 'deduct') {
       const { userId, numPages = 10, imageSource = 'noImages', imageModel, estimatedImages = 0 } = body;
       if (!userId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
-      // 基础积分：每页约1积分（Gamma API实际消耗）
       const BASE_CREDIT_PER_PAGE = 1;
       let totalCredit = numPages * BASE_CREDIT_PER_PAGE;
 
-      // 图片积分：按实际选择的图片方案计算
       let imageCreditsPerImage = 0;
       if (imageSource === 'aiGenerated') {
-        // 高级模型20积分/图，普通模型2积分/图
         const HIGH_END_MODELS = ['flux-kontext-pro', 'imagen-4-pro', 'ideogram-v3', 'dall-e-3', 'gpt-image-1-high'];
         if (imageModel && HIGH_END_MODELS.includes(imageModel)) {
           imageCreditsPerImage = 20;
         } else {
-          imageCreditsPerImage = 2; // imagen-3-flash, flux-kontext-fast 等
+          imageCreditsPerImage = 2;
         }
       }
-      // 免费图片渠道0积分
-      // noImages, pictographic, pexels, webFreeToUseCommercially, giphy 等
 
-      // 估算图片数量（Gamma平均每2-3页一张图）
       const estimatedImageCount = estimatedImages > 0 ? estimatedImages : Math.ceil(numPages / 2.5);
       totalCredit += estimatedImageCount * imageCreditsPerImage;
 
-      // 返回预估积分（让前端确认）
       if (body.estimate) {
         return NextResponse.json({
           estimate: true,
@@ -297,8 +309,6 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // 原子性扣除：使用条件更新防止并发超扣
-      // 先尝试 RPC，失败则 fallback 到直接 SQL
       let newBalance: number | null = null;
       let useFallback = false;
 
@@ -308,50 +318,19 @@ export async function POST(req: NextRequest) {
           p_amount: totalCredit,
           p_description: `生成PPT-${numPages}页-${imageSource}${imageCreditsPerImage > 0 ? `-${imageCreditsPerImage}积分/图×${estimatedImageCount}张` : ''}-共${totalCredit}积分`,
         }).single();
+        if (rpcErr) { useFallback = true; } else { newBalance = (rpcResult as any)?.new_balance ?? null; }
+      } catch { useFallback = true; }
 
-        if (rpcErr) {
-          // RPC 不存在或出错，用 fallback
-          console.warn('RPC deduct_credits_atomic failed, using fallback:', rpcErr.message);
-          useFallback = true;
-        } else {
-          newBalance = (rpcResult as any)?.new_balance ?? null;
-        }
-      } catch {
-        useFallback = true;
-      }
-
-      // Fallback: 直接 SQL 扣除（条件更新防超扣）
       if (useFallback) {
-        const { data: updatedRows, error: fbErr } = await sb
-          .from('users')
-          .select('credits')
-          .eq('id', userId)
-          .single();
-
-        if (fbErr || !updatedRows) {
-          console.error('Fallback query error:', fbErr);
-          return NextResponse.json({ error: '积分扣除失败' }, { status: 500 });
-        }
-
+        const { data: updatedRows, error: fbErr } = await sb.from('users').select('credits').eq('id', userId).single();
+        if (fbErr || !updatedRows) return NextResponse.json({ error: '积分扣除失败' }, { status: 500 });
         if (updatedRows.credits < totalCredit) {
           return NextResponse.json({ error: '积分不足', needed: totalCredit, balance: updatedRows.credits });
         }
-
         const newBal = updatedRows.credits - totalCredit;
-        const { error: updErr } = await sb
-          .from('users')
-          .update({ credits: newBal })
-          .eq('id', userId)
-          .eq('credits', updatedRows.credits); // 乐观锁
-
-        if (updErr) {
-          console.error('Fallback update error:', updErr);
-          return NextResponse.json({ error: '积分扣除失败' }, { status: 500 });
-        }
-
+        const { error: updErr } = await sb.from('users').update({ credits: newBal }).eq('id', userId).eq('credits', updatedRows.credits);
+        if (updErr) return NextResponse.json({ error: '积分扣除失败' }, { status: 500 });
         newBalance = newBal;
-
-        // 记录流水（忽略失败，不阻塞主流程）
         try {
           await sb.from('credit_transactions').insert({
             user_id: userId, amount: -totalCredit, balance_after: newBal,
@@ -373,8 +352,4 @@ export async function POST(req: NextRequest) {
     const msg = e instanceof Error ? e.message : '操作失败';
     return NextResponse.json({ error: msg }, { status: 500 });
   }
-}
-
-export async function GET() {
-  return NextResponse.json({ user: null, credits: 0, message: '未登录' });
 }
