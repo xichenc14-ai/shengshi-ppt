@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
+import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -205,12 +205,16 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 
 // POST: 创建 Gamma 生成任务
 export async function POST(request: NextRequest) {
-  const ip = request.headers.get('x-forwarded-for') || 'unknown';
+  const ip = getClientIP(request);
+  if (isIPBlocked(ip)) {
+    return NextResponse.json({ error: '请求受限' }, { status: 403 });
+  }
   const { allowed } = rateLimit(`gamma:${ip}`, getRateLimitConfig('/api/gamma'));
   if (!allowed) {
     return NextResponse.json({ error: '生成请求过于频繁,请稍后再试' }, { status: 429 });
   }
 
+  // 限制 inputText 长度（防超大payload攻击）
   try {
     const body = await request.json();
     const {

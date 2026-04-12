@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createHash } from 'crypto';
+import {
+  checkSMSRateLimit,
+  checkRegisterRateLimit,
+  checkVerifyAttempts,
+  getClientIP,
+  isDevCleanupAllowed,
+  isIPBlocked,
+  rateLimit,
+} from '@/lib/rate-limit';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -19,14 +28,22 @@ function genCode() {
 
 // ==================== GET: 检查手机号是否注册 ====================
 export async function GET(req: NextRequest) {
+  const ip = getClientIP(req);
+  if (isIPBlocked(ip)) {
+    return NextResponse.json({ error: '请求受限' }, { status: 403 });
+  }
+
   const sb = getSupabase();
   if (!sb) return NextResponse.json({ error: '服务未配置' }, { status: 503 });
 
   const { searchParams } = new URL(req.url);
   const action = searchParams.get('action');
 
-  // ===== 清理测试数据（仅开发/调试用） =====
+  // ===== 清理测试数据（仅开发/调试用，仅允许localhost） =====
   if (action === 'cleanup_test') {
+    if (!isDevCleanupAllowed(req)) {
+      return NextResponse.json({ error: '该接口仅限开发环境使用' }, { status: 403 });
+    }
     const phone = searchParams.get('phone');
     if (!phone || !/^1[3-9]\d{9}$/.test(phone)) {
       return NextResponse.json({ error: '请提供正确手机号' }, { status: 400 });
@@ -58,6 +75,17 @@ export async function GET(req: NextRequest) {
 
 // ==================== POST: 多动作路由 ====================
 export async function POST(req: NextRequest) {
+  const ip = getClientIP(req);
+  if (isIPBlocked(ip)) {
+    return NextResponse.json({ error: '请求受限' }, { status: 403 });
+  }
+
+  // 基础API限流
+  const { allowed: apiAllowed } = rateLimit(`api_user:${ip}`, { windowMs: 60 * 1000, maxRequests: 15 });
+  if (!apiAllowed) {
+    return NextResponse.json({ error: '操作过于频繁，请稍后再试' }, { status: 429 });
+  }
+
   const sb = getSupabase();
   if (!sb) return NextResponse.json({ error: '服务未配置' }, { status: 503 });
 
@@ -72,56 +100,40 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '请输入正确的手机号' }, { status: 400 });
       }
 
-      // 60秒频率限制
-      const sixtySecAgo = new Date(Date.now() - 60000).toISOString();
-      const { data: recent } = await sb.from('verification_codes').select('id').eq('phone', phone).gt('created_at', sixtySecAgo).limit(1);
-      if (recent && recent.length > 0) {
-        return NextResponse.json({ error: '发送太频繁，请60秒后重试' }, { status: 429 });
+      // 🔒 短信频率限制（IP + 手机号双重限制）
+      const smsCheck = await checkSMSRateLimit(ip, phone);
+      if (!smsCheck.allowed) {
+        return NextResponse.json(
+          { error: smsCheck.reason, retryAfter: smsCheck.retryAfter },
+          { status: 429 }
+        );
       }
 
       // 清理过期验证码
       await sb.from('verification_codes').delete().eq('phone', phone).lt('expires_at', new Date().toISOString());
 
-      // 调用短信服务（阿里云模式下 API 自动生成验证码）
+      // 调用短信服务
       let finalCode = '';
       try {
         const { sendSMS } = await import('@/lib/sms-client');
         const result = await sendSMS(phone);
-        console.log('[SMS] sendSMS result:', JSON.stringify(result));
-        console.log('[SMS] env vars:', {
-          provider: process.env.SMS_PROVIDER,
-          hasKeyId: !!process.env.ALIYUN_ACCESS_KEY_ID,
-          hasSignName: !!process.env.ALIYUN_SMS_SIGN_NAME,
-          hasTemplateCode: !!process.env.ALIYUN_SMS_TEMPLATE_CODE,
-        });
         if (!result.success) {
-          console.error('[SMS] 发送失败:', result.error);
           if (process.env.NODE_ENV === 'production') {
             return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
           }
-          // 开发模式降级：自己生成验证码
           finalCode = genCode();
         } else {
           finalCode = result.code || genCode();
-          console.log('[SMS] 发送成功, 验证码:', finalCode, ', messageId:', result.messageId);
         }
       } catch (e) {
         console.error('[SMS] 模块异常:', e);
         finalCode = genCode();
       }
 
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();  // 10分钟有效期
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
       await sb.from('verification_codes').insert({ phone, code: finalCode, expires_at: expiresAt });
 
-      const isDev = process.env.NODE_ENV !== 'production';
-      return NextResponse.json({ success: true, code: finalCode, message: '验证码已发送', debug: {
-        provider: process.env.SMS_PROVIDER,
-        hasSignName: !!process.env.ALIYUN_SMS_SIGN_NAME,
-        hasTemplateCode: !!process.env.ALIYUN_SMS_TEMPLATE_CODE,
-        hasKeyId: !!process.env.ALIYUN_ACCESS_KEY_ID,
-        codeLength: finalCode.length,
-        storedCode: finalCode,
-      }});
+      return NextResponse.json({ success: true, code: finalCode, message: '验证码已发送' });
     }
 
     // ===== 验证验证码（内部复用） =====
@@ -140,14 +152,13 @@ export async function POST(req: NextRequest) {
       if (qErr) return { valid: false, error: '验证失败' };
       if (!records || records.length === 0) return { valid: false, error: '验证码错误或已过期' };
 
-      // 只有 markVerified=true 时才标记已验证
       if (markVerified) {
         await sb.from('verification_codes').update({ verified: true }).eq('id', records[0].id);
       }
       return { valid: true, recordId: records[0].id };
     }
 
-    // ===== 注册（手机号验证码已验证 + 用户名 + 密码） =====
+    // ===== 注册 =====
     if (action === 'register') {
       const { phone, username, password } = body;
       if (!phone || !username || !password) {
@@ -162,14 +173,24 @@ export async function POST(req: NextRequest) {
       if (password.length < 6) {
         return NextResponse.json({ error: '密码至少6位' }, { status: 400 });
       }
+      // 用户名安全检查：防止特殊字符和XSS
+      if (/[<>"'&]/.test(username)) {
+        return NextResponse.json({ error: '用户名包含非法字符' }, { status: 400 });
+      }
 
-      // 检查该手机号是否有有效的已验证记录（验证码本身有过期时间）
+      // 🔒 注册频率限制
+      const regCheck = await checkRegisterRateLimit(ip, phone);
+      if (!regCheck.allowed) {
+        return NextResponse.json({ error: regCheck.reason }, { status: 429 });
+      }
+
+      // 检查验证码是否已验证
       const { data: verifiedRecords } = await sb
         .from('verification_codes')
         .select('id')
         .eq('phone', phone)
         .eq('verified', true)
-        .gt('expires_at', new Date().toISOString())  // 验证码未过期
+        .gt('expires_at', new Date().toISOString())
         .limit(1);
 
       if (!verifiedRecords || verifiedRecords.length === 0) {
@@ -182,7 +203,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '该手机号已注册，请直接登录' }, { status: 409 });
       }
 
-      // 检查用户名是否已存在（如果表有 username 列）
+      // 检查用户名是否已存在
       try {
         const { data: nameExists } = await sb.from('users').select('id').eq('username', username.trim()).limit(1);
         if (nameExists && nameExists.length > 0) {
@@ -193,8 +214,6 @@ export async function POST(req: NextRequest) {
       }
 
       const pwdHash = hashPassword(password);
-
-      // 尝试插入用户，完全兼容不同表结构
       const insertData: any = {
         phone,
         nickname: username.trim(),
@@ -203,7 +222,6 @@ export async function POST(req: NextRequest) {
         is_active: true,
       };
       
-      // 尝试带 password_hash
       const { data: newUser, error: insErr } = await sb
         .from('users')
         .insert({ ...insertData, password_hash: pwdHash })
@@ -213,7 +231,6 @@ export async function POST(req: NextRequest) {
       if (insErr) {
         console.error('[Register] Insert error:', JSON.stringify(insErr));
         
-        // 如果是 password_hash 列不存在，重试不带 password_hash
         if (String(insErr.message || insErr).includes('password_hash')) {
           console.warn('[Register] password_hash 列不存在，不带密码存储');
           const { data: newUser2, error: insErr2 } = await sb
@@ -223,11 +240,9 @@ export async function POST(req: NextRequest) {
             .single();
           
           if (insErr2 || !newUser2) {
-            console.error('[Register] Retry error:', JSON.stringify(insErr2));
-            return NextResponse.json({ error: '注册失败: ' + (insErr2?.message || '表结构不兼容') }, { status: 500 });
+            return NextResponse.json({ error: '注册失败，请稍后重试' }, { status: 500 });
           }
           
-          // 成功注册（不带 password_hash）
           try {
             await sb.from('credit_transactions').insert({
               user_id: newUser2.id, amount: 50, balance_after: 50,
@@ -240,10 +255,9 @@ export async function POST(req: NextRequest) {
           });
         }
         
-        return NextResponse.json({ error: '注册失败: ' + (insErr?.message || '表结构不兼容') }, { status: 500 });
+        return NextResponse.json({ error: '注册失败，请稍后重试' }, { status: 500 });
       }
 
-      // 成功注册
       try {
         await sb.from('credit_transactions').insert({
           user_id: newUser.id, amount: 50, balance_after: 50,
@@ -262,14 +276,19 @@ export async function POST(req: NextRequest) {
       const { phone, code } = body;
       if (!phone || !code) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
-      // 验证码校验，标记已验证（无论新老用户）
-      const vResult = await verifyCode(phone, code, true);
-      if (!vResult.valid) return NextResponse.json({ error: vResult.error }, { status: 400 });
+      // 🔒 验证码尝试次数限制
+      const attemptCheck = checkVerifyAttempts(phone);
+      if (!attemptCheck.allowed) {
+        return NextResponse.json({ error: attemptCheck.reason, attemptsLeft: 0 }, { status: 429 });
+      }
 
-      // 查找用户
+      const vResult = await verifyCode(phone, code, true);
+      if (!vResult.valid) {
+        return NextResponse.json({ error: vResult.error, attemptsLeft: attemptCheck.attemptsLeft }, { status: 400 });
+      }
+
       const { data: users } = await sb.from('users').select('id,phone,nickname,credits,plan_type,is_active').eq('phone', phone);
       if (users && users.length > 0) {
-        // 已注册用户：登录成功
         const u = users[0];
         try {
           await sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', u.id);
@@ -279,7 +298,6 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // 手机号未注册 → 进入注册流程设置信息
       return NextResponse.json({ error: 'NOT_REGISTERED', needRegister: true, codeValid: true }, { status: 404 });
     }
 
@@ -289,9 +307,13 @@ export async function POST(req: NextRequest) {
       if (!account || !password) return NextResponse.json({ error: '请输入账号和密码' }, { status: 400 });
       if (password.length < 6) return NextResponse.json({ error: '密码格式不正确' }, { status: 400 });
 
-      const pwdHash = hashPassword(password);
+      // 🔒 密码登录频率限制（每IP每分钟最多5次）
+      const pwLimit = rateLimit(`pw_login:${ip}`, { windowMs: 60 * 1000, maxRequests: 5 });
+      if (!pwLimit.allowed) {
+        return NextResponse.json({ error: '登录尝试过于频繁，请稍后再试' }, { status: 429 });
+      }
 
-      // 手机号或用户名登录
+      const pwdHash = hashPassword(password);
       const isPhone = /^1[3-9]\d{9}$/.test(account);
       let query;
       if (isPhone) {
@@ -302,7 +324,6 @@ export async function POST(req: NextRequest) {
 
       const { data: users, error: qErr } = await query.limit(1);
       if (qErr) {
-        console.error('[PasswordLogin] Query error:', qErr);
         return NextResponse.json({ error: '登录失败' }, { status: 500 });
       }
       if (!users || users.length === 0) {
@@ -311,7 +332,6 @@ export async function POST(req: NextRequest) {
 
       const u = users[0] as any;
 
-      // 检查 password_hash 列是否存在
       if (u.password_hash === undefined || u.password_hash === null) {
         return NextResponse.json({ error: '该账号未设置密码，请使用手机验证码登录' }, { status: 400 });
       }

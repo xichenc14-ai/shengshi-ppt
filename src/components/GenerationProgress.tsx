@@ -1,154 +1,180 @@
 'use client';
 
 import React from 'react';
+import ScrollingBanner from './ScrollingBanner';
 
 interface GenerationProgressProps {
-  currentStep: number; // 0-3
-  progress: number; // 0-100
+  currentStep: number;
+  progress: number;
   subtext?: string;
 }
 
 const STEPS = [
-  { id: 'analyze', label: '分析需求', icon: '🔍', desc: '理解你的PPT主题...' },
+  { id: 'analyze', label: '分析需求', icon: '🔍', desc: 'AI 正在理解你的主题...' },
   { id: 'outline', label: '生成大纲', icon: '📋', desc: '构建内容框架...' },
   { id: 'render', label: '渲染PPT', icon: '🎨', desc: '设计精美页面...' },
   { id: 'check', label: '最终检查', icon: '✅', desc: '确保完美呈现...' },
 ];
 
+// 趣味等待提示
+const FUN_TIPS = [
+  'AI 正在精心设计，请耐心等待...',
+  '每一页都在追求完美 🎨',
+  '好的PPT值得等待 ✨',
+  '正在为你的内容选择最佳布局...',
+  'AI 排版大师工作中...',
+  '马上就好，再等一下...',
+];
+
 export default function GenerationProgress({ currentStep, progress, subtext }: GenerationProgressProps) {
   const currentStepData = STEPS[currentStep] || STEPS[0];
+  const tipIndex = Math.floor(Date.now() / 8000) % FUN_TIPS.length;
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FAFBFE] via-white to-[#F5F3FF] flex items-center justify-center">
-      <div className="max-w-lg mx-auto px-6 py-12 w-full">
-        {/* Animated main icon */}
-        <div className="text-center mb-8">
-          <div className="relative inline-block">
-            {/* Outer glow ring */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#5B4FE9]/20 to-[#8B5CF6]/20 animate-ping" style={{ animationDuration: '2s' }} />
+    <div className="min-h-screen bg-gradient-to-br from-[#FAFBFE] via-white to-[#F5F3FF] flex flex-col">
+      {/* 顶部信息栏 */}
+      <ScrollingBanner variant="wait" />
+
+      {/* 主内容 */}
+      <div className="flex-1 flex items-center justify-center">
+        <div className="max-w-lg mx-auto px-6 py-12 w-full">
+          {/* 主图标 */}
+          <div className="text-center mb-8">
+            <div className="relative inline-block">
+              {/* 外层光晕 */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-28 h-28 rounded-full bg-gradient-to-br from-[#5B4FE9]/15 to-[#8B5CF6]/15 animate-ping" style={{ animationDuration: '2.5s' }} />
+              </div>
+              {/* 图标容器 */}
+              <div className="relative w-24 h-24 rounded-3xl bg-gradient-to-br from-[#5B4FE9] to-[#8B5CF6] shadow-xl shadow-purple-300/40 flex items-center justify-center">
+                <span className="text-5xl" style={{ animation: 'gentle-bounce 1.5s ease-in-out infinite' }}>
+                  {currentStepData.icon}
+                </span>
+              </div>
+              {/* 装饰粒子 */}
+              <span className="absolute -top-3 -right-3 text-lg animate-ping" style={{ animationDuration: '1.2s' }}>✨</span>
+              <span className="absolute -bottom-2 -left-4 text-sm animate-ping" style={{ animationDuration: '1.8s' }}>💫</span>
             </div>
-            {/* Main icon container */}
-            <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-[#5B4FE9] to-[#8B5CF6] shadow-lg shadow-purple-300/40 flex items-center justify-center animate-pulse">
-              <span className="text-4xl animate-bounce" style={{ animationDuration: '1.5s' }}>
-                {currentStepData.icon}
+
+            {/* 标题 */}
+            <h2 className="text-2xl font-bold text-gray-900 mt-6 mb-1.5">
+              <span className="bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] bg-clip-text text-transparent">
+                {currentStepData.label}
+              </span>
+            </h2>
+            <p className="text-sm text-gray-500">{currentStepData.desc}</p>
+            {subtext && <p className="text-xs text-gray-400 mt-1">{subtext}</p>}
+          </div>
+
+          {/* 进度条 */}
+          <div className="mb-10">
+            <div className="relative w-full h-3 bg-gray-100/80 rounded-full overflow-hidden shadow-inner">
+              {/* 背景微光 */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" style={{ animationDuration: '2.5s' }} />
+              {/* 进度填充 */}
+              <div
+                className="absolute h-full bg-gradient-to-r from-[#5B4FE9] via-[#7C3AED] to-[#8B5CF6] rounded-full transition-all duration-700 ease-out"
+                style={{ width: `${progress}%` }}
+              >
+                {/* 发光边缘 */}
+                <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-r from-transparent to-white/30 rounded-full" />
+              </div>
+            </div>
+            <div className="flex justify-between mt-2">
+              <span className="text-[10px] text-gray-300">进度</span>
+              <span className="text-sm font-bold bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] bg-clip-text text-transparent">
+                {Math.round(progress)}%
               </span>
             </div>
-            {/* Floating sparkles */}
-            <span className="absolute -top-2 -right-2 text-lg animate-ping" style={{ animationDuration: '1s' }}>✨</span>
-            <span className="absolute -bottom-1 -left-3 text-sm animate-ping" style={{ animationDuration: '1.5s' }}>💫</span>
           </div>
-          
-          {/* Title with gradient */}
-          <h2 className="text-xl font-bold text-gray-900 mt-6 mb-2">
-            <span className="bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] bg-clip-text text-transparent">
-              {currentStepData.label}
-            </span>
-          </h2>
-          <p className="text-sm text-gray-500 animate-pulse">{currentStepData.desc}</p>
-          {subtext && <p className="text-xs text-gray-400 mt-2">{subtext}</p>}
-        </div>
 
-        {/* Fancy progress bar */}
-        <div className="mb-10">
-          <div className="relative w-full h-4 bg-gray-100/80 rounded-full overflow-hidden shadow-inner">
-            {/* Background shimmer */}
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer" style={{ animationDuration: '2s' }} />
-            {/* Progress fill with gradient */}
+          {/* 步骤时间线 */}
+          <div className="relative mb-8">
+            {/* 连接线 */}
+            <div className="absolute left-[27px] top-2 bottom-2 w-[2px] bg-gray-100 rounded-full" />
             <div
-              className="absolute h-full bg-gradient-to-r from-[#5B4FE9] via-[#7C3AED] to-[#8B5CF6] rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${progress}%` }}
-            >
-              {/* Glowing edge */}
-              <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-r from-transparent to-white/30 rounded-full animate-pulse" />
-            </div>
-          </div>
-          {/* Percentage display */}
-          <div className="flex justify-between mt-2">
-            <span className="text-xs text-gray-400">进度</span>
-            <span className="text-sm font-bold bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] bg-clip-text text-transparent">
-              {Math.round(progress)}%
-            </span>
-          </div>
-        </div>
+              className="absolute left-[27px] top-2 w-[2px] bg-gradient-to-b from-[#5B4FE9] to-[#8B5CF6] rounded-full transition-all duration-700"
+              style={{ height: `${(currentStep / (STEPS.length - 1)) * 100}%` }}
+            />
 
-        {/* Animated steps timeline */}
-        <div className="relative">
-          {/* Connecting line */}
-          <div className="absolute left-[27px] top-0 bottom-0 w-1 bg-gray-100 rounded-full" />
-          <div 
-            className="absolute left-[27px] top-0 w-1 bg-gradient-to-b from-[#5B4FE9] to-[#8B5CF6] rounded-full transition-all duration-500"
-            style={{ height: `${(currentStep / (STEPS.length - 1)) * 100}%` }}
-          />
+            <div className="space-y-5">
+              {STEPS.map((step, i) => {
+                const isDone = i < currentStep;
+                const isCurrent = i === currentStep;
 
-          {/* Steps */}
-          <div className="space-y-4">
-            {STEPS.map((step, i) => {
-              const isDone = i < currentStep;
-              const isCurrent = i === currentStep;
-              
-              return (
-                <div key={step.id} className={`flex items-center gap-4 transition-all duration-300 ${isCurrent ? 'scale-105' : ''}`}>
-                  {/* Step indicator */}
-                  <div className={`relative w-14 h-14 rounded-xl flex items-center justify-center transition-all duration-300 ${
-                    isDone 
-                      ? 'bg-gradient-to-br from-green-400 to-emerald-500 shadow-md shadow-green-200/50' 
-                      : isCurrent 
-                        ? 'bg-gradient-to-br from-[#5B4FE9] to-[#8B5CF6] shadow-lg shadow-purple-300/40 ring-4 ring-purple-100' 
-                        : 'bg-gray-50 border-2 border-gray-100'
-                  }`}>
-                    {isDone ? (
-                      <span className="text-xl text-white">✓</span>
-                    ) : (
-                      <span className={`text-xl ${isCurrent ? 'text-white animate-bounce' : 'text-gray-300'}`} style={{ animationDuration: isCurrent ? '1s' : '0s' }}>
-                        {step.icon}
+                return (
+                  <div key={step.id} className={`flex items-center gap-4 transition-all duration-300 ${isCurrent ? 'scale-[1.02]' : ''}`}>
+                    <div className={`relative w-14 h-14 rounded-xl flex items-center justify-center transition-all duration-300 flex-shrink-0 ${
+                      isDone
+                        ? 'bg-gradient-to-br from-green-400 to-emerald-500 shadow-md shadow-green-200/50'
+                        : isCurrent
+                          ? 'bg-gradient-to-br from-[#5B4FE9] to-[#8B5CF6] shadow-lg shadow-purple-300/40 ring-4 ring-purple-100/80'
+                          : 'bg-gray-50 border border-gray-100'
+                    }`}>
+                      {isDone ? (
+                        <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg>
+                      ) : (
+                        <span className={`text-xl ${isCurrent ? 'text-white' : 'text-gray-300'}`}>
+                          {step.icon}
+                        </span>
+                      )}
+                      {isCurrent && (
+                        <div className="absolute inset-0 rounded-xl bg-purple-400/20 animate-ping" style={{ animationDuration: '2s' }} />
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-sm font-semibold transition-colors duration-300 ${
+                        isDone ? 'text-green-600' : isCurrent ? 'text-[#4338CA]' : 'text-gray-300'
+                      }`}>
+                        {step.label}
+                      </div>
+                      <div className={`text-xs mt-0.5 ${
+                        isDone ? 'text-green-400' : isCurrent ? 'text-gray-500' : 'text-gray-300'
+                      }`}>
+                        {isDone ? '已完成 ✓' : isCurrent ? '进行中...' : '等待中'}
+                      </div>
+                    </div>
+
+                    {isDone && (
+                      <span className="px-2.5 py-1 bg-green-50 text-green-500 text-[10px] rounded-full font-bold flex-shrink-0">
+                        ✓
                       </span>
                     )}
-                    {/* Active pulse ring — only for current step */}
-                    {isCurrent && !isDone && (
-                      <div className="absolute inset-0 rounded-xl bg-purple-400/30 animate-ping" style={{ animationDuration: '1.5s' }} />
+                    {isCurrent && (
+                      <span className="px-2.5 py-1 bg-purple-50 text-purple-500 text-[10px] rounded-full font-bold animate-pulse flex-shrink-0">
+                        处理中
+                      </span>
                     )}
                   </div>
-                  
-                  {/* Step content */}
-                  <div className="flex-1">
-                    <div className={`text-sm font-semibold transition-colors duration-300 ${
-                      isDone ? 'text-green-600' : isCurrent ? 'text-[#4338CA]' : 'text-gray-400'
-                    }`}>
-                      {step.label}
-                    </div>
-                    <div className={`text-xs mt-0.5 transition-colors duration-300 ${
-                      isDone ? 'text-green-500/70' : isCurrent ? 'text-gray-500 animate-pulse' : 'text-gray-300'
-                    }`}>
-                      {isDone ? '已完成' : isCurrent ? '进行中...' : '等待中'}
-                    </div>
-                  </div>
-                  
-                  {/* Status badge */}
-                  {isDone && (
-                    <span className="px-2 py-1 bg-green-100 text-green-600 text-xs rounded-full font-medium">
-                      ✓ 完成
-                    </span>
-                  )}
-                  {isCurrent && !isDone && (
-                    <span className="px-2 py-1 bg-purple-100 text-purple-600 text-xs rounded-full font-medium animate-pulse">
-                      ⏳ 处理中
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
 
-        {/* Tip */}
-        <div className="mt-8 text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-full">
-            <span className="text-sm">💡</span>
-            <span className="text-xs text-gray-500">AI 正在精心设计，请耐心等待...</span>
+          {/* 底部提示 */}
+          <div className="text-center">
+            <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-full border border-purple-100/30">
+              <span className="text-sm">💡</span>
+              <span className="text-xs text-gray-500">{FUN_TIPS[tipIndex]}</span>
+            </div>
           </div>
         </div>
       </div>
+
+      <style jsx>{`
+        @keyframes gentle-bounce {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-6px); }
+        }
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+        .animate-shimmer {
+          animation: shimmer 2.5s ease-in-out infinite;
+        }
+      `}</style>
     </div>
   );
 }
