@@ -37,23 +37,21 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
 
   const handleNext = useCallback(async () => {
     if (!plan) return;
-    // 先跳到确认页（立即响应），后台创建订单
+    // 立即跳到确认页（不阻塞 UI）
     setStep('confirm');
-    // 不等待API，直接展示确认页
-    setTimeout(() => {
-      fetch('/api/payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId: plan.id, payMethod, billing: plan.billing || 'monthly' }),
-      }).then(res => res.json()).then(data => {
-        if (data.error) {
-          setStep('select');
-          alert(data.error);
-        }
-      }).catch(() => {
-        // 网络失败不影响体验，留在确认页
-      });
-    }, 100);
+    // 后台创建订单，不 await
+    fetch('/api/payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ planId: plan.id, payMethod, billing: plan.billing || 'monthly' }),
+    }).then(res => res.json()).then(data => {
+      if (data.error) {
+        setStep('select');
+        alert(data.error);
+      }
+    }).catch(() => {
+      // 网络失败不影响体验，留在确认页
+    });
   }, [plan, payMethod]);
 
   const handleClose = useCallback(() => {

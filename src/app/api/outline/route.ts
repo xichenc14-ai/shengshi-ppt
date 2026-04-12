@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
 {
   "title": "PPT主标题",
   "scene": "场景类型",
-  "themeId": "Gamma主题ID",
+  "themeId": "主题ID",
   "tone": "professional/casual/creative/bold",
   "imageMode": "noImages/pictographic/aiGenerated",
   "slides": [
@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
 {
   "title": "PPT主标题",
   "scene": "场景类型",
-  "themeId": "Gamma主题ID",
+  "themeId": "主题ID",
   "tone": "professional/casual/creative/bold",
   "imageMode": "noImages/pictographic/aiGenerated",
   "slides": [{"title": "页面标题", "content": ["要点"], "notes": "备注"}]
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
 {
   "title": "PPT主标题",
   "scene": "场景类型",
-  "themeId": "Gamma主题ID",
+  "themeId": "主题ID",
   "tone": "professional/casual/creative/bold",
   "imageMode": "noImages/pictographic/aiGenerated",
   "slides": [{"title": "标题", "content": ["要点"], "notes": "备注"}]

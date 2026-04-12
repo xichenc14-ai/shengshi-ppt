@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 
 // ===== 积分与定价体系 =====
-// Gamma订阅：4000积分/月 = 150元（1积分≈0.0375元）
+// 积分与定价体系
 // 非会员：50积分/月，8页，无收费图
 // 普通会员：500积分/月，20页，普通图（pictographic+pexels，0 credits）
 // 高级会员：1000积分/月，40页，高级图（imagen-3-flash，2 credits/图）
@@ -182,7 +182,7 @@ function PlanCard({ plan, user, openPayment, openLogin, isSelected, onSelect }: 
         isSelected
           ? 'border-[#5B4FE9] shadow-xl shadow-purple-200/30 ring-4 ring-purple-100'
           : plan.popular
-            ? 'border-[#5B4FE9] shadow-xl shadow-purple-200/30 md:scale-[1.02]'
+            ? 'border-[#EDE9FE] shadow-lg md:scale-[1.02]'
             : 'border-gray-100 hover:border-[#EDE9FE] hover:shadow-lg'
       }`}
     >
@@ -291,11 +291,11 @@ function PlanCard({ plan, user, openPayment, openLogin, isSelected, onSelect }: 
         className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98] ${
           plan.ctaDisabled
             ? 'bg-gray-100 text-gray-400 cursor-default'
-            : plan.popular
+            : isSelected
             ? 'text-white hover:shadow-lg hover:shadow-purple-300/40'
             : 'bg-white text-[#5B4FE9] border-2 border-[#EDE9FE] hover:bg-[#F5F3FF]'
         }`}
-        style={!plan.ctaDisabled && plan.popular ? { background: 'linear-gradient(135deg, #5B4FE9, #8B5CF6)' } : undefined}
+        style={!plan.ctaDisabled && isSelected ? { background: 'linear-gradient(135deg, #5B4FE9, #8B5CF6)' } : undefined}
       >
         {plan.cta}
       </button>
@@ -359,7 +359,7 @@ export default function PricingPage() {
               </tbody>
             </table>
           </div>
-          <p className="text-[10px] text-gray-300 mt-3 text-center">* 图片积分消耗与 Gamma API 官方扣费 1:1 对应，按实际生成图片数量计算</p>
+          <p className="text-[10px] text-gray-300 mt-3 text-center">* 图片积分消耗按实际生成图片数量计算</p>
         </div>
       </section>
 

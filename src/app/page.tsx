@@ -78,7 +78,7 @@ export default function Home() {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Result
-  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; dlUrl: string; gammaUrl?: string; actualPages?: number } | null>(null);
+  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; dlUrl: string; actualPages?: number } | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -206,7 +206,6 @@ export default function Home() {
 
           if (statusData.status === 'completed') {
             finalExportUrl = statusData.exportUrl || '';
-            finalGammaUrl = statusData.gammaUrl || '';
             setGenProgress(90);
             setStepText('PPT 生成完成，准备下载...');
             break;
@@ -226,7 +225,7 @@ export default function Home() {
 
         await new Promise(r => setTimeout(r, 500));
         const topicText = inputText.split('\n')[0].replace(/^#\s*/, '').trim();
-        setResult({ title: topicText || 'PPT', slides: [], dlUrl: finalExportUrl, gammaUrl: finalGammaUrl, actualPages: pages });
+        setResult({ title: topicText || 'PPT', slides: [], dlUrl: finalExportUrl, actualPages: pages });
         setGenProgress(100);
         setPhase('result');
       }
@@ -445,9 +444,17 @@ export default function Home() {
         // 用户可能编辑了大纲，需要重建 inputText
         const { markdown: rebuiltMd } = buildMdV2(outlineResult.title, editedSlides, smartGammaPayload.imageOptions?.source || 'pictographic');
         gammaRequestBody = {
-          ...smartGammaPayload,
           inputText: rebuiltMd, // 用用户编辑后的大纲
-          numCards: editedSlides.length, // 更新页数
+          textMode: 'preserve', // 省心模式强制 preserve
+          format: 'presentation',
+          numCards: editedSlides.length,
+          exportAs: smartGammaPayload.exportAs || 'pptx',
+          themeId: smartGammaPayload.themeId,
+          tone: smartGammaPayload.tone,
+          additionalInstructions: smartGammaPayload.additionalInstructions,
+          textOptions: smartGammaPayload.textOptions,
+          imageOptions: smartGammaPayload.imageOptions,
+          cardOptions: smartGammaPayload.cardOptions,
         };
       } else {
         // 专业模式：用用户选择的参数
@@ -484,7 +491,6 @@ export default function Home() {
         const startTime = Date.now();
         const pollInterval = 4000;
         let finalExportUrl = '';
-        let finalGammaUrl = '';
 
         while (Date.now() - startTime < 120000) {
           await new Promise(r => setTimeout(r, pollInterval));
@@ -496,7 +502,6 @@ export default function Home() {
 
           if (statusData.status === 'completed') {
             finalExportUrl = statusData.exportUrl || '';
-            finalGammaUrl = statusData.gammaUrl || '';
             setGenProgress(90);
             setStepText('PPT 生成完成，准备下载...');
             break;
@@ -516,7 +521,7 @@ export default function Home() {
         }
 
         await new Promise(r => setTimeout(r, 500));
-        setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalExportUrl, gammaUrl: finalGammaUrl, actualPages: editedSlides.length });
+        setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalExportUrl, actualPages: editedSlides.length });
         setGenProgress(100);
         setPhase('result');
       }
@@ -638,6 +643,9 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[#FAFBFE] flex flex-col">
       <Navbar onLogoClick={backToLanding} />
+
+      {/* 顶部通知条 - 所有阶段都显示 */}
+      <ScrollingBanner variant="top" />
 
       {/* ===== LANDING PAGE ===== */}
       {phase === 'landing' && (
@@ -919,10 +927,6 @@ export default function Home() {
           </div>
 
           {/* Floating button removed — generate is now inline in the input row */}
-          {/* 滚动信息栏 */}
-          <div className="mt-6">
-            <ScrollingBanner variant="hero" />
-          </div>
         </div>
       )}
 
@@ -952,22 +956,16 @@ export default function Home() {
 
       {/* ===== DIRECT GENERATING PROGRESS ===== */}
       {phase === 'direct-generating' && (
-        <>
-          <ScrollingBanner variant="wait" />
-          <GenerationProgress
+        <GenerationProgress
             currentStep={genStep}
             progress={genProgress}
             subtext={stepText}
           />
-        </>
       )}
 
       {/* ===== GENERATING PROGRESS ===== */}
       {phase === 'generating' && loading && (
-        <>
-          <ScrollingBanner variant="wait" />
-          <GenerationProgress currentStep={genStep} progress={genProgress} subtext={stepText} />
-        </>
+        <GenerationProgress currentStep={genStep} progress={genProgress} subtext={stepText} />
       )}
 
       {/* ===== RESULT ===== */}
@@ -1020,21 +1018,10 @@ export default function Home() {
                     📥 下载 PPTX
                   </button>
                 )}
-                {result.gammaUrl && (
-                  <a href={result.gammaUrl} target="_blank" rel="noopener noreferrer"
-                    className="w-full sm:w-auto px-8 py-3.5 text-purple-600 hover:text-purple-700 text-sm font-medium border border-purple-200 hover:border-purple-300 rounded-xl transition-all">
-                    🔗 在线编辑查看
-                  </a>
-                )}
                 <button onClick={reset} className="w-full sm:w-auto px-8 py-3.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">
                   继续创建
                 </button>
               </div>
-
-              {/* 图标兼容性提示 */}
-              <p className="text-[10px] text-gray-300 mt-4 text-center">
-                💡 提示：下载的 PPTX 中部分图标可能无法显示，建议点击「在线编辑查看」查看完整效果
-              </p>
             </div>
           </div>
         </div>

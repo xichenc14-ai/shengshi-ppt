@@ -1,4 +1,4 @@
-export interface GammaTheme {
+export interface ThemeData {
   id: string;
   name: string;
   nameZh: string;
@@ -10,7 +10,7 @@ export interface GammaTheme {
   scenes: string[];
 }
 
-export const THEME_DATABASE: GammaTheme[] = [
+export const THEME_DATABASE: ThemeData[] = [
   // 🟦 蓝色系
   { id: 'consultant', name: 'Consultant', nameZh: '商务蓝', colors: ['#1E3A5F', '#2563EB', '#FFFFFF'], category: 'blue', categoryZh: '蓝色系', emoji: '🟦', style: '专业商务', scenes: ['商务汇报', '数据分析', '年度总结'] },
   { id: 'icebreaker', name: 'Icebreaker', nameZh: '蓝白友好', colors: ['#3B82F6', '#FFFFFF', '#1E40AF'], category: 'blue', categoryZh: '蓝色系', emoji: '🟦', style: '专业友好', scenes: ['培训课件', '教育'] },
@@ -86,15 +86,15 @@ export const COLOR_CATEGORIES: Array<{ id: string; name: string; emoji: string; 
   { id: 'gold', name: '金色奢华', emoji: '🪙', count: 7, colors: ['#111827', '#F59E0B', '#FCD34D'] },
 ];
 
-export function getThemesByCategory(category: string): GammaTheme[] {
+export function getThemesByCategory(category: string): ThemeData[] {
   return THEME_DATABASE.filter(t => t.category === category);
 }
 
-export function getThemeById(id: string): GammaTheme | undefined {
+export function getThemeById(id: string): ThemeData | undefined {
   return THEME_DATABASE.find(t => t.id === id);
 }
 
-export function recommendTheme(scene: string): GammaTheme | undefined {
+export function recommendTheme(scene: string): ThemeData | undefined {
   const sceneThemes = THEME_DATABASE.filter(t => t.scenes.includes(scene));
   return sceneThemes[0] || THEME_DATABASE[0];
 }

@@ -92,7 +92,7 @@ function buildMarkdownFromOutline(outline: any): string {
 
     // 根据布局提示添加指令
     if (slide.layoutHint) {
-      pageContent += `\n<!-- Gamma布局：${slide.layoutHint} -->\n`;
+      pageContent += `\n<!-- 布局：${slide.layoutHint} -->\n`;
     }
 
     // 添加要点内容

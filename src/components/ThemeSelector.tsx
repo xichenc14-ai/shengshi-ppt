@@ -1,6 +1,6 @@
 'use client';
 import React, { useState } from 'react';
-import { THEME_DATABASE, COLOR_CATEGORIES, getThemesByCategory, getThemeById, GammaTheme } from '@/lib/theme-database';
+import { THEME_DATABASE, COLOR_CATEGORIES, getThemesByCategory, getThemeById, ThemeData } from '@/lib/theme-database';
 
 interface ThemeSelectorProps {
   value: string;
