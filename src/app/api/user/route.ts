@@ -131,10 +131,10 @@ export async function POST(req: NextRequest) {
       return { valid: true, recordId: records[0].id };
     }
 
-    // ===== 注册（手机号验证码 + 用户名 + 密码） =====
+    // ===== 注册（手机号验证码已验证 + 用户名 + 密码） =====
     if (action === 'register') {
-      const { phone, code, username, password } = body;
-      if (!phone || !code || !username || !password) {
+      const { phone, username, password } = body;
+      if (!phone || !username || !password) {
         return NextResponse.json({ error: '请填写完整信息' }, { status: 400 });
       }
       if (!/^1[3-9]\d{9}$/.test(phone)) {
@@ -147,9 +147,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '密码至少6位' }, { status: 400 });
       }
 
-      // 验证码校验（注册完成后标记已用）
-      const vResult = await verifyCode(phone, code, true);
-      if (!vResult.valid) return NextResponse.json({ error: vResult.error }, { status: 400 });
+      // 检查该手机号是否在最近5分钟内有已验证的验证码记录
+      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const { data: verifiedRecords } = await sb
+        .from('verification_codes')
+        .select('id')
+        .eq('phone', phone)
+        .eq('verified', true)
+        .gt('created_at', fiveMinAgo)
+        .limit(1);
+
+      if (!verifiedRecords || verifiedRecords.length === 0) {
+        return NextResponse.json({ error: '请先验证手机号' }, { status: 400 });
+      }
 
       // 检查手机号是否已注册
       const { data: existing } = await sb.from('users').select('id').eq('phone', phone).limit(1);

@@ -133,11 +133,10 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
     if (regPassword !== regConfirmPwd) { setError('两次密码不一致'); return; }
     setLoading(true); setError('');
     try {
-      const fullCode = code.join('');
       const res = await fetch('/api/user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'register', phone, code: fullCode, username: regUsername.trim(), password: regPassword }),
+        body: JSON.stringify({ action: 'register', phone, username: regUsername.trim(), password: regPassword }),
       });
       const data = await res.json();
       if (data.error) { setError(data.error); setLoading(false); return; }
