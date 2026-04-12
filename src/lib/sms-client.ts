@@ -64,12 +64,15 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
     }));
 
     const body = sendRes.body as Record<string, any>;
-    // SDK 返回结构: body.Code='OK' 或 body.Model.VerifyCode
+    console.log('[SMS] Raw response body:', JSON.stringify(body));
+    // SDK 返回结构: body.Code='OK' 或 body.Success=true
+    // 验证码在 body.Model.VerifyCode 或 body.model.verifyCode
     const respCode = body?.Code || body?.code;
     if (respCode === 'OK' || body?.Success === true) {
-      const returnedCode = body?.Model?.VerifyCode || body?.verifyCode || '';
+      // 尝试多种路径提取验证码
+      const returnedCode = body?.Model?.VerifyCode || body?.model?.VerifyCode || body?.Model?.verifyCode || body?.model?.verifyCode || body?.VerifyCode || body?.verifyCode || '';
+      console.log('[SMS] Extracted verifyCode:', returnedCode);
       if (!returnedCode) {
-        // API 没返回验证码，用本地生成作为 fallback
         console.warn('[SMS] API 未返回验证码，使用本地生成');
         const fallbackCode = String(Math.floor(100000 + Math.random() * 900000));
         return { success: true, code: fallbackCode, messageId: body?.RequestId || body?.requestId };

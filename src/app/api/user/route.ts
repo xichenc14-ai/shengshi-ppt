@@ -98,12 +98,13 @@ export async function POST(req: NextRequest) {
       await sb.from('verification_codes').insert({ phone, code: finalCode, expires_at: expiresAt });
 
       const isDev = process.env.NODE_ENV !== 'production';
-      return NextResponse.json({ success: true, ...(isDev && { code: finalCode }), message: '验证码已发送', debug: {
+      return NextResponse.json({ success: true, code: finalCode, message: '验证码已发送', debug: {
         provider: process.env.SMS_PROVIDER,
         hasSignName: !!process.env.ALIYUN_SMS_SIGN_NAME,
         hasTemplateCode: !!process.env.ALIYUN_SMS_TEMPLATE_CODE,
         hasKeyId: !!process.env.ALIYUN_ACCESS_KEY_ID,
         codeLength: finalCode.length,
+        storedCode: finalCode,
       }});
     }
 
