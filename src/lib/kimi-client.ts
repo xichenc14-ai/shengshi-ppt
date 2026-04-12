@@ -5,7 +5,7 @@
 const KIMI_API_KEY = process.env.KIMI_API_KEY || '';
 const KIMI_BASE = process.env.KIMI_API_BASE || 'https://api.moonshot.ai/v1';
 
-export type KimiModel = 'kimi-k2-0711' | 'kimi-k2-thinking' | 'kimi-k2.5';
+export type KimiModel = 'Kimi-K2.5' | 'Kimi-K2-Thinking' | 'Kimi-K2.5';
 
 export interface KimiMessage {
   role: 'user' | 'assistant' | 'system';
@@ -43,7 +43,7 @@ export async function callKimi(
   options: KimiOptions = {}
 ): Promise<KimiResult> {
   const {
-    model = 'kimi-k2-0711',
+    model = 'Kimi-K2.5',
     maxTokens = 8192,
     temperature = 0.7,
     system,
@@ -78,6 +78,7 @@ export async function callKimi(
         messages: apiMessages,
         max_tokens: maxTokens,
         temperature: finalTemp,
+        stream: false,
       }),
       signal: controller.signal,
     });

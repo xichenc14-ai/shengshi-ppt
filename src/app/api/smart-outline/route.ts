@@ -148,11 +148,15 @@ function buildAdditionalInstructions(config: any, analysis: any): string {
 
 // ===== AI调用：Kimi K2-thinking(深度分析) → K2(标准) → MiniMax → GLM =====
 async function callAIWithFallback(systemPrompt: string, userPrompt: string, useThinking = false): Promise<string> {
-  // 1️⃣ GLM-5-turbo（首选：稳定可靠）
+  // 1️⃣ Kimi K2.5（首选：多模态+长上下文，免费）
   try {
-    return await callGLM(systemPrompt, userPrompt, 'outline');
+    const result = await callKimi(
+      [{ role: 'user', content: userPrompt }],
+      { system: systemPrompt, maxTokens: 8192, model: useThinking ? 'Kimi-K2-Thinking' : 'Kimi-K2.5', temperature: useThinking ? 1.0 : 0.7 }
+    );
+    return result.content;
   } catch (e: any) {
-    console.warn('[SmartOutline] GLM failed, falling back to MiniMax:', e.message);
+    console.warn('[SmartOutline] Kimi failed, falling back to MiniMax:', e.message);
   }
   // 2️⃣ MiniMax M2.7（备用）
   try {
@@ -161,30 +165,13 @@ async function callAIWithFallback(systemPrompt: string, userPrompt: string, useT
       { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
     );
   } catch (e2: any) {
-    console.warn('[SmartOutline] MiniMax failed, falling back to Kimi:', e2.message);
+    console.warn('[SmartOutline] MiniMax failed, falling back to GLM:', e2.message);
   }
-  // 3️⃣ Kimi K2-thinking（深度推理，需有效Key）
-  if (useThinking) {
-    try {
-      const result = await callKimi(
-        [{ role: 'user', content: userPrompt }],
-        { system: systemPrompt, maxTokens: 8192, model: 'kimi-k2-thinking', timeoutMs: 180000 }
-      );
-      console.log('[SmartOutline] Kimi K2-thinking reasoning:', result.reasoning?.substring(0, 200));
-      return result.content;
-    } catch (e3: any) {
-      console.warn('[SmartOutline] Kimi K2-thinking failed:', e3.message);
-    }
-  }
-  // 4️⃣ Kimi K2（兜底）
+  // 3️⃣ GLM-5（兜底：稳定可靠）
   try {
-    const result = await callKimi(
-      [{ role: 'user', content: userPrompt }],
-      { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
-    );
-    return result.content;
-  } catch (e4: any) {
-    throw new Error(`AI调用全部失败：GLM / MiniMax / Kimi(${e4.message})`);
+    return await callGLM(systemPrompt, userPrompt, 'outline');
+  } catch (e3: any) {
+    throw new Error(`AI调用全部失败：Kimi / MiniMax / GLM(${e3.message})`);
   }
 }
 
