@@ -255,53 +255,6 @@ export async function POST(req: NextRequest) {
         user: { id: newUser.id, phone: newUser.phone, nickname: newUser.nickname || username.trim(), credits: 50, plan_type: newUser.plan_type || 'free', is_new: true },
       });
       
-      // 先尝试带 username 和 password_hash
-      const { data: newUser, error: insErr } = await sb
-        .from('users')
-        .insert({ ...insertData, username: username.trim(), password_hash: pwdHash })
-        .select()
-        .single();
-
-      if (insErr) {
-        console.error('[Register] Insert error:', JSON.stringify(insErr));
-        
-        // 如果是 username 列不存在，重试不带 username
-        if (String(insErr.message || insErr).includes('username')) {
-          console.warn('[Register] username 列不存在，只用 nickname');
-          const { data: newUser2, error: insErr2 } = await sb
-            .from('users')
-            .insert(insertData)
-            .select()
-            .single();
-          
-          if (insErr2 || !newUser2) {
-            console.error('[Register] Retry error:', JSON.stringify(insErr2));
-            return NextResponse.json({ error: '注册失败: ' + (insErr2?.message || '表结构不兼容') }, { status: 500 });
-          }
-          
-          // 成功注册（不带 username）
-          try {
-            await sb.from('credit_transactions').insert({
-              user_id: newUser2.id, amount: 50, balance_after: 50,
-              type: 'signup_gift', description: '注册赠送50积分',
-            });
-          } catch (e) { console.warn('[Register] 积分记录失败:', e); }
-          
-          return NextResponse.json({
-            user: { id: newUser2.id, phone: newUser2.phone, nickname: newUser2.nickname, credits: 50, plan_type: 'free', is_new: true },
-          });
-        }
-        return NextResponse.json({ error: '注册失败: ' + (insErr?.message || '未知错误') }, { status: 500 });
-      }
-
-      await sb.from('credit_transactions').insert({
-        user_id: newUser.id, amount: 50, balance_after: 50,
-        type: 'signup_gift', description: '注册赠送50积分',
-      });
-
-      return NextResponse.json({
-        user: { id: newUser.id, phone: newUser.phone, nickname: newUser.nickname || username.trim(), credits: 50, plan_type: newUser.plan_type || 'free', is_new: true },
-      });
     }
 
     // ===== 验证码登录 =====
