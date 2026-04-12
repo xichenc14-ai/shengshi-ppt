@@ -171,17 +171,29 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
           {tab === 'wechat' && (
             <div className="text-center">
               <button
-                onClick={() => setWechatHint(true)}
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/wechat');
+                    const data = await res.json();
+                    if (data.url) {
+                      window.location.href = data.url;
+                    } else {
+                      setWechatHint(true);
+                    }
+                  } catch {
+                    setWechatHint(true);
+                  }
+                }}
                 className="w-full py-3.5 bg-[#07C160] text-white rounded-xl text-sm font-semibold hover:bg-[#06AD56] transition-colors flex items-center justify-center gap-2 shadow-lg shadow-green-100/50"
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05a6.293 6.293 0 0 1-.261-1.82c0-3.572 3.193-6.468 7.13-6.468.239 0 .473.016.706.034C16.879 4.707 13.163 2.188 8.691 2.188zm5.396 16.496c-.254 0-.507-.018-.758-.04l.042-.002c-.093.007-.187.013-.282.013a7.942 7.942 0 0 1-2.395-.37.644.644 0 0 0-.537.073l-1.428.838a.246.246 0 0 1-.125.04.22.22 0 0 1-.218-.221c0-.054.022-.108.036-.16l.293-1.114a.444.444 0 0 0-.16-.5C6.883 16.14 5.86 14.485 5.86 12.626c0-3.393 3.086-6.14 6.9-6.14 3.815 0 6.9 2.747 6.9 6.14 0 3.393-3.085 6.058-6.573 6.058z"/></svg>
-                微信一键登录
+                微信扫码登录
               </button>
 
               {wechatHint && (
                 <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl animate-fade-in">
-                  <p className="text-xs text-amber-700">📱 微信登录功能即将上线，敬请期待！</p>
-                  <p className="text-[10px] text-amber-500 mt-1">目前请使用账号或手机号登录</p>
+                  <p className="text-xs text-amber-700">📱 微信登录正在接入中，请稍后再试</p>
+                  <p className="text-[10px] text-amber-500 mt-1">目前请使用手机号验证码登录</p>
                 </div>
               )}
 

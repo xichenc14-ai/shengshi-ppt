@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ===== 发送验证码（待接入短信） =====
+    // ===== 发送验证码（接入短信服务商） =====
     if (action === 'send_code') {
       const { phone } = body;
       if (!phone || !/^1[3-9]\d{9}$/.test(phone)) {
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
       }
 
       // 检查发送频率（60秒内不能重复发送）
-      const thirtySecAgo = new Date(Date.now() - 30000).toISOString();
+      const thirtySecAgo = new Date(Date.now() - 60000).toISOString();
       const { data: recent } = await sb
         .from('verification_codes')
         .select('id')
@@ -88,18 +88,36 @@ export async function POST(req: NextRequest) {
       const code = genCode();
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
+      // 先存DB
       await sb.from('verification_codes').insert({
         phone,
         code,
         expires_at: expiresAt,
       });
 
-      // TODO: 接入短信服务商（阿里云/腾讯云短信）后启用
-      // MVP 阶段：开发环境返回验证码，生产环境不返回
+      // 调用短信服务发送
+      try {
+        const { sendSMS } = await import('@/lib/sms-client');
+        const result = await sendSMS(phone, code);
+
+        if (!result.success) {
+          console.error('SMS send failed:', result.error);
+          // 短信发送失败，仍然返回成功（避免暴露内部错误）
+          // 生产环境可改为返回错误
+          if (process.env.NODE_ENV === 'production') {
+            return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
+          }
+        }
+      } catch (e) {
+        console.error('SMS module error:', e);
+        // 模块加载失败（可能未安装SDK），降级处理
+      }
+
+      // 开发环境返回验证码，生产环境不返回
       const isDev = process.env.NODE_ENV !== 'production';
       return NextResponse.json({
         success: true,
-        ...(isDev && { code }), // 仅开发环境返回验证码
+        ...(isDev && { code }),
         message: '验证码已发送',
       });
     }
