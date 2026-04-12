@@ -228,10 +228,12 @@ export async function POST(req: NextRequest) {
           }
           
           // 成功注册（不带 username）
-          await sb.from('credit_transactions').insert({
-            user_id: newUser2.id, amount: 50, balance_after: 50,
-            type: 'signup_gift', description: '注册赠送50积分',
-          }).catch(() => {});
+          try {
+            await sb.from('credit_transactions').insert({
+              user_id: newUser2.id, amount: 50, balance_after: 50,
+              type: 'signup_gift', description: '注册赠送50积分',
+            });
+          } catch (e) { console.warn('[Register] 积分记录失败:', e); }
           
           return NextResponse.json({
             user: { id: newUser2.id, phone: newUser2.phone, nickname: newUser2.nickname, credits: 50, plan_type: 'free', is_new: true },
@@ -264,7 +266,9 @@ export async function POST(req: NextRequest) {
       if (users && users.length > 0) {
         // 已注册用户：登录成功
         const u = users[0];
-        await sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', u.id).catch(() => {});
+        try {
+          await sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', u.id);
+        } catch (e) { console.warn('[Login] 更新登录时间失败:', e); }
         return NextResponse.json({
           user: { id: u.id, phone: u.phone, nickname: u.nickname || '用户', credits: u.credits, plan_type: u.plan_type, has_subscription: u.plan_type !== 'free', is_new: false },
         });
