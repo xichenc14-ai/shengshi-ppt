@@ -206,7 +206,7 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (insErr) {
-        console.error('[Register] Insert error:', insErr);
+        console.error('[Register] Insert error:', JSON.stringify(insErr));
         // 如果是 password_hash 列不存在的错误，重试不带该字段
         if (String(insErr.message || insErr).includes('password_hash')) {
           console.warn('[Register] password_hash 列不存在，重试不带密码字段');
@@ -222,7 +222,8 @@ export async function POST(req: NextRequest) {
             })
             .select()
             .single();
-          if (insErr2 || !newUser2) return NextResponse.json({ error: '注册失败，请稍后重试' }, { status: 500 });
+          console.log('[Register] Retry result:', insErr2 ? JSON.stringify(insErr2) : 'success');
+          if (insErr2 || !newUser2) return NextResponse.json({ error: '注册失败: ' + (insErr2?.message || '未知错误') }, { status: 500 });
           await sb.from('credit_transactions').insert({
             user_id: newUser2.id, amount: 50, balance_after: 50,
             type: 'signup_gift', description: '注册赠送50积分',
@@ -231,7 +232,7 @@ export async function POST(req: NextRequest) {
             user: { id: newUser2.id, phone: newUser2.phone, nickname: newUser2.nickname || username.trim(), username: username.trim(), credits: 50, plan_type: 'free', is_new: true },
           });
         }
-        return NextResponse.json({ error: '注册失败，请稍后重试' }, { status: 500 });
+        return NextResponse.json({ error: '注册失败: ' + (insErr?.message || '未知错误') }, { status: 500 });
       }
 
       await sb.from('credit_transactions').insert({

@@ -129,9 +129,9 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
       const data = await res.json();
       if (data.error) { setError(data.error); setLoading(false); return; }
       if (data.user) { login(data.user); handleClose(); }
-    } catch { setError('注册失败'); }
+    } catch { setError('注册失败，请检查网络'); }
     setLoading(false);
-  }, [phone, code, regUsername, regPassword, regConfirmPwd, login]);
+  }, [phone, regUsername, regPassword, regConfirmPwd, login]);
 
   // ===== 密码子模式登录（手机号Tab内） =====
   // ===== 账号密码登录（独立Tab） =====
