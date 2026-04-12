@@ -46,9 +46,9 @@ export async function GET(req: NextRequest) {
     if (!phone || !/^1[3-9]\d{9}$/.test(phone)) {
       return NextResponse.json({ error: '请输入正确的手机号' }, { status: 400 });
     }
-    const { data: users } = await sb.from('users').select('id, phone, nickname, username').eq('phone', phone).limit(1);
+    const { data: users } = await sb.from('users').select('id, phone, nickname').eq('phone', phone).limit(1);
     if (users && users.length > 0) {
-      return NextResponse.json({ registered: true, nickname: (users[0] as any).nickname || (users[0] as any).username });
+      return NextResponse.json({ registered: true, nickname: users[0].nickname || '用户' });
     }
     return NextResponse.json({ registered: false });
   }
@@ -182,54 +182,59 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '该手机号已注册，请直接登录' }, { status: 409 });
       }
 
-      // 检查用户名是否已存在
-      const { data: nameExists } = await sb.from('users').select('id').eq('username', username.trim()).limit(1);
-      if (nameExists && nameExists.length > 0) {
-        return NextResponse.json({ error: '该用户名已被使用' }, { status: 409 });
+      // 检查用户名是否已存在（如果表有 username 列）
+      try {
+        const { data: nameExists } = await sb.from('users').select('id').eq('username', username.trim()).limit(1);
+        if (nameExists && nameExists.length > 0) {
+          return NextResponse.json({ error: '该用户名已被使用' }, { status: 409 });
+        }
+      } catch (e) {
+        console.warn('[Register] username 列不存在，跳过用户名检查');
       }
 
       const pwdHash = hashPassword(password);
 
-      // 插入用户（password_hash 可能不存在，try-catch 兼容）
+      // 尝试插入用户，兼容不同表结构
+      let insertData: any = {
+        phone,
+        nickname: username.trim(),
+        credits: 50,
+        plan_type: 'free',
+        is_active: true,
+      };
+      
+      // 先尝试带 username 和 password_hash
       const { data: newUser, error: insErr } = await sb
         .from('users')
-        .insert({
-          phone,
-          username: username.trim(),
-          nickname: username.trim(),
-          password_hash: pwdHash,
-          credits: 50,
-          plan_type: 'free',
-          is_active: true,
-        })
+        .insert({ ...insertData, username: username.trim(), password_hash: pwdHash })
         .select()
         .single();
 
       if (insErr) {
         console.error('[Register] Insert error:', JSON.stringify(insErr));
-        // 如果是 password_hash 列不存在的错误，重试不带该字段
-        if (String(insErr.message || insErr).includes('password_hash')) {
-          console.warn('[Register] password_hash 列不存在，重试不带密码字段');
+        
+        // 如果是 username 列不存在，重试不带 username
+        if (String(insErr.message || insErr).includes('username')) {
+          console.warn('[Register] username 列不存在，只用 nickname');
           const { data: newUser2, error: insErr2 } = await sb
             .from('users')
-            .insert({
-              phone,
-              username: username.trim(),
-              nickname: username.trim(),
-              credits: 50,
-              plan_type: 'free',
-              is_active: true,
-            })
+            .insert(insertData)
             .select()
             .single();
-          console.log('[Register] Retry result:', insErr2 ? JSON.stringify(insErr2) : 'success');
-          if (insErr2 || !newUser2) return NextResponse.json({ error: '注册失败: ' + (insErr2?.message || '未知错误') }, { status: 500 });
+          
+          if (insErr2 || !newUser2) {
+            console.error('[Register] Retry error:', JSON.stringify(insErr2));
+            return NextResponse.json({ error: '注册失败: ' + (insErr2?.message || '表结构不兼容') }, { status: 500 });
+          }
+          
+          // 成功注册（不带 username）
           await sb.from('credit_transactions').insert({
             user_id: newUser2.id, amount: 50, balance_after: 50,
             type: 'signup_gift', description: '注册赠送50积分',
-          });
+          }).catch(() => {});
+          
           return NextResponse.json({
-            user: { id: newUser2.id, phone: newUser2.phone, nickname: newUser2.nickname || username.trim(), username: username.trim(), credits: 50, plan_type: 'free', is_new: true },
+            user: { id: newUser2.id, phone: newUser2.phone, nickname: newUser2.nickname, credits: 50, plan_type: 'free', is_new: true },
           });
         }
         return NextResponse.json({ error: '注册失败: ' + (insErr?.message || '未知错误') }, { status: 500 });
@@ -241,7 +246,7 @@ export async function POST(req: NextRequest) {
       });
 
       return NextResponse.json({
-        user: { id: newUser.id, phone: newUser.phone, nickname: newUser.nickname || username.trim(), username: username.trim(), credits: 50, plan_type: newUser.plan_type, is_new: true },
+        user: { id: newUser.id, phone: newUser.phone, nickname: newUser.nickname || username.trim(), credits: 50, plan_type: newUser.plan_type || 'free', is_new: true },
       });
     }
 
@@ -255,13 +260,13 @@ export async function POST(req: NextRequest) {
       if (!vResult.valid) return NextResponse.json({ error: vResult.error }, { status: 400 });
 
       // 查找用户
-      const { data: users } = await sb.from('users').select('id,phone,nickname,username,credits,plan_type,is_active').eq('phone', phone);
+      const { data: users } = await sb.from('users').select('id,phone,nickname,credits,plan_type,is_active').eq('phone', phone);
       if (users && users.length > 0) {
         // 已注册用户：登录成功
         const u = users[0];
-        await sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', u.id);
+        await sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', u.id).catch(() => {});
         return NextResponse.json({
-          user: { id: u.id, phone: u.phone, nickname: u.nickname || (u as any).username || '用户', credits: u.credits, plan_type: u.plan_type, has_subscription: u.plan_type !== 'free', is_new: false },
+          user: { id: u.id, phone: u.phone, nickname: u.nickname || '用户', credits: u.credits, plan_type: u.plan_type, has_subscription: u.plan_type !== 'free', is_new: false },
         });
       }
 
@@ -281,9 +286,9 @@ export async function POST(req: NextRequest) {
       const isPhone = /^1[3-9]\d{9}$/.test(account);
       let query;
       if (isPhone) {
-        query = sb.from('users').select('id,phone,nickname,username,credits,plan_type,is_active,password_hash').eq('phone', account);
+        query = sb.from('users').select('id,phone,nickname,credits,plan_type,is_active,password_hash').eq('phone', account);
       } else {
-        query = sb.from('users').select('id,phone,nickname,username,credits,plan_type,is_active,password_hash').eq('username', account);
+        query = sb.from('users').select('id,phone,nickname,credits,plan_type,is_active,password_hash').ilike('nickname', account);
       }
 
       const { data: users, error: qErr } = await query.limit(1);
@@ -308,7 +313,7 @@ export async function POST(req: NextRequest) {
 
       await sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', u.id);
       return NextResponse.json({
-        user: { id: u.id, phone: u.phone, nickname: u.nickname || u.username || '用户', credits: u.credits, plan_type: u.plan_type, has_subscription: u.plan_type !== 'free', is_new: false },
+        user: { id: u.id, phone: u.phone, nickname: u.nickname || '用户', credits: u.credits, plan_type: u.plan_type, has_subscription: u.plan_type !== 'free', is_new: false },
       });
     }
 
