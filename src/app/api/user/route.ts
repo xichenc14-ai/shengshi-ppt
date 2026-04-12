@@ -71,6 +71,13 @@ export async function POST(req: NextRequest) {
       try {
         const { sendSMS } = await import('@/lib/sms-client');
         const result = await sendSMS(phone);
+        console.log('[SMS] sendSMS result:', JSON.stringify(result));
+        console.log('[SMS] env vars:', {
+          provider: process.env.SMS_PROVIDER,
+          hasKeyId: !!process.env.ALIYUN_ACCESS_KEY_ID,
+          hasSignName: !!process.env.ALIYUN_SMS_SIGN_NAME,
+          hasTemplateCode: !!process.env.ALIYUN_SMS_TEMPLATE_CODE,
+        });
         if (!result.success) {
           console.error('[SMS] 发送失败:', result.error);
           if (process.env.NODE_ENV === 'production') {
@@ -91,7 +98,13 @@ export async function POST(req: NextRequest) {
       await sb.from('verification_codes').insert({ phone, code: finalCode, expires_at: expiresAt });
 
       const isDev = process.env.NODE_ENV !== 'production';
-      return NextResponse.json({ success: true, ...(isDev && { code: finalCode }), message: '验证码已发送' });
+      return NextResponse.json({ success: true, ...(isDev && { code: finalCode }), message: '验证码已发送', debug: {
+        provider: process.env.SMS_PROVIDER,
+        hasSignName: !!process.env.ALIYUN_SMS_SIGN_NAME,
+        hasTemplateCode: !!process.env.ALIYUN_SMS_TEMPLATE_CODE,
+        hasKeyId: !!process.env.ALIYUN_ACCESS_KEY_ID,
+        codeLength: finalCode.length,
+      }});
     }
 
     // ===== 验证验证码（内部复用） =====
