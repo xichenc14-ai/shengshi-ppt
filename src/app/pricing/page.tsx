@@ -7,11 +7,11 @@ import PaymentModal from '@/components/PaymentModal';
 import LoginModal from '@/components/LoginModal';
 
 // ===== 积分与定价体系 =====
-// 积分与定价体系
-// 非会员：50积分/月，8页，无收费图
-// 普通会员：500积分/月，20页，普通图（pictographic+pexels，0 credits）
-// 高级会员：1000积分/月，40页，高级图（imagen-3-flash，2 credits/图）
-// 尊享会员：2000积分/月，60页，权益全开（含flux-kontext-pro，20 credits/图）
+// 新定价方案（2026-04-13）
+// 免费用户：50积分，8页，无AI图
+// 省心会员：9.9元，300积分，省心模式+AI图+20页
+// 高级会员：29.9元，1000积分，高级图+40页
+// 尊享会员：49.9元，2000积分，权益全开+60页
 
 type PlanFeature = { text: string; included: boolean; highlight?: boolean };
 
@@ -51,87 +51,87 @@ const PLANS: Plan[] = [
       { text: '免费插图模式', included: true },
       { text: 'PPTX 导出（带水印）', included: true },
       { text: '5 个基础主题', included: true },
-      { text: 'AI大纲编辑器', included: false },
+      { text: '省心模式', included: false },
       { text: 'AI生图（2积分/图）', included: false },
-      { text: '高级AI图（20积分/图）', included: false },
+      { text: '高级AI图', included: false },
       { text: '优先生成队列', included: false },
       { text: '历史记录永久保存', included: false },
     ],
     cta: '当前方案',
     ctaDisabled: true,
-    pptCount10Pages: 6,  // 50÷8≈6份
+    pptCount10Pages: 6,
     costPerPage: '免费',
   },
   {
-    id: 'basic',
-    emoji: '💎',
-    name: '普通会员',
+    id: 'shengxin',
+    emoji: '✨',
+    name: '省心会员',
     badge: '推荐',
-    desc: '职场人的效率利器',
+    desc: '省心模式+AI图，超值入门',
     popular: true,
-    credits: 500,
+    credits: 300,
     maxPages: 20,
-    imageTier: '普通图',
-    imageDesc: 'pictographic + pexels + imagen-3-flash',
-    prices: { monthly: 29.9, annual: 299, annualMonthly: 24.9, annualSave: '省60' },
+    imageTier: '省心+AI',
+    imageDesc: '省心模式 + imagen-3-flash AI图',
+    prices: { monthly: 9.9, annual: 99, annualMonthly: 8.3, annualSave: '省20' },
     features: [
-      { text: '每月 500 积分', included: true, highlight: true },
-      { text: '每次最多 20 页', included: true },
+      { text: '每月 300 积分', included: true, highlight: true },
+      { text: '每次最多 20 页', included: true, highlight: true },
+      { text: '省心模式', included: true, highlight: true },
+      { text: 'AI生图（2积分/图）', included: true, highlight: true },
       { text: 'PPTX 无水印导出', included: true },
       { text: '全部 50+ 主题', included: true },
-      { text: '免费插图 + 普通AI图', included: true, highlight: true },
       { text: '文档上传转PPT', included: true },
-      { text: 'AI大纲编辑器', included: false },
-      { text: '高级AI图（20积分/图）', included: false },
+      { text: '高级AI图', included: false },
       { text: '优先生成队列', included: false },
       { text: '历史记录永久保存', included: false },
     ],
     cta: '立即开通',
     ctaDisabled: false,
-    pptCount10Pages: 62,  // 500÷8=62份
-    costPerPage: '¥0.06',
+    pptCount10Pages: 37,
+    costPerPage: '¥0.03',
   },
   {
-    id: 'pro',
+    id: 'advanced',
     emoji: '👑',
     name: '高级会员',
-    desc: '重度用户的首选方案',
+    desc: '高级图+40页，重度用户首选',
     credits: 1000,
     maxPages: 40,
     imageTier: '高级图',
-    imageDesc: '含 imagen-3-flash + flux-kontext-fast',
-    prices: { monthly: 49.9, annual: 499, annualMonthly: 41.6, annualSave: '省100' },
+    imageDesc: '含 imagen-3-flash + imagen-3-pro',
+    prices: { monthly: 29.9, annual: 299, annualMonthly: 24.9, annualSave: '省60' },
     features: [
       { text: '每月 1000 积分', included: true, highlight: true },
-      { text: '每次最多 40 页', included: true },
-      { text: 'AI大纲编辑器', included: true, highlight: true },
+      { text: '每次最多 40 页', included: true, highlight: true },
+      { text: '省心模式', included: true },
       { text: '高级AI生图', included: true, highlight: true },
       { text: '优先生成队列', included: true },
       { text: '全格式导出', included: true },
       { text: '文档上传转PPT', included: true },
-      { text: '尊享AI图（20积分/图）', included: false },
-      { text: '历史记录永久保存', included: false },
+      { text: '历史记录永久保存', included: true },
+      { text: '专属客服', included: false },
     ],
     cta: '立即开通',
     ctaDisabled: false,
-    pptCount10Pages: 125,  // 1000÷8=125份
-    costPerPage: '¥0.05',
+    pptCount10Pages: 125,
+    costPerPage: '¥0.03',
   },
   {
-    id: 'vip',
+    id: 'supreme',
     emoji: '🏆',
     name: '尊享会员',
-    desc: '权益全开，无限可能',
+    desc: '权益全开+60页，无限可能',
     credits: 2000,
     maxPages: 60,
     imageTier: '权益全开',
     imageDesc: '所有图片渠道 + 全部AI模型',
-    prices: { monthly: 99.9, annual: 999, annualMonthly: 83.3, annualSave: '省199' },
+    prices: { monthly: 49.9, annual: 499, annualMonthly: 41.6, annualSave: '省100' },
     features: [
       { text: '每月 2000 积分', included: true, highlight: true },
       { text: '每次最多 60 页', included: true, highlight: true },
-      { text: '尊享AI图（20积分/图）', included: true, highlight: true },
       { text: '权益全开', included: true, highlight: true },
+      { text: '全部AI模型', included: true, highlight: true },
       { text: '优先生成队列', included: true },
       { text: '历史记录永久保存', included: true },
       { text: '专属客服', included: true },
@@ -139,8 +139,8 @@ const PLANS: Plan[] = [
     ],
     cta: '立即开通',
     ctaDisabled: false,
-    pptCount10Pages: 250,  // 2000÷8=250份
-    costPerPage: '¥0.05',
+    pptCount10Pages: 250,
+    costPerPage: '¥0.02',
   },
 ];
 
@@ -370,7 +370,7 @@ export default function PricingPage() {
             { q: '积分是什么？怎么用？', a: '积分是省心PPT的通用计费单位。每次生成PPT会消耗积分，消耗量 = 基础积分（约1积分/页）+ 图片积分（按所选图片方案计算）。免费插图0积分，AI生图2-20积分/张。' },
             { q: '免费版有什么限制？', a: '免费版每月50积分，每次最多8页，仅支持免费插图模式（pictographic），导出PPTX带水印。足够体验AI生成PPT的效果。' },
             { q: '积分用完了怎么办？', a: '可以等待下月自动刷新，也可以升级套餐获得更多积分。积分不会清零，会累计到下月。' },
-            { q: '月付和年付有什么区别？', a: '功能完全一样，年付更优惠。普通会员年付¥299（省60），高级年付¥499（省100），尊享年付¥999（省199）。' },
+            { q: '月付和年付有什么区别？', a: '功能完全一样，年付更优惠。省心会员年付¥99（省20），高级会员年付¥299（省60），尊享会员年付¥499（省100）。' },
             { q: '可以随时取消订阅吗？', a: '可以，随时取消不影响当前周期使用。取消后下个计费周期自动降为免费版。' },
             { q: '普通会员和高级会员的区别？', a: '核心区别在图片方案和页数上限。普通会员支持pictographic+pexels+imagen-3-flash（2积分/图），高级会员额外支持flux-kontext-fast等高级AI图模型。尊享会员全部解锁。' },
           ].map((f, i) => (

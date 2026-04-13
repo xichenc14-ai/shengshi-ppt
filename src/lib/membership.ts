@@ -30,55 +30,50 @@ const PLANS: Record<string, MembershipPlan> = {
     allowedAiModels: [],
     smartMode: false,
   },
-  basic: {
-    id: 'basic',
-    name: '基础',
-    emoji: '💎',
-    credits: 100,
-    maxPages: 15,
+  // 省心会员：9.9元，300积分，省心模式+AI图+20页
+  shengxin: {
+    id: 'shengxin',
+    name: '省心会员',
+    emoji: '✨',
+    credits: 300,
+    maxPages: 20,
     priceMonthly: 9.9,
     priceAnnual: 99,
-    allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent'],
-    allowedAiModels: [],
-    smartMode: true,
-  },
-  standard: {
-    id: 'standard',
-    name: '标准',
-    emoji: '👑',
-    credits: 500,
-    maxPages: 20,
-    priceMonthly: 29.9,
-    priceAnnual: 299,
-    allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent'],
+    allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'],
     allowedAiModels: ['imagen-3-flash'], // AI普通图(2积分/图)
     smartMode: true,
   },
-  pro: {
-    id: 'pro',
-    name: '高级',
-    emoji: '🏆',
+  // 高级会员：29.9元，1000积分，高级图+40页
+  advanced: {
+    id: 'advanced',
+    name: '高级会员',
+    emoji: '👑',
     credits: 1000,
-    maxPages: 30,
-    priceMonthly: 49.9,
-    priceAnnual: 499,
+    maxPages: 40,
+    priceMonthly: 29.9,
+    priceAnnual: 299,
     allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'],
-    allowedAiModels: ['imagen-3-flash', 'imagen-3-pro'], // AI普通图(2积分) + AI高级图(5积分)
+    allowedAiModels: ['imagen-3-flash', 'imagen-3-pro'], // AI普通图+高级图
     smartMode: true,
   },
-  // vip 是 pro 的别名（兼容旧数据）
-  vip: {
-    id: 'pro',
-    name: '高级',
+  // 尊享会员：49.9元，2000积分，全开+60页
+  supreme: {
+    id: 'supreme',
+    name: '尊享会员',
     emoji: '🏆',
-    credits: 1000,
-    maxPages: 30,
+    credits: 2000,
+    maxPages: 60,
     priceMonthly: 49.9,
     priceAnnual: 499,
     allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'],
     allowedAiModels: ['imagen-3-flash', 'imagen-3-pro'],
     smartMode: true,
   },
+  // 兼容旧数据别名
+  basic: { id: 'shengxin', name: '基础', emoji: '💎', credits: 300, maxPages: 20, priceMonthly: 9.9, priceAnnual: 99, allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash'], smartMode: true },
+  standard: { id: 'advanced', name: '标准', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 29.9, priceAnnual: 299, allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro'], smartMode: true },
+  pro: { id: 'supreme', name: '高级', emoji: '🏆', credits: 2000, maxPages: 60, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro'], smartMode: true },
+  vip: { id: 'supreme', name: '尊享', emoji: '🏆', credits: 2000, maxPages: 60, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro'], smartMode: true },
 };
 
 export const PLAN_LIST = Object.values(PLANS);
