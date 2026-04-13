@@ -309,25 +309,96 @@ export default function Home() {
 
       await new Promise(r => setTimeout(r, smartData.outline?.slides?.length * 200 + 400));
 
-      // Step 4: 进入大纲编辑阶段
+      // Step 4: 保存数据
+      const smartSlides = smartData.outline?.slides || [];
       setOutlineResult({
         title: smartData.outline?.title || 'PPT',
-        slides: smartData.outline?.slides || [],
+        slides: smartSlides,
         themeId: smartData.config?.themeId,
       });
-      setEditedSlides(smartData.outline?.slides || []);
+      setEditedSlides(smartSlides);
 
       // 保存 Gamma Payload（后续生成时直接使用）
       setSmartGammaPayload(smartData.gammaPayload);
 
-      setGenProgress(100);
-      setPhase('outline');
+      // ====== 2026-04-13: 省心模式跳过 outline 编辑，直接进入生成 ======
+      // 原代码: setGenProgress(100); setPhase('outline');
+      setGenProgress(60);
+      setPhase('generating');
+      setGenStep(0);
+      setStepText('正在准备渲染...');
+
+      // --- 以下为 confirmAndGenerate 核心逻辑（内联，跳过编辑阶段） ---
+      const userPlan = getPlan(user.plan_type || 'free');
+      const basePayload = smartData.gammaPayload?.gammaPayload || smartData.gammaPayload || {};
+      const rawImgSrc = basePayload.imageOptions?.source || 'pictographic';
+      const gammaImgSrc = rawImgSrc === 'pictographic' ? 'webFreeToUseCommercially'
+        : rawImgSrc === 'theme-img' || rawImgSrc === 'theme' ? 'themeAccent'
+        : rawImgSrc === 'web' ? 'webFreeToUseCommercially'
+        : rawImgSrc === 'ai' ? 'aiGenerated'
+        : rawImgSrc === 'ai-pro' ? 'aiGenerated'
+        : rawImgSrc === 'none' ? 'noImages'
+        : rawImgSrc;
+      const numPages = Math.min(smartSlides.length, userPlan.maxPages);
+      const perm = checkPermission(user.plan_type || 'free', { numPages, imageSource: gammaImgSrc, mode: 'smart' });
+      if (!perm.allowed) { setLoading(false); setPhase('input'); setError(perm.reason || '权限不足'); return; }
+
+      // 扣积分
+      setGenStep(1); setGenProgress(65);
+      const deductRes = await fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: smartSlides.length, imageSource: gammaImgSrc }) });
+      const deductData = await deductRes.json();
+      if (!deductRes.ok || deductData.error) {
+        setLoading(false); setPhase('input');
+        if (deductData.error === '积分不足') { openPayment({ id: 'shengxin', name: '积分不足', price: '¥9.9/月', billing: 'monthly', reason: '积分不足' }); }
+        else { setError(deductData.error || '积分扣除失败'); }
+        return;
+      }
+      updateCredits(deductData.balance);
+
+      // 构建 Markdown + 调用 Gamma
+      setGenStep(2); setGenProgress(75);
+      setStepText('正在精准渲染...');
+      const { markdown: rebuiltMd } = buildMdV2(smartData.outline?.title || 'PPT', smartSlides, gammaImgSrc);
+      const gammaRequestBody = {
+        ...basePayload,
+        inputText: rebuiltMd,
+        numCards: smartSlides.length,
+        textMode: 'preserve',
+        format: 'presentation',
+        exportAs: 'pptx',
+        imageOptions: { ...(basePayload.imageOptions || {}), source: gammaImgSrc },
+      };
+      const gRes = await fetch('/api/gamma', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(gammaRequestBody) });
+      if (!gRes.ok) { const d = await gRes.json(); throw new Error(d.error || `生成失败(${gRes.status})`); }
+      const gd = await gRes.json();
+
+      if (gd.generationId) {
+        setGenStep(3); setGenProgress(80);
+        setStepText('正在等待 AI 渲染 PPT...');
+        const startTime = Date.now();
+        while (Date.now() - startTime < 120000) {
+          await new Promise(r => setTimeout(r, 4000));
+          const statusRes = await fetch(`/api/gamma?id=${gd.generationId}`);
+          if (!statusRes.ok) continue;
+          const statusData = await statusRes.json();
+          if (statusData.status === 'completed') {
+            setGenProgress(95); setStepText('PPT 生成完成！');
+            await new Promise(r => setTimeout(r, 500));
+            setResult({ title: smartData.outline?.title || 'PPT', slides: smartSlides, dlUrl: statusData.exportUrl || '', actualPages: smartSlides.length });
+            setGenProgress(100); setPhase('result'); return;
+          }
+          if (statusData.status === 'failed') { throw new Error(statusData.error || '生成失败'); }
+          setStepText(`AI 渲染中... ${Math.floor((Date.now() - startTime) / 1000)}秒`);
+        }
+        throw new Error('生成超时（2分钟）');
+      }
+      // ====== END 直接生成 ======
     } catch (e: any) {
       setError(e.message);
       setPhase('input');
     }
     setLoading(false);
-  }, [user, files, topic, collectText]);
+  }, [user, files, topic, collectText, updateCredits, openPayment]);
 
   // 专业模式生成流程：调用 outline API（用户手动选择参数）
   const generateOutline = useCallback(async () => {
@@ -962,11 +1033,13 @@ export default function Home() {
               </>
             )}
 
-            {phase === 'outline' && outlineResult && (
+            {/* 2026-04-13: 省心模式暂时跳过 outline 编辑，直接生成 */}
+            {/* {phase === 'outline' && outlineResult && ( */}
+            {false && outlineResult && (
               <>
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h2 className="text-lg font-bold text-gray-900">{outlineResult.title}</h2>
+                    <h2 className="text-lg font-bold text-gray-900">{outlineResult?.title}</h2>
                     <p className="text-xs text-gray-400 mt-0.5">共 {editedSlides.length} 页 · 可编辑标题和内容</p>
                   </div>
                   <button onClick={() => { setPhase('input'); setOutlineResult(null); setEditedSlides([]); }} className="text-xs text-gray-400 hover:text-gray-600 transition-colors">← 修改需求</button>
