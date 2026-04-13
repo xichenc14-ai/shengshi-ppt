@@ -3,6 +3,27 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 
+// 收款码图片映射
+const QR_CODE_MAP: Record<string, Record<'monthly' | 'annual', string>> = {
+  'basic': {
+    monthly: '/payment-qrcodes/basic-monthly.jpg',
+    annual: '/payment-qrcodes/basic-annual.jpg',
+  },
+  'pro': {
+    monthly: '/payment-qrcodes/pro-monthly.jpg',
+    annual: '/payment-qrcodes/pro-annual.jpg',
+  },
+  'vip': {
+    monthly: '/payment-qrcodes/vip-monthly.jpg',
+    annual: '/payment-qrcodes/vip-annual.jpg',
+  },
+};
+
+// 获取对应套餐的收款码
+function getQRCode(planId: string, billing: 'monthly' | 'annual'): string | null {
+  return QR_CODE_MAP[planId]?.[billing] || null;
+}
+
 interface PaymentModalProps {
   open: boolean;
   onClose: () => void;
@@ -197,16 +218,29 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
 
             {/* 二维码区域 */}
             <div className="bg-gray-50 rounded-2xl p-6 mb-5 text-center">
-              <div className="w-52 h-52 mx-auto bg-white border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center mb-3">
-                <div className="text-center">
-                  <div className="text-5xl mb-2">{isWechat ? '💚' : '🔵'}</div>
-                  <p className="text-sm text-gray-500 font-medium">{isWechat ? '微信扫码' : '支付宝扫码'}</p>
-                  <p className="text-[10px] text-gray-400 mt-1">支付功能即将上线</p>
+              {getQRCode(plan.id, (plan.billing as 'monthly' | 'annual') || 'monthly') ? (
+                <>
+                  <img
+                    src={getQRCode(plan.id, (plan.billing as 'monthly' | 'annual') || 'monthly')!}
+                    alt="收款码"
+                    className="w-52 h-52 mx-auto bg-white rounded-2xl shadow-md mb-3"
+                  />
+                  <p className="text-xs text-gray-500 font-medium">
+                    请使用{isWechat ? '微信' : '支付宝'}扫描上方二维码支付
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    金额：{plan.price} · 收款方：省心PPT
+                  </p>
+                </>
+              ) : (
+                <div className="w-52 h-52 mx-auto bg-white border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center mb-3">
+                  <div className="text-center">
+                    <div className="text-5xl mb-2">{isWechat ? '💚' : '🔵'}</div>
+                    <p className="text-sm text-gray-500 font-medium">{isWechat ? '微信扫码' : '支付宝扫码'}</p>
+                    <p className="text-[10px] text-gray-400 mt-1">暂无收款码</p>
+                  </div>
                 </div>
-              </div>
-              <p className="text-xs text-gray-500">
-                请使用{isWechat ? '微信' : '支付宝'}扫描上方二维码
-              </p>
+              )}
             </div>
 
             {/* 已完成支付按钮 */}
