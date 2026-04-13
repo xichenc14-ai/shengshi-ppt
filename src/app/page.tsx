@@ -332,13 +332,9 @@ export default function Home() {
       const userPlan = getPlan(user.plan_type || 'free');
       const basePayload = smartData.gammaPayload?.gammaPayload || smartData.gammaPayload || {};
       const rawImgSrc = basePayload.imageOptions?.source || 'pictographic';
-      const gammaImgSrc = rawImgSrc === 'pictographic' ? 'webFreeToUseCommercially'
-        : rawImgSrc === 'theme-img' || rawImgSrc === 'theme' ? 'themeAccent'
-        : rawImgSrc === 'web' ? 'webFreeToUseCommercially'
-        : rawImgSrc === 'ai' ? 'aiGenerated'
-        : rawImgSrc === 'ai-pro' ? 'aiGenerated'
-        : rawImgSrc === 'none' ? 'noImages'
-        : rawImgSrc;
+      // ✅ Gamma API 直接支持：pictographic, themeAccent, webFreeToUseCommercially, aiGenerated, noImages
+      // 不需要额外映射，直接使用！
+      const gammaImgSrc = rawImgSrc;
       const numPages = Math.min(smartSlides.length, userPlan.maxPages);
       const perm = checkPermission(user.plan_type || 'free', { numPages, imageSource: gammaImgSrc, mode: 'smart' });
       if (!perm.allowed) { setLoading(false); setPhase('input'); setError(perm.reason || '权限不足'); return; }
@@ -542,18 +538,9 @@ export default function Home() {
         // 用户可能编辑了大纲，需要重建 inputText 和更新页数
         const basePayload = smartGammaPayload.gammaPayload || smartGammaPayload;
         const imgSrc = basePayload.imageOptions?.source || 'pictographic';
-        // 图片模式映射：内部imgMode -> Gamma API source
-        // pictographic/精选套图 -> webFreeToUseCommercially (免版权网图)
-        // theme-img/主题套图 -> themeAccent (主题内置强调图)
-        // ai -> aiGenerated
-        // none -> noImages
-        const gammaImgSrc = imgSrc === 'pictographic' ? 'webFreeToUseCommercially'
-          : imgSrc === 'theme-img' || imgSrc === 'theme' ? 'themeAccent'
-          : imgSrc === 'web' ? 'webFreeToUseCommercially'
-          : imgSrc === 'ai' ? 'aiGenerated'
-          : imgSrc === 'ai-pro' ? 'aiGenerated'
-          : imgSrc === 'none' ? 'noImages'
-          : imgSrc;
+        // ✅ Gamma API 直接支持这些 source 值，不需要映射
+        // pictographic, themeAccent, webFreeToUseCommercially, aiGenerated, noImages
+        const gammaImgSrc = imgSrc;
         const { markdown: rebuiltMd } = buildMdV2(outlineResult.title, editedSlides, imgSrc);
         gammaRequestBody = {
           ...basePayload,
@@ -1155,7 +1142,7 @@ export default function Home() {
                                     setSmartGammaPayload((prev: any) => prev ? {
                                       ...prev,
                                       imageOptions: { ...prev.imageOptions, source: src },
-                                      gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, imageOptions: { ...prev.gammaPayload.imageOptions, source: src === 'pictographic' ? 'webFreeToUseCommercially' : src } } : undefined,
+                                      gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, imageOptions: { ...prev.gammaPayload.imageOptions, source: src } } : undefined,
                                     } : prev);
                                   }}
                                   className={`px-1.5 py-0.5 rounded-md text-[9px] font-medium transition-all ${
@@ -1356,11 +1343,11 @@ export default function Home() {
           } : prev);
         }}
         onImgChange={(imgSrc) => {
-          const mappedSrc = imgSrc === 'theme-img' ? 'themeAccent' : imgSrc === 'pictographic' ? 'webFreeToUseCommercially' : imgSrc;
+          // ✅ Gamma API 直接支持，不需要映射
           setSmartGammaPayload((prev: any) => prev ? {
             ...prev,
-            imageOptions: { ...prev.imageOptions, source: mappedSrc },
-            gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, imageOptions: { ...prev.gammaPayload.imageOptions, source: mappedSrc } } : undefined,
+            imageOptions: { ...prev.imageOptions, source: imgSrc },
+            gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, imageOptions: { ...prev.gammaPayload.imageOptions, source: imgSrc } } : undefined,
           } : prev);
         }}
         onClose={() => setShowThemePicker(false)}
