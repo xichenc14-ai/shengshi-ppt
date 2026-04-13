@@ -2,18 +2,19 @@
 // Kimi 多模态能力强，128K 上下文
 
 export async function understandImage(base64Data: string, mimeType: string): Promise<string> {
-  // 1️⃣ Kimi K2.5（首选：多模态+长上下文）
+  // 1️⃣ Kimi K2.5（首选：zeroby 中转站）
   const kimiKey = process.env.KIMI_API_KEY;
+  const kimiBase = process.env.KIMI_API_BASE || 'https://ai.1seey.com/v1';
   if (kimiKey) {
     try {
-      const response = await fetch('https://api.moonshot.cn/v1/chat/completions', {
+      const response = await fetch(`${kimiBase}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${kimiKey}`,
         },
         body: JSON.stringify({
-          model: 'kimi-k2-0711',
+          model: 'Kimi-K2.5',
           messages: [{
             role: 'user',
             content: [
