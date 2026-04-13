@@ -57,6 +57,36 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: true, message: '已清理该手机号的所有数据' });
   }
 
+  // ===== 创建/重置测试账户 =====
+  if (action === 'create_test_user') {
+    const token = searchParams.get('token');
+    const devToken = process.env.DEBUG_TOKEN || 'xichen-debug-2026';
+    if (token !== devToken && !isDevCleanupAllowed(req)) {
+      return NextResponse.json({ error: '无权限' }, { status: 403 });
+    }
+    const phone = searchParams.get('phone') || '13800138000';
+    const password = searchParams.get('password') || 'test123456';
+    const pwdHash = createHash('sha256').update(password).digest('hex');
+    const sb = getSupabase();
+    if (!sb) return NextResponse.json({ error: '数据库未配置' }, { status: 500 });
+
+    // Upsert user
+    const isXichen = !phone || phone === 'xichen';
+    const { error: upsertErr } = await sb.from('users').upsert({
+      phone: isXichen ? '13800138001' : phone,
+      nickname: isXichen ? 'xichen' : ('测试用户' + phone?.slice(-4)),
+      password_hash: pwdHash,
+      credits: 99999,
+      plan_type: 'pro',
+      is_active: true,
+    }, { ignoreDuplicates: false });
+
+    if (upsertErr) {
+      return NextResponse.json({ error: '创建失败: ' + upsertErr.message }, { status: 500 });
+    }
+    return NextResponse.json({ success: true, phone, password, plan_type: 'pro', credits: 99999 });
+  }
+
   // ===== 检查手机号是否已注册 =====
   if (action === 'check_phone') {
     const phone = searchParams.get('phone');
