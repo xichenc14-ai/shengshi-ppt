@@ -94,6 +94,70 @@ export default function Home() {
     return p.join('\n\n');
   }, [files, topic]);
 
+  // 🚨 P0 Fix: 构建 preserve 模式的 Markdown（忠实呈现用户原文，不做 AI 提炼）
+  // 原则：用户写什么，PPT 就呈现什么。只需要加基础 markdown 结构（分页、标题）。
+  function buildPreserveMarkdown(rawText: string, pageCount: number): string {
+    if (!rawText || !rawText.trim()) return '# PPT\n\n---\n\n## 内容\n\n请添加内容';
+
+    const sections: string[] = [];
+
+    // 如果已有 --- 分页符，直接使用
+    if (rawText.includes('---')) {
+      const pages = rawText.split(/\n*---\n*/).filter(p => p.trim());
+      if (pages.length > 0) {
+        // 第一页作为封面
+        const first = pages[0].trim();
+        const firstLine = first.split('\n')[0].replace(/^#+\s*/, '');
+        sections.push(`# ${firstLine}\n\n${first}`);
+        // 其余页
+        for (let i = 1; i < pages.length; i++) {
+          const pg = pages[i].trim();
+          if (!pg) continue;
+          const lines = pg.split('\n');
+          const title = lines[0].replace(/^#+\s*/, '');
+          const body = lines.slice(1).join('\n').trim();
+          sections.push(`## ${title}\n\n${body}\n\n---\n`);
+        }
+        return sections.join('\n');
+      }
+    }
+
+    // 否则按段落/换行智能分页（每页 ≈ 总长度/pageCount）
+    const paragraphs = rawText.split(/\n\n+/).filter(p => p.trim());
+    const totalLen = paragraphs.reduce((s, p) => s + p.length, 0);
+    const targetPerPage = Math.max(200, Math.floor(totalLen / pageCount));
+
+    let currentPage: string[] = [];
+    let currentLen = 0;
+    const pages: string[][] = [];
+
+    for (const para of paragraphs) {
+      if (currentLen + para.length > targetPerPage && currentPage.length > 0) {
+        pages.push([...currentPage]);
+        currentPage = [];
+        currentLen = 0;
+      }
+      currentPage.push(para);
+      currentLen += para.length;
+    }
+    if (currentPage.length > 0) pages.push(currentPage);
+
+    // 构建 markdown
+    const firstPageContent = pages[0]?.join('\n\n') || rawText;
+    const firstLine = firstPageContent.split('\n')[0].replace(/^#+\s*/, '');
+    sections.push(`# ${firstLine}\n\n${firstPageContent}`);
+
+    for (let i = 1; i < pages.length; i++) {
+      const pgText = pages[i].join('\n\n');
+      const lines = pgText.split('\n');
+      const title = lines[0].replace(/^#+\s*/, '').slice(0, 30) || `第${i + 1}页`;
+      const body = lines.slice(1).join('\n').trim();
+      sections.push(`\n---\n\n## ${title}\n\n${body}`);
+    }
+
+    return sections.join('\n');
+  }
+
   // Track hasInput
   useEffect(() => { setHasInput(files.length > 0 || topic.trim().length > 0); }, [files, topic]);
 
@@ -347,10 +411,17 @@ export default function Home() {
       // 构建 additionalInstructions
       const instructions = buildAdditionalInstructions(configTone, smartData.analysis?.scene || 'biz', configImageSrc, configVisualMetaphor);
 
+      // 🚨 P0 Fix: 移除 cardSplit（Gamma 不认识此参数，会导致 400）
+      // 🚨 P0 Fix: preserve 模式需要忠实呈现用户原始内容，不做 AI 提炼
+      //   gammaScript 是 AI 提炼过的，会改变用户内容
+      //   改为：直接用用户的原始输入（inputText）传给 Gamma preserve 模式
+      const rawInput = collectText();
+      // 构建用于 preserve 的 markdown：只用用户的原始内容加基础分页，不做 AI 提炼
+      const preserveMd = buildPreserveMarkdown(rawInput, pageCount);
+
       const gammaRequestBody: Record<string, any> = {
-        inputText: gammaScript,  // ✅ V3: 直接使用 AI 生成的完整 Gamma 脚本
-        textMode: 'preserve',    // ✅ 保持原文结构
-        cardSplit: 'inputTextBreaks',  // ✅ 精确分页
+        inputText: preserveMd,   // ✅ preserve 模式忠实呈现用户原文
+        textMode: 'preserve',    // ✅ 保持原文结构，不做 AI 改写
         format: 'presentation',
         numCards: pageCount,
         themeId: configThemeId,
