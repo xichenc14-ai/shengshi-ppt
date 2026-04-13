@@ -296,52 +296,41 @@ export default function Home() {
 
       const smartData = await smartRes.json();
 
-      // Step 2: 显示分析结果
+      // Step 2: 显示分析结果（V3 使用 gammaScript，不再依赖 outline）
+      const gammaScript = smartData.gammaScript || '';
+      const pageCount = smartData.pageCount || 8;
+      const configThemeId = smartData.config?.themeId || 'consultant';
+      const configTone = smartData.config?.tone || 'professional';
+      const configImageSrc = smartData.config?.imageSource || 'pictographic';
+      const configVisualMetaphor = smartData.config?.visualMetaphor || '';
+
+      if (!gammaScript || gammaScript.trim().length < 50) {
+        throw new Error('AI 生成的脚本内容为空，请重试');
+      }
+
       setGenProgress(30);
-      setStepText(`识别场景: ${smartData.analysis?.scene || '通用'} · 主题: ${smartData.config?.themeName || '商务蓝'}`);
+      setStepText(`识别场景: ${smartData.analysis?.scene || '通用'} · 页数: ${pageCount}页`);
 
       await new Promise(r => setTimeout(r, 800));
 
-      // Step 3: 显示大纲
+      // Step 3: 流式显示"正在生成专业脚本..."
       setGenProgress(50);
-      setStreamingSlides(smartData.outline?.slides || []);
-      setStepText('生成专业大纲...');
+      setStepText('AI 正在生成 Gamma 定制脚本...');
+      await new Promise(r => setTimeout(r, pageCount * 150 + 400));
 
-      await new Promise(r => setTimeout(r, smartData.outline?.slides?.length * 200 + 400));
-
-      // Step 4: 保存数据
-      const smartSlides = smartData.outline?.slides || [];
-      setOutlineResult({
-        title: smartData.outline?.title || 'PPT',
-        slides: smartSlides,
-        themeId: smartData.config?.themeId,
-      });
-      setEditedSlides(smartSlides);
-
-      // 保存 Gamma Payload（后续生成时直接使用）
-      setSmartGammaPayload(smartData.gammaPayload);
-
-      // ====== 2026-04-13: 省心模式跳过 outline 编辑，直接进入生成 ======
-      // 原代码: setGenProgress(100); setPhase('outline');
+      // ====== 省心模式 V3：直接使用 AI 生成的 gammaScript ======
       setGenProgress(60);
       setPhase('generating');
       setGenStep(0);
       setStepText('正在准备渲染...');
 
-      // --- 以下为 confirmAndGenerate 核心逻辑（内联，跳过编辑阶段） ---
       const userPlan = getPlan(user.plan_type || 'free');
-      const basePayload = smartData.gammaPayload?.gammaPayload || smartData.gammaPayload || {};
-      const rawImgSrc = basePayload.imageOptions?.source || 'pictographic';
-      // ✅ Gamma API 直接支持：pictographic, themeAccent, webFreeToUseCommercially, aiGenerated, noImages
-      // 不需要额外映射，直接使用！
-      const gammaImgSrc = rawImgSrc;
-      const numPages = Math.min(smartSlides.length, userPlan.maxPages);
-      const perm = checkPermission(user.plan_type || 'free', { numPages, imageSource: gammaImgSrc, mode: 'smart' });
+      const perm = checkPermission(user.plan_type || 'free', { numPages: pageCount, imageSource: configImageSrc, mode: 'smart' });
       if (!perm.allowed) { setLoading(false); setPhase('input'); setError(perm.reason || '权限不足'); return; }
 
       // 扣积分
       setGenStep(1); setGenProgress(65);
-      const deductRes = await fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: smartSlides.length, imageSource: gammaImgSrc }) });
+      const deductRes = await fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: pageCount, imageSource: configImageSrc }) });
       const deductData = await deductRes.json();
       if (!deductRes.ok || deductData.error) {
         setLoading(false); setPhase('input');
@@ -351,45 +340,38 @@ export default function Home() {
       }
       updateCredits(deductData.balance);
 
-      // 构建 Markdown + 调用 Gamma
+      // 构建 Gamma 请求（V3：直接使用 AI 生成的 gammaScript）
       setGenStep(2); setGenProgress(75);
       setStepText('正在精准渲染...');
 
-      // ✅ 使用 buildMdV2 生成结构化 Markdown（Gamma 规范）
-      const { markdown: rebuiltMd, visualMetaphor } = buildMdV2(
-        smartData.outline?.title || 'PPT',
-        smartSlides,
-        gammaImgSrc
-      );
+      // 构建 additionalInstructions
+      const instructions = buildAdditionalInstructions(configTone, smartData.analysis?.scene || 'biz', configImageSrc, configVisualMetaphor);
 
-      // ✅ 使用 buildAdditionalInstructions 生成精细化指令（替代 smart-outline 简化版）
-      const smartTone = smartData.config?.tone || 'professional';
-      const smartScene = smartData.analysis?.scene || 'biz';
-      const finalInstructions = buildAdditionalInstructions(smartTone, smartScene, gammaImgSrc, visualMetaphor);
-
-      // 构建 Gamma payload（V2：使用 buildMdV2 + buildAdditionalInstructions，不依赖 smart-outline 的简化版）
       const gammaRequestBody: Record<string, any> = {
-        inputText: rebuiltMd,
-        textMode: 'preserve',
-        cardSplit: 'inputTextBreaks',  // ✅ 精确分页控制
+        inputText: gammaScript,  // ✅ V3: 直接使用 AI 生成的完整 Gamma 脚本
+        textMode: 'preserve',    // ✅ 保持原文结构
+        cardSplit: 'inputTextBreaks',  // ✅ 精确分页
         format: 'presentation',
-        numCards: smartSlides.length,
-        themeId: smartData.config?.themeId || basePayload.themeId || 'consultant',
-        additionalInstructions: finalInstructions,
-        textOptions: { amount: 'medium', tone: smartTone, language: 'zh-cn' },
-        imageOptions: { source: gammaImgSrc },
+        numCards: pageCount,
+        themeId: configThemeId,
+        additionalInstructions: instructions,
+        textOptions: { amount: 'medium', tone: configTone, language: 'zh-cn' },
+        imageOptions: { source: configImageSrc },
         cardOptions: { dimensions: '16x9' },
         exportAs: 'pptx',
       };
 
-      // ✅ 失败自动降级：pictographic → noImages
+      // 调用 Gamma API
       let gRes = await fetch('/api/gamma', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(gammaRequestBody) });
-      if (!gRes.ok && gammaImgSrc !== 'noImages') {
-        console.warn('[SmartMode] Gamma 400, fallback to noImages');
-        setStepText('切换渲染模式...');
+
+      // 失败自动降级：pictographic → noImages
+      if (!gRes.ok && configImageSrc !== 'noImages') {
+        console.warn('[SmartMode V3] Gamma failed, fallback to noImages');
+        setStepText('图片模式不支持，切换渲染...');
         gammaRequestBody.imageOptions = { source: 'noImages' };
         gRes = await fetch('/api/gamma', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(gammaRequestBody) });
       }
+
       if (!gRes.ok) { const d = await gRes.json(); throw new Error(d.error || `生成失败(${gRes.status})`); }
       const gd = await gRes.json();
 
@@ -405,7 +387,8 @@ export default function Home() {
           if (statusData.status === 'completed') {
             setGenProgress(95); setStepText('PPT 生成完成！');
             await new Promise(r => setTimeout(r, 500));
-            setResult({ title: smartData.outline?.title || 'PPT', slides: smartSlides, dlUrl: statusData.exportUrl || '', actualPages: smartSlides.length });
+            const pptTitle = smartData.analysis?.keyTopics?.[0] || smartData.analysis?.scene || 'PPT';
+            setResult({ title: pptTitle, slides: [], dlUrl: statusData.exportUrl || '', actualPages: pageCount });
             setGenProgress(100); setPhase('result'); return;
           }
           if (statusData.status === 'failed') { throw new Error(statusData.error || '生成失败'); }
@@ -413,7 +396,6 @@ export default function Home() {
         }
         throw new Error('生成超时（2分钟）');
       }
-      // ====== END 直接生成 ======
     } catch (e: any) {
       setError(e.message);
       setPhase('input');
