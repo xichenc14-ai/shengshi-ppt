@@ -370,9 +370,12 @@ export async function POST(req: NextRequest) {
       let imageCreditsPerImage = 0;
       if (imageSource === 'aiGenerated') {
         // 高级模型20积分/图，普通AI模型2积分/图
+        const MID_MODELS = ['flux-1-pro', 'imagen-3-pro', 'ideogram-v3-turbo'];
         const HIGH_END_MODELS = ['flux-kontext-pro', 'imagen-4-pro', 'ideogram-v3', 'dall-e-3', 'gpt-image-1-high'];
         if (imageModel && HIGH_END_MODELS.includes(imageModel)) {
           imageCreditsPerImage = 20;
+        } else if (imageModel && MID_MODELS.includes(imageModel)) {
+          imageCreditsPerImage = 8;
         } else {
           imageCreditsPerImage = 2;
         }

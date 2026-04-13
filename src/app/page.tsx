@@ -867,7 +867,7 @@ export default function Home() {
                                 const userPlan = getPlan(user?.plan_type || 'free');
                                 const needPro = val === 'ai-pro';
                                 const hasPermission = needPro
-                                  ? userPlan.allowedAiModels.includes('flux-kontext-pro')
+                                  ? userPlan.allowedAiModels.includes('imagen-3-pro')
                                   : userPlan.allowedAiModels.length > 0;
                                 if (!hasPermission) {
                                   const reqPlan = needPro ? 'vip' : 'pro';

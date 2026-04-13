@@ -297,8 +297,8 @@ export async function POST(request: NextRequest) {
       // AI定制图：普通AI模型
       finalImageOptions = { source: 'aiGenerated', model: 'imagen-3-flash', style: 'flat illustration, minimalist, clean background, negative space' };
     } else if (imageMode === 'ai-pro') {
-      // AI尊享图：高级AI模型
-      finalImageOptions = { source: 'aiGenerated', model: 'flux-kontext-fast', style: 'professional, high quality, cinematic, detailed' };
+      // AI尊享图：高质量模型(8 credits/图)
+      finalImageOptions = { source: 'aiGenerated', model: 'imagen-3-pro', style: 'professional, high quality, cinematic, detailed' };
     } else {
       finalImageOptions = { source: 'pictographic' }; // 免费且效果好
     }

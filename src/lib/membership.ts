@@ -64,7 +64,7 @@ const PLANS: Record<string, MembershipPlan> = {
     priceMonthly: 99.9,
     priceAnnual: 999,
     allowedImageSources: ['noImages', 'pictographic', 'pexels', 'webFreeToUseCommercially', 'aiGenerated'],
-    allowedAiModels: ['imagen-3-flash', 'flux-kontext-fast', 'flux-kontext-pro'],
+    allowedAiModels: ['imagen-3-flash', 'flux-kontext-fast', 'imagen-3-pro'],
     smartMode: true,
   },
 };
