@@ -1056,17 +1056,43 @@ export default function Home() {
             <button onClick={() => { setPhase('input'); setLoading(false); }} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 mb-6 transition-colors">← 取消</button>
 
             <div className="mb-4">
-              <h2 className="text-lg font-bold text-gray-900">AI 正在生成大纲...</h2>
-              <p className="text-xs text-gray-400 mt-0.5">请稍候，大纲会逐条显示</p>
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-purple-500"></span>
+                </span>
+                AI 正在生成大纲...
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {streamingSlides.length > 0
+                  ? `已生成 ${streamingSlides.length} 页...`
+                  : '深度分析需求中，请稍候'}
+              </p>
             </div>
 
             {streamingSlides.length > 0 ? (
               <StreamingOutline slides={streamingSlides} />
             ) : (
-              <div className="space-y-2">
-                <SkeletonCard lines={2} />
-                <SkeletonCard lines={3} />
-                <SkeletonCard lines={2} />
+              <div className="space-y-3">
+                <div className="animate-pulse space-y-2">
+                  <div className="h-4 bg-gray-200 rounded-lg w-3/4"></div>
+                  <div className="h-3 bg-gray-100 rounded-lg w-1/2"></div>
+                </div>
+                <div className="animate-pulse space-y-2" style={{animationDelay: '0.1s'}}>
+                  <div className="h-4 bg-gray-200 rounded-lg w-2/3"></div>
+                  <div className="h-3 bg-gray-100 rounded-lg w-1/3"></div>
+                </div>
+                <div className="animate-pulse space-y-2" style={{animationDelay: '0.2s'}}>
+                  <div className="h-4 bg-gray-200 rounded-lg w-4/5"></div>
+                  <div className="h-3 bg-gray-100 rounded-lg w-2/5"></div>
+                </div>
+                <div className="flex items-center justify-center py-4">
+                  <div className="flex gap-1">
+                    <div className="w-2 h-2 bg-purple-300 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></div>
+                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></div>
+                    <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
