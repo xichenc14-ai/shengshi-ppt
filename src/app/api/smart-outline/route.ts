@@ -32,42 +32,61 @@ const SCENE_KEYWORDS: Record<string, { keywords: string[]; themeId: string; tone
   '生活方式': { keywords: ['生活', '旅行', '美食', '健康', '运动', '健身', '宠物', '家居'], themeId: 'chisel', tone: 'casual', imageSource: 'pictographic' },
 };
 
-// ===== 系统提示词：深度需求分析 =====
-const ANALYSIS_SYSTEM_PROMPT = `你是PPT制作专家，负责深度分析用户需求并自动确定最佳制作方案。
+// ===== 系统提示词 V2（Gamma 规范强化） =====
+const ANALYSIS_SYSTEM_PROMPT = `你是PPT制作专家，负责深度分析用户需求并生成符合 Gamma AI 规范的专业大纲。
 
-## 你的任务
+## Gamma 布局触发规则（必须遵守）
 
-1. **理解用户需求**：分析用户输入的内容类型、目的、受众
-2. **识别场景**：判断属于哪种PPT场景（商务汇报/培训课件/路演融资等）
-3. **确定参数**：自动选择最佳的主题、配色、页数、图片源、语气
-4. **生成大纲**：生成专业级别的PPT大纲，每页内容精心设计
+1. **大文本强制**：正文用 ### 触发 24pt 大字（禁止小字）
+2. **卡片布局**：3-4个并列要点用列表触发三列/四宫格
+3. **时间轴**：有序列表 1. 2. 3. 触发流程布局
+4. **内容密度**：每页 50-80 字，不超过 4 个要点
+5. **封面结尾**：必须有高质量配图
 
 ## 输出格式（严格JSON）
 
 {
   "analysis": {
-    "inputType": "主题描述|完整文档|上传文件",
+    "inputType": "主题描述",
     "scene": "商务汇报|培训课件|路演融资|科技AI|年度总结|数据分析|美妆时尚|创意营销|产品发布|生活方式|通用",
-    "purpose": "用户目的描述",
+    "purpose": "用户目的",
     "audience": "目标受众",
     "keyTopics": ["核心主题1", "核心主题2"]
   },
   "config": {
-    "themeId": "主题ID",
+    "themeId": "consultant|icebreaker|founder|aurora|electric|chisel|ashrose|blues|gleam|default-light",
     "tone": "professional|casual|creative|bold",
-    "imageSource": "noImages|pictographic|webFreeToUseCommercially",
+    "imageSource": "pictographic|noImages|webFreeToUseCommercially|themeAccent",
     "numCards": 8-15,
-    "needAiImages": false
+    "visualMetaphor": "山峰|破晓|树苗|闪电|桥梁|蝴蝶|火箭|芯片|盾牌|齿轮"
   },
   "outline": {
     "title": "PPT主标题",
     "slides": [
       {
-        "type": "cover|toc|content|transition|end",
-        "title": "页面标题",
-        "content": ["要点1", "要点2", "要点3"],
-        "layoutHint": "封面大标题|目录列表|三列卡片|时间轴|对比|四宫格|大文本|要点列表",
-        "visualHint": "配图建议|图标建议"
+        "type": "cover",
+        "title": "主标题",
+        "content": ["副标题"]
+      },
+      {
+        "type": "toc",
+        "title": "目录",
+        "content": ["第一部分", "第二部分", "第三部分"]
+      },
+      {
+        "type": "content",
+        "title": "核心要点",
+        "content": ["要点1(≤20字)", "要点2", "要点3", "要点4"]
+      },
+      {
+        "type": "process",
+        "title": "实施步骤",
+        "content": ["步骤1", "步骤2", "步骤3"]
+      },
+      {
+        "type": "ending",
+        "title": "感谢",
+        "content": ["联系方式"]
       }
     ]
   }
@@ -75,78 +94,125 @@ const ANALYSIS_SYSTEM_PROMPT = `你是PPT制作专家，负责深度分析用户
 
 ## 规则
 
-1. 页数控制在 8-12 页（除非用户明确要求更多）
-2. 每页内容不超过 3-4 个要点
-3. 自动选择最合适的主题（根据场景匹配）
-4. 图片源默认用 pictographic（免费摘要图）
-5. 数据分析类场景用 noImages（纯文字图表）
-6. 生成完整、专业的大纲结构`;
+1. 页数控制在 8-12 页
+2. 每页不超过 4 个要点
+3. 每个要点 ≤ 20 字
+4. 数据类用 noImages
+5. 其他默认 pictographic`;
 
-// ===== 大纲转 Markdown（带布局指令）=====
+// ===== 大纲转 Markdown（V2 - Gamma 规范结构化） =====
+// 核心改动：使用 Gamma 布局触发语法
+// - cover: # 主标题（封面大标题）
+// - toc: ## 标题 + 有序列表（目录）
+// - content: ## 标题 + ### 大文本要点 / - **卡片**（3-4列布局）
+// - process: ## 标题 + 1. 2. 3.（时间轴布局）
+// - ending: # 感谢 + > 引用块（演讲者备注）
 function buildMarkdownFromOutline(outline: any): string {
   const slides = outline.slides || [];
   const pages: string[] = [];
 
   for (const slide of slides) {
-    let pageContent = `## ${slide.title}\n`;
+    const type = slide.type || 'content';
+    const content = slide.content || [];
 
-    // 根据布局提示添加指令
-    if (slide.layoutHint) {
-      pageContent += `\n<!-- 布局：${slide.layoutHint} -->\n`;
+    switch (type) {
+      case 'cover':
+        // 封面：# 主标题（触发封面大标题布局）
+        pages.push(`# ${slide.title}\n\n${content.slice(0, 2).join(' · ')}`);
+        break;
+
+      case 'toc':
+        // 目录：有序列表（触发时间轴/列表布局）
+        pages.push(`## ${slide.title}\n\n${content.slice(0, 6).map((c: string, i: number) => `${i + 1}. **${c}**`).join('\n')}`);
+        break;
+
+      case 'process':
+        // 流程/步骤：有序列表（触发时间轴布局）
+        pages.push(`## ${slide.title}\n\n${content.slice(0, 4).map((c: string, i: number) => `${i + 1}. **${c}**`).join('\n')}`);
+        break;
+
+      case 'ending':
+        // 结尾：# 感谢 + 引用块（演讲者备注）
+        pages.push(`# ${slide.title}\n\n> ${content.join('；')}`);
+        break;
+
+      case 'content':
+      default:
+        // 内容页：根据要点数量选择布局
+        if (content.length >= 3 && content.length <= 4) {
+          // 3-4个要点：- **粗体** 触发三列/四宫格卡片布局
+          pages.push(`## ${slide.title}\n\n${content.map((c: string) => `- **${c}**`).join('\n')}`);
+        } else if (content.length === 2) {
+          // 2个要点：### 大文本（触发左右对照布局）
+          pages.push(`## ${slide.title}\n\n${content.map((c: string) => `### ${c}`).join('\n\n')}`);
+        } else if (content.length === 1) {
+          // 1个要点：### 大文本独占
+          pages.push(`## ${slide.title}\n\n### ${content[0]}`);
+        } else {
+          // 5+个要点：拆分为列表
+          pages.push(`## ${slide.title}\n\n${content.slice(0, 4).map((c: string) => `### ${c}`).join('\n\n')}`);
+        }
+        break;
     }
 
-    // 添加要点内容
-    if (slide.content && slide.content.length > 0) {
-      // 控制要点数量（3-4个最佳）
-      const items = slide.content.slice(0, 4);
-      for (const item of items) {
-        pageContent += `- ${item}\n`;
-      }
-    }
-
-    // 添加视觉提示
-    if (slide.visualHint) {
-      pageContent += `\n<!-- 配图：${slide.visualHint} -->\n`;
-    }
-
-    pages.push(pageContent);
+    // 每页之间用 --- 分页（配合 cardSplit: "inputTextBreaks"）
+    pages.push('\n---\n');
   }
 
-  return pages.join('\n---\n');
+  return pages.join('\n');
 }
 
-// ===== 构建 additionalInstructions =====
+// ===== 构建 additionalInstructions（V2 精细化） =====
+// 基于 gamma/route.ts 的 INSTRUCTION_TEMPLATES 精简版
 function buildAdditionalInstructions(config: any, analysis: any): string {
-  const instructions: string[] = [
+  const tone = config.tone || 'professional';
+  const imageSource = config.imageSource || 'pictographic';
+  const scene = analysis.scene || '通用';
+
+  // 通用排版规则
+  const baseRules = [
     '用中文生成PPT。',
-    '全局正文使用大文本，不要小号字，适合中国用户大字号阅读偏好。',
-    '不要将列表排成表格形式，超过4个并列项请拆分到多页，每页3-4个用卡片布局。',
-    '内容少的页面请用图标或色块填充留白区域。',
+    '全局正文使用大文本（≥24pt），禁止小字。',
+    '不要将列表排成表格形式，超过4个并列项请拆分到多页。',
+    '每页3-4个要点用卡片布局。',
+    '内容少的页面用图标或色块填充留白区域。',
     '使用无衬线字体风格。',
     '保持演讲者备注。',
     '整体风格统一，专业但不死板。',
+    '所有图标和装饰元素必须使用Unicode符号/emoji代替web SVG图标，确保PPTX下载后完整显示。',
   ];
 
-  // 根据图片源添加指令
-  if (config.imageSource === 'pictographic') {
-    instructions.push('使用摘要图/插图填充，风格：professional, clean, minimalist.');
-  } else if (config.imageSource === 'noImages') {
-    instructions.push('不使用任何外部图片，纯文字+图标+色块设计.');
-  }
+  // 语气风格
+  const toneMap: Record<string, string[]> = {
+    professional: ['配色：克制优雅，主色深蓝/深灰+1个强调色，大面积留白。', '感觉：麦肯锡/BCG咨询PPT风格。'],
+    casual: ['配色：明亮清新，主色蓝/绿+浅色背景。', '感觉：Notion/Figma风格，友好亲切。'],
+    creative: ['配色：大丰富，2-3个亮色渐变。', '感觉：Apple发布会风格，前卫震撼。'],
+    bold: ['配色：深色主题，深蓝/深灰背景+亮色文字。', '感觉：高端科技公司品牌发布。'],
+  };
+  baseRules.push(...(toneMap[tone] || toneMap.professional));
 
-  // 根据场景添加特定指令
-  if (analysis.scene === '数据分析') {
-    instructions.push('重点使用图表、数据可视化元素.');
-  } else if (analysis.scene === '路演融资') {
-    instructions.push('封面必须有高质量配图，整体风格要专业大气.');
-  } else if (analysis.scene === '培训课件') {
-    instructions.push('每页内容简洁，适合教学演示，多用图标辅助理解.');
-  }
+  // 图片源指令
+  const imgMap: Record<string, string> = {
+    pictographic: '使用摘要图/插图填充，风格：professional, clean, minimalist.',
+    noImages: '不使用任何外部图片，纯文字+图标+色块设计.',
+    webFreeToUseCommercially: '封面和结尾必须配高质量网图，内容页适当配图.',
+    themeAccent: '使用主题内置强调图，封面和结尾必须配图.',
+  };
+  baseRules.push(imgMap[imageSource] || imgMap.pictographic);
 
-  return instructions.join('\n');
+  // 场景特定指令
+  const sceneMap: Record<string, string> = {
+    '数据分析': '重点使用图表、数据可视化元素。',
+    '路演融资': '封面必须有高质量配图，整体风格专业大气。',
+    '培训课件': '每页内容简洁，适合教学演示，多用图标辅助理解。',
+    '科技AI': '使用科技感图标，深色背景+亮色强调。',
+  };
+  if (sceneMap[scene]) baseRules.push(sceneMap[scene]);
+
+  return baseRules.join('\n');
 }
 
-// ===== AI调用：Kimi K2-thinking(深度分析) → K2(标准) → MiniMax → GLM =====
+// ===== AI调用：Kimi K2-thinking(深度分析) → MiniMax → GLM =====
 async function callAIWithFallback(systemPrompt: string, userPrompt: string, useThinking = false): Promise<string> {
   // 1️⃣ Kimi K2.5（首选：多模态+长上下文，免费）
   try {
@@ -226,6 +292,7 @@ export async function POST(request: NextRequest) {
     const tone = config.tone || 'professional';
     const imageSource = config.imageSource || 'pictographic';
     const numCards = config.numCards || outline.slides?.length || 10;
+    const visualMetaphor = config.visualMetaphor || '';
 
     // 构建完整的返回结果
     const result = {
@@ -243,6 +310,7 @@ export async function POST(request: NextRequest) {
         tone,
         imageSource,
         numCards,
+        visualMetaphor,
         needAiImages: config.needAiImages || false,
       },
       outline: {
@@ -256,10 +324,11 @@ export async function POST(request: NextRequest) {
           visualHint: s.visualHint || '',
         })),
       },
-      // 生成 Gamma API 需要的完整参数
+      // Gamma API 完整参数（V2：增加 cardSplit 精确分页）
       gammaPayload: {
         inputText: buildMarkdownFromOutline(outline),
-        textMode: 'preserve', // 省心模式用 preserve！
+        textMode: 'preserve',
+        cardSplit: 'inputTextBreaks',  // ✅ 精确分页控制
         format: 'presentation',
         numCards,
         themeId,
@@ -278,6 +347,8 @@ export async function POST(request: NextRequest) {
         exportAs: 'pptx',
       },
     };
+
+    console.log('[SmartOutline] scene:', analysis.scene, '| theme:', themeId, '| imageSource:', imageSource, '| slides:', outline.slides?.length);
 
     return NextResponse.json(result);
   } catch (error: any) {

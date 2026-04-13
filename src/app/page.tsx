@@ -21,7 +21,7 @@ import GenerationProgress from '@/components/GenerationProgress';
 import SkeletonCard from '@/components/SkeletonCard';
 import ThemeSelector from '@/components/ThemeSelector';
 import ScrollingBanner from '@/components/ScrollingBanner';
-import { buildMdV2 } from '@/lib/build-md-v2';
+import { buildMdV2, buildAdditionalInstructions } from '@/lib/build-md-v2';
 import { getThemeById } from '@/lib/theme-database';
 import { checkPermission, mapImgModeToSource, getPlan, PLAN_LIST } from '@/lib/membership';
 
@@ -354,17 +354,42 @@ export default function Home() {
       // 构建 Markdown + 调用 Gamma
       setGenStep(2); setGenProgress(75);
       setStepText('正在精准渲染...');
-      const { markdown: rebuiltMd } = buildMdV2(smartData.outline?.title || 'PPT', smartSlides, gammaImgSrc);
-      const gammaRequestBody = {
-        ...basePayload,
+
+      // ✅ 使用 buildMdV2 生成结构化 Markdown（Gamma 规范）
+      const { markdown: rebuiltMd, visualMetaphor } = buildMdV2(
+        smartData.outline?.title || 'PPT',
+        smartSlides,
+        gammaImgSrc
+      );
+
+      // ✅ 使用 buildAdditionalInstructions 生成精细化指令（替代 smart-outline 简化版）
+      const smartTone = smartData.config?.tone || 'professional';
+      const smartScene = smartData.analysis?.scene || 'biz';
+      const finalInstructions = buildAdditionalInstructions(smartTone, smartScene, gammaImgSrc, visualMetaphor);
+
+      // 构建 Gamma payload（V2：使用 buildMdV2 + buildAdditionalInstructions，不依赖 smart-outline 的简化版）
+      const gammaRequestBody: Record<string, any> = {
         inputText: rebuiltMd,
-        numCards: smartSlides.length,
         textMode: 'preserve',
+        cardSplit: 'inputTextBreaks',  // ✅ 精确分页控制
         format: 'presentation',
+        numCards: smartSlides.length,
+        themeId: smartData.config?.themeId || basePayload.themeId || 'consultant',
+        additionalInstructions: finalInstructions,
+        textOptions: { amount: 'medium', tone: smartTone, language: 'zh-cn' },
+        imageOptions: { source: gammaImgSrc },
+        cardOptions: { dimensions: '16x9' },
         exportAs: 'pptx',
-        imageOptions: { ...(basePayload.imageOptions || {}), source: gammaImgSrc },
       };
-      const gRes = await fetch('/api/gamma', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(gammaRequestBody) });
+
+      // ✅ 失败自动降级：pictographic → noImages
+      let gRes = await fetch('/api/gamma', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(gammaRequestBody) });
+      if (!gRes.ok && gammaImgSrc !== 'noImages') {
+        console.warn('[SmartMode] Gamma 400, fallback to noImages');
+        setStepText('切换渲染模式...');
+        gammaRequestBody.imageOptions = { source: 'noImages' };
+        gRes = await fetch('/api/gamma', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(gammaRequestBody) });
+      }
       if (!gRes.ok) { const d = await gRes.json(); throw new Error(d.error || `生成失败(${gRes.status})`); }
       const gd = await gRes.json();
 

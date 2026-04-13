@@ -267,6 +267,7 @@ export async function POST(request: NextRequest) {
       additionalInstructions,
       imageOptions,
       cardOptions,
+      cardSplit,
       textOptions,
     } = body;
 
@@ -365,6 +366,8 @@ export async function POST(request: NextRequest) {
       exportAs,
       themeId: finalThemeId,
       additionalInstructions: finalAdditionalInstructions,
+      // 如果传入 cardSplit（省心模式精确分页），使用它
+      ...(cardSplit ? { cardSplit } : {}),
       // 如果已传入 textOptions（省心模式），直接使用
       textOptions: textOptions || {
         amount: 'medium',
