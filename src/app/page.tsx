@@ -42,7 +42,7 @@ export default function Home() {
   const [mode, setMode] = useState<'direct' | 'smart'>('direct');
   const [directTheme, setDirectTheme] = useState('default-light');
   const [directTone, setDirectTone] = useState('professional');
-  const [directImgMode, setDirectImgMode] = useState('none');
+  const [directImgMode, setDirectImgMode] = useState('theme-img');
   const [directTextMode, setDirectTextMode] = useState<'generate' | 'condense' | 'preserve'>('generate');
 
   // Landing page vs generate flow
@@ -58,7 +58,7 @@ export default function Home() {
   const [genMode, setGenMode] = useState('generate');
   const [theme, setTheme] = useState('auto');
   const [tone, setTone] = useState('professional');
-  const [imgMode, setImgMode] = useState('none');
+  const [imgMode, setImgMode] = useState('theme-img');
   const [pages, setPages] = useState(8);
 
   // Generation state
