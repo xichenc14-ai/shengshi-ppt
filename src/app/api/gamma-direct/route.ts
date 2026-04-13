@@ -202,7 +202,7 @@ export async function POST(request: NextRequest) {
       numCards,
       exportAs,
       themeId: finalThemeId,
-      additionalInstructions: finalInstructions,
+      additionalInstructions: finalInstructions + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji(如✅❌📊📈💡🎯⭐🔑🚀💼📧📞📍📌🔍✨⚡🔥💎🏆🔧📋📌)代替web SVG图标。不要使用任何需要在线加载的图标或外部图片URL，确保PPTX下载后所有视觉元素完整显示。',
       textOptions: { amount: 'medium', tone, language: 'zh-cn' },
       imageOptions,
       cardOptions: {

@@ -346,7 +346,7 @@ export async function POST(request: NextRequest) {
     const finalInstructions = additionalInstructions || (instructions + metaphorAppend);
 
     // 构建最终的 additionalInstructions（根据模式追加不同指令）
-    let finalAdditionalInstructions = finalInstructions;
+    let finalAdditionalInstructions = finalInstructions + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji(如✅❌📊📈💡🎯⭐🔑🚀💼📧📞📍📌🔍✨⚡🔥💎🏆🔧📋📌)代替web SVG图标。不要使用任何需要在线加载的图标或外部图片URL，确保PPTX下载后所有视觉元素完整显示。';
     if (textMode === 'preserve') {
       finalAdditionalInstructions += '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。';
       if (imageMode === 'theme-img' || imageMode === 'theme') {
