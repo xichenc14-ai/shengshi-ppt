@@ -364,11 +364,12 @@ export async function POST(req: NextRequest) {
       const { userId, numPages = 10, imageSource = 'noImages', imageModel, estimatedImages = 0 } = body;
       if (!userId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
-      const BASE_CREDIT_PER_PAGE = 1;
+      const BASE_CREDIT_PER_PAGE = 2;
       let totalCredit = numPages * BASE_CREDIT_PER_PAGE;
 
       let imageCreditsPerImage = 0;
       if (imageSource === 'aiGenerated') {
+        // 高级模型20积分/图，普通AI模型2积分/图
         const HIGH_END_MODELS = ['flux-kontext-pro', 'imagen-4-pro', 'ideogram-v3', 'dall-e-3', 'gpt-image-1-high'];
         if (imageModel && HIGH_END_MODELS.includes(imageModel)) {
           imageCreditsPerImage = 20;
@@ -377,7 +378,8 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const estimatedImageCount = estimatedImages > 0 ? estimatedImages : Math.ceil(numPages / 2.5);
+      // 预估图片数：向上取整，确保扣多不扣少
+      const estimatedImageCount = estimatedImages > 0 ? estimatedImages : Math.ceil(numPages / 2);
       totalCredit += estimatedImageCount * imageCreditsPerImage;
 
       if (body.estimate) {
