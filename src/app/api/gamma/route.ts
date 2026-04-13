@@ -288,9 +288,9 @@ export async function POST(request: NextRequest) {
       finalImageOptions = imageOptions;
     } else if (imageMode === 'none') {
       finalImageOptions = { source: 'noImages' };
-    } else if (imageMode === 'theme') {
-      // 免费套图：使用主题自带的强调布局图（Gamma内置，免费）
-      finalImageOptions = { source: 'pictographic' };
+    } else if (imageMode === 'theme-img' || imageMode === 'theme') {
+      // 主题套图：使用Gamma主题内置的强调布局图（免费商用图库）
+      finalImageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageMode === 'web') {
       finalImageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageMode === 'ai') {
@@ -336,7 +336,7 @@ export async function POST(request: NextRequest) {
         additionalInstructions: finalInstructions + '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。'
       }),
       // 免费套图(主题强调布局图):追加Gamma内置强调布局图指令
-      ...(imageMode === 'theme' && {
+      ...((imageMode === 'theme-img' || imageMode === 'theme') && {
         additionalInstructions: finalInstructions + '\n\n【免费套图-主题强调布局图】\n请为每一页自动配Gamma内置的强调布局图(Emphasize布局),这些是Gamma模板自带的免费装饰性图片,不需要额外credits。每页使用不同的强调图,保持视觉丰富度。'
       }),
     };

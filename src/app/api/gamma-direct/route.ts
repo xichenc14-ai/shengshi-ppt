@@ -74,9 +74,9 @@ export async function POST(request: NextRequest) {
     let imageOptions: Record<string, any> = {};
     if (imageSource === 'none' || imageSource === 'noImages') {
       imageOptions = { source: 'noImages' }; // 纯文字
-    } else if (imageSource === 'theme' || imageSource === 'pictographic') {
-      // 免费套图:主题自带的强调布局图(免费)
-      imageOptions = { source: 'pictographic' };
+    } else if (imageSource === 'theme' || imageSource === 'theme-img' || imageSource === 'pictographic') {
+      // 主题套图:使用Gamma主题内置强调布局图(免费商用图)
+      imageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageSource === 'web') {
       imageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageSource === 'ai' || imageSource === 'aiGenerated') {
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
       ? `\n\n【全局视觉隐喻】\n贯穿全演示的统一意象:${visualMetaphor}。\n所有配图、图标、色块风格应与此意象一致,配图描述中必须体现该意象关键词。`
       : '';
     // 免费套图:追加强调布局图指令
-    const themeAppend = imageSource === 'theme'
+    const themeAppend = (imageSource === 'theme' || imageSource === 'theme-img')
       ? `\n\n【免费套图-主题强调布局图】\n请为每一页自动配Gamma内置的强调布局图(Emphasize布局),这些是Gamma模板自带的免费装饰性图片,不需要额外credits。每页使用不同的强调图,保持视觉丰富度。`
       : '';
     const finalInstructions = instructions + metaphorAppend + themeAppend;

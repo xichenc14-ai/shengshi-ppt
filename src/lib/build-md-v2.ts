@@ -560,6 +560,7 @@ export function buildAdditionalInstructions(
       break;
     case 'webFreeToUseCommercially':
     case 'pexels':
+    case 'theme-img':
       imageRules = `
 【配图规则】
 - 封面页配高质量照片

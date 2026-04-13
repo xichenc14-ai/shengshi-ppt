@@ -34,7 +34,7 @@ const TONES = [
 
 const IMG_MODES = [
   { id: 'none', label: '纯净无图', desc: '纯文字+图标', icon: '📝', credits: '0' },
-  { id: 'theme', label: '精选套图', desc: 'Gamma内置插图', icon: '🖼️', credits: '0' },
+  { id: 'theme-img', label: '主题套图', desc: '主题配套强调图', icon: '🖼️', credits: '0' },
   { id: 'web', label: '定制网图', desc: '商用免费图', icon: '🌐', credits: '0' },
   { id: 'ai', label: 'AI定制图', desc: '人工智能生成', icon: '✨', credits: '2/张' },
 ];

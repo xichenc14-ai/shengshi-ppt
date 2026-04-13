@@ -385,7 +385,7 @@ export default function Home() {
 
     // 🔐 会员权限检查
     const userPlan = getPlan(user.plan_type || 'free');
-    const imageSource = imgMode === 'none' ? 'noImages' : imgMode === 'ai' ? 'aiGenerated' : imgMode === 'ai-pro' ? 'aiGenerated' : imgMode === 'web' ? 'webFreeToUseCommercially' : 'pictographic';
+    const imageSource = imgMode === 'none' ? 'noImages' : imgMode === 'ai' ? 'aiGenerated' : imgMode === 'ai-pro' ? 'aiGenerated' : imgMode === 'web' ? 'webFreeToUseCommercially' : imgMode === 'theme-img' ? 'webFreeToUseCommercially' : 'pictographic';
     const numPages = Math.min(editedSlides.length, userPlan.maxPages);
     const perm = checkPermission(user.plan_type || 'free', {
       numPages,
@@ -422,7 +422,7 @@ export default function Home() {
       const deductRes = await fetch('/api/user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: editedSlides.length, imageSource: imgMode === 'none' ? 'noImages' : imgMode === 'ai' ? 'aiGenerated' : imgMode === 'web' ? 'webFreeToUseCommercially' : 'pictographic' }),
+        body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: editedSlides.length, imageSource: imgMode === 'none' ? 'noImages' : imgMode === 'ai' ? 'aiGenerated' : imgMode === 'web' ? 'webFreeToUseCommercially' : imgMode === 'theme-img' ? 'webFreeToUseCommercially' : 'pictographic' }),
       });
       const deductData = await deductRes.json();
       if (!deductRes.ok || deductData.error) {
@@ -910,8 +910,8 @@ export default function Home() {
                             className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
                           >
                             <option value="none">📝 纯净无图</option>
-                            <option value="theme">🎨 免费套图</option>
-                            <option value="web">🌐 精选网图</option>
+                            <option value="theme-img">🖼️ 主题套图</option>
+                            <option value="web">🌐 定制网图</option>
                             <option value="ai">{getPlan(user?.plan_type || 'free').allowedAiModels.length > 0 ? '🤖 AI定制图' : '🤖 AI定制图 👑标准'}</option>
                             <option value="ai-pro">{getPlan(user?.plan_type || 'free').allowedAiModels.includes('imagen-3-pro') ? '✨ AI尊享图' : '✨ AI尊享图 🏆高级'}</option>
                           </select>
