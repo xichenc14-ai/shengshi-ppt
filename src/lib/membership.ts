@@ -38,7 +38,7 @@ const PLANS: Record<string, MembershipPlan> = {
     maxPages: 15,
     priceMonthly: 9.9,
     priceAnnual: 99,
-    allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially'],
+    allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent'],
     allowedAiModels: [],
     smartMode: true,
   },
@@ -50,7 +50,7 @@ const PLANS: Record<string, MembershipPlan> = {
     maxPages: 20,
     priceMonthly: 29.9,
     priceAnnual: 299,
-    allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially'],
+    allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent'],
     allowedAiModels: ['imagen-3-flash'], // AI普通图(2积分/图)
     smartMode: true,
   },

@@ -385,7 +385,7 @@ export default function Home() {
 
     // 🔐 会员权限检查
     const userPlan = getPlan(user.plan_type || 'free');
-    const imageSource = imgMode === 'none' ? 'noImages' : imgMode === 'ai' ? 'aiGenerated' : imgMode === 'ai-pro' ? 'aiGenerated' : imgMode === 'web' ? 'webFreeToUseCommercially' : imgMode === 'theme-img' ? 'webFreeToUseCommercially' : 'pictographic';
+    const imageSource = imgMode === 'none' ? 'noImages' : imgMode === 'ai' ? 'aiGenerated' : imgMode === 'ai-pro' ? 'aiGenerated' : imgMode === 'web' ? 'webFreeToUseCommercially' : imgMode === 'theme-img' ? 'themeAccent' : 'pictographic';
     const numPages = Math.min(editedSlides.length, userPlan.maxPages);
     const perm = checkPermission(user.plan_type || 'free', {
       numPages,
