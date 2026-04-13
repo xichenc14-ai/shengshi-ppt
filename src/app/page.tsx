@@ -1000,34 +1000,128 @@ export default function Home() {
                   ))}
                   <button onClick={addSlide} className="w-full py-2.5 border border-dashed border-gray-200 rounded-xl text-xs text-gray-400 hover:text-[#5B4FE9] hover:border-[#5B4FE9] transition-colors">+ 添加幻灯片</button>
 
-                  {/* 省心模式AI参数摘要 */}
-                  {mode === 'smart' && smartGammaPayload && (
-                    <div className="mt-4 bg-gradient-to-br from-[#F5F3FF] to-[#EDE9FE] rounded-xl p-4 border border-purple-100">
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="text-sm">🤖</span>
-                        <span className="text-xs font-semibold text-[#5B4FE9]">AI 已为你定制最优参数</span>
+                  {/* 省心模式AI参数摘要 - 可编辑版 */}
+                  {mode === 'smart' && smartGammaPayload && (() => {
+                    // 读取当前 smartGammaPayload 里的参数
+                    const currentThemeId = smartGammaPayload.themeId || 'consultant';
+                    const currentTone = smartGammaPayload.tone || 'professional';
+                    const currentImgSrc = smartGammaPayload.imageOptions?.source || 'pictographic';
+                    const currentTheme = getThemeById(currentThemeId);
+
+                    return (
+                      <div className="mt-4 bg-gradient-to-br from-[#F5F3FF] to-[#EDE9FE] rounded-xl p-4 border border-purple-100">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-sm">🤖</span>
+                          <span className="text-xs font-semibold text-[#5B4FE9]">AI 已为你定制最优参数</span>
+                          <span className="text-[10px] text-gray-400">（可自行调整）</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {/* 主题 - 可点击弹出选择器 */}
+                          <div
+                            className="bg-white/70 rounded-lg px-3 py-2 cursor-pointer hover:bg-white transition-colors"
+                            onClick={() => {
+                              // 弹出简化的主题选择面板
+                              const themeOptions = Object.entries({
+                                'consultant': { name: '商务蓝', colors: ['#1E40AF', '#3B82F6', '#93C5FD'] },
+                                'founder': { name: '路演紫', colors: ['#5B4FE9', '#8B5CF6', '#C4B5FD'] },
+                                'icebreaker': { name: '培训青', colors: ['#0D9488', '#14B8A6', '#5EEAD4'] },
+                                'aurora': { name: '科技蓝紫', colors: ['#6366F1', '#8B5CF6', '#A78BFA'] },
+                                'electric': { name: '活力橙', colors: ['#EA580C', '#F97316', '#FDBA74'] },
+                                'blues': { name: '高级金蓝', colors: ['#1E3A5F', '#C9A96E', '#F5E6CC'] },
+                                'chisel': { name: '大地棕', colors: ['#78350F', '#A16207', '#FDE68A'] },
+                                'ashrose': { name: '玫瑰粉', colors: ['#BE185D', '#EC4899', '#F9A8D4'] },
+                                'gleam': { name: '科技青', colors: ['#0F766E', '#14B8A6', '#99F6E4'] },
+                                'default-light': { name: '极简白', colors: ['#F1F5F9', '#CBD5E1', '#64748B'] },
+                              });
+                              const selected = window.confirm(
+                                '当前主题: ' + (currentTheme?.name || currentThemeId) + '\n\n可选主题:\n' +
+                                themeOptions.map(([id, t]) => (id === currentThemeId ? '✅ ' : '○ ') + t.name).join('\n') +
+                                '\n\n确定要切换主题吗？'
+                              );
+                              if (selected) {
+                                const choice = window.prompt(
+                                  '请输入主题ID:\n' + themeOptions.map(([id, t]) => id + ': ' + t.name).join('\n'),
+                                  currentThemeId
+                                );
+                                if (choice && choice !== currentThemeId) {
+                                  setSmartGammaPayload((prev: any) => prev ? {
+                                    ...prev,
+                                    themeId: choice,
+                                    gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, themeId: choice } : undefined,
+                                  } : prev);
+                                }
+                              }
+                            }}
+                            title="点击切换主题"
+                          >
+                            <p className="text-[10px] text-gray-400 mb-1">🎨 主题</p>
+                            <div className="flex items-center gap-1.5">
+                              {(currentTheme?.colors || ['#6366F1', '#8B5CF6', '#A78BFA']).slice(0, 3).map((c, i) => (
+                                <span key={i} className="w-2.5 h-2.5 rounded-full border border-gray-200" style={{ backgroundColor: c }} />
+                              ))}
+                              <p className="text-xs font-medium text-gray-700 ml-1">{currentTheme?.name || currentThemeId}</p>
+                            </div>
+                          </div>
+                          {/* 语气 - 分段可切换 */}
+                          <div className="bg-white/70 rounded-lg px-3 py-2">
+                            <p className="text-[10px] text-gray-400 mb-1">🎭 语气</p>
+                            <div className="flex flex-wrap gap-1">
+                              {(['professional','casual','creative','bold','traditional'] as const).map(t => (
+                                <button
+                                  key={t}
+                                  onClick={() => {
+                                    setSmartGammaPayload((prev: any) => prev ? {
+                                      ...prev,
+                                      tone: t,
+                                      gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, tone: t, textOptions: { ...prev.gammaPayload.textOptions, tone: t } } : undefined,
+                                    } : prev);
+                                  }}
+                                  className={`px-1.5 py-0.5 rounded-md text-[9px] font-medium transition-all ${
+                                    currentTone === t
+                                      ? 'bg-[#5B4FE9] text-white'
+                                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                  }`}
+                                >
+                                  {{ professional:'专业', casual:'轻松', creative:'创意', bold:'大胆', traditional:'传统' }[t]}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          {/* 配图 - 分段可切换 */}
+                          <div className="bg-white/70 rounded-lg px-3 py-2">
+                            <p className="text-[10px] text-gray-400 mb-1">🖼️ 配图</p>
+                            <div className="flex flex-wrap gap-1">
+                              {(['noImages','pictographic','webFreeToUseCommercially','aiGenerated'] as const).map(src => (
+                                <button
+                                  key={src}
+                                  onClick={() => {
+                                    setSmartGammaPayload((prev: any) => prev ? {
+                                      ...prev,
+                                      imageOptions: { ...prev.imageOptions, source: src },
+                                      gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, imageOptions: { ...prev.gammaPayload.imageOptions, source: src === 'pictographic' ? 'webFreeToUseCommercially' : src } } : undefined,
+                                    } : prev);
+                                  }}
+                                  className={`px-1.5 py-0.5 rounded-md text-[9px] font-medium transition-all ${
+                                    currentImgSrc === src
+                                      ? 'bg-[#5B4FE9] text-white'
+                                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                  }`}
+                                >
+                                  {{ noImages:'无图', pictographic:'套图', webFreeToUseCommercially:'网图', aiGenerated:'AI图' }[src]}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          {/* 页数 - 只读 */}
+                          <div className="bg-white/70 rounded-lg px-3 py-2">
+                            <p className="text-[10px] text-gray-400 mb-0.5">📄 页数</p>
+                            <p className="text-xs font-medium text-gray-700">{editedSlides.length} 页</p>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-purple-400 mt-2">✨ 点击主题/语气/配图可直接修改 · 对话修改大纲功能（预留）</p>
                       </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-white/70 rounded-lg px-3 py-2">
-                          <p className="text-[10px] text-gray-400 mb-0.5">🎨 主题</p>
-                          <p className="text-xs font-medium text-gray-700">{(() => { const t = getThemeById(smartGammaPayload.themeId); return t ? t.name : smartGammaPayload.themeId; })()}</p>
-                        </div>
-                        <div className="bg-white/70 rounded-lg px-3 py-2">
-                          <p className="text-[10px] text-gray-400 mb-0.5">🎭 语气</p>
-                          <p className="text-xs font-medium text-gray-700">{({'professional':'专业','casual':'轻松','creative':'创意','bold':'大胆','traditional':'传统'} as Record<string,string>)[smartGammaPayload.tone] || smartGammaPayload.tone}</p>
-                        </div>
-                        <div className="bg-white/70 rounded-lg px-3 py-2">
-                          <p className="text-[10px] text-gray-400 mb-0.5">🖼️ 配图</p>
-                          <p className="text-xs font-medium text-gray-700">{({'noImages':'纯净无图','pictographic':'精选套图','webFreeToUseCommercially':'定制网图','aiGenerated':'定制AI图'} as Record<string,string>)[smartGammaPayload.imageOptions?.source] || smartGammaPayload.imageOptions?.source}</p>
-                        </div>
-                        <div className="bg-white/70 rounded-lg px-3 py-2">
-                          <p className="text-[10px] text-gray-400 mb-0.5">📄 页数</p>
-                          <p className="text-xs font-medium text-gray-700">{editedSlides.length} 页</p>
-                        </div>
-                      </div>
-                      <p className="text-[10px] text-purple-400 mt-2">✨ 省心模式会自动为你选择最佳参数，直接确认即可生成</p>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Inline generate button for outline phase */}
                   {!loading && (
