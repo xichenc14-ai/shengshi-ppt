@@ -378,6 +378,7 @@ export async function POST(request: NextRequest) {
 
     // 🔍 DEBUG: log key fields
     console.log('[Gamma] textMode:', textMode, '| imageOptions:', JSON.stringify(finalImageOptions), '| imageMode:', imageMode, '| finalInstructions len:', finalInstructions.length);
+    console.log('[Gamma] FULL PAYLOAD:', JSON.stringify(gammaPayload).substring(0, 2000));
 
     // 创建 Gamma 生成任务
     const gammaResponse = await fetch(`${GAMMA_API_BASE}/generations`, {
