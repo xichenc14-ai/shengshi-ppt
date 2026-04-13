@@ -165,8 +165,9 @@ export async function POST(request: NextRequest) {
     if (imageSource === 'none' || imageSource === 'noImages') {
       imageOptions = { source: 'noImages' }; // 纯文字
     } else if (imageSource === 'theme' || imageSource === 'theme-img') {
-      // 主题套图:使用Pexels高质量照片（0 credits，Gamma主题配套的最佳图片源）
-      imageOptions = { source: 'pexels' };
+      // 主题套图:使用Gamma主题内置的Emphasize卡片布局（主题自带装饰图）
+      // 不设置imageOptions.source，让Gamma自动应用主题内置的强调布局图
+      imageOptions = {};
     } else if (imageSource === 'pictographic') {
       // 插图模式:使用pictographic图标/插图库
       imageOptions = { source: 'pictographic' };

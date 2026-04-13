@@ -274,7 +274,6 @@ export async function POST(request: NextRequest) {
         },
         cardOptions: {
           dimensions: '16x9',
-          cardSplit: 'inputTextBreaks', // 精确分页控制
         },
         exportAs: 'pptx',
       },
