@@ -870,7 +870,7 @@ export default function Home() {
                                   ? userPlan.allowedAiModels.includes('imagen-3-pro')
                                   : userPlan.allowedAiModels.length > 0;
                                 if (!hasPermission) {
-                                  const reqPlan = needPro ? 'vip' : 'pro';
+                                  const reqPlan = needPro ? 'pro' : 'standard';
                                   const planInfo = getPlan(reqPlan);
                                   openPayment({
                                     id: reqPlan,
@@ -889,8 +889,8 @@ export default function Home() {
                             <option value="none">纯净无图</option>
                             <option value="theme">免费套图</option>
                             <option value="web">精选网图</option>
-                            <option value="ai">AI定制图</option>
-                            <option value="ai-pro">AI尊享图</option>
+                            <option value="ai">{getPlan(user?.plan_type || 'free').allowedAiModels.length > 0 ? 'AI定制图 (2积分/图)' : '🔒 AI定制图 · 标准会员'}</option>
+                            <option value="ai-pro">{getPlan(user?.plan_type || 'free').allowedAiModels.includes('imagen-3-pro') ? 'AI尊享图 (10积分/图)' : '🔒 AI尊享图 · 高级会员'}</option>
                           </select>
                         </div>
                         <div>
