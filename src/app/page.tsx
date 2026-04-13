@@ -713,7 +713,7 @@ export default function Home() {
       {/* ===== GENERATE FLOW ===== */}
       {(phase === 'input' || phase === 'outline') && (
         <div className="flex-1 bg-white min-h-screen">
-          <div className="max-w-3xl mx-auto px-4 md:px-6 pt-8 pb-24">
+          <div className="max-w-3xl mx-auto px-4 md:px-6 pt-4 pb-24">
 
             {phase === 'input' && (
               <>
@@ -1130,7 +1130,7 @@ export default function Home() {
       {/* ===== STREAMING OUTLINE ===== */}
       {phase === 'streaming' && (
         <div className="flex-1">
-          <div className="max-w-3xl mx-auto px-4 md:px-6 pt-8 pb-24">
+          <div className="max-w-3xl mx-auto px-4 md:px-6 pt-4 pb-24">
             <button onClick={() => { setPhase('input'); setLoading(false); }} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 mb-6 transition-colors">← 取消</button>
 
             <div className="mb-4">
