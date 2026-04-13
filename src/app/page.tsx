@@ -776,14 +776,31 @@ export default function Home() {
                       🛠️ 专业模式
                     </button>
                     <button
-                      onClick={() => setMode('smart')}
+                      onClick={() => {
+                        const userPlan = getPlan(user?.plan_type || 'free');
+                        if (!userPlan.smartMode) {
+                          const planInfo = getPlan('basic');
+                          openPayment({
+                            id: planInfo.id,
+                            name: `${planInfo.name} · ${planInfo.emoji}`,
+                            price: `¥${planInfo.priceMonthly}/月`,
+                            billing: 'monthly',
+                            reason: `省心定制为${planInfo.name}专享，开通后即可使用`,
+                          });
+                          return;
+                        }
+                        setMode('smart');
+                      }}
                       className={`flex-1 py-2.5 rounded-xl border text-center transition-all text-sm font-medium ${
                         mode === 'smart'
                           ? 'border-[#5B4FE9] bg-[#F5F3FF] text-[#4338CA] shadow-sm'
-                          : 'border-gray-200 text-gray-400 hover:border-gray-300'
+                          : getPlan(user?.plan_type || 'free').smartMode
+                            ? 'border-gray-200 text-gray-500 hover:border-gray-300'
+                            : 'border-gray-100 text-gray-300 hover:border-gray-200 bg-gray-50/50'
                       }`}
                     >
                       ✨ 省心定制
+                      {!getPlan(user?.plan_type || 'free').smartMode && <span className="ml-1 text-[10px] opacity-70">💎基础</span>}
                     </button>
                   </div>
 
@@ -856,42 +873,53 @@ export default function Home() {
                             })}
                           </select>
                         </div>
-                        <div>
-                          <label className="text-xs text-gray-500 mb-1 block">配图风格</label>
-                          <select
-                            value={directImgMode}
-                            onChange={e => {
-                              const val = e.target.value;
-                              // AI定制图及以上需要会员
-                              if (val === 'ai' || val === 'ai-pro') {
-                                const userPlan = getPlan(user?.plan_type || 'free');
-                                const needPro = val === 'ai-pro';
-                                const hasPermission = needPro
-                                  ? userPlan.allowedAiModels.includes('imagen-3-pro')
-                                  : userPlan.allowedAiModels.length > 0;
-                                if (!hasPermission) {
-                                  const reqPlan = needPro ? 'pro' : 'standard';
-                                  const planInfo = getPlan(reqPlan);
-                                  openPayment({
-                                    id: reqPlan,
-                                    name: `${planInfo.name} · ${planInfo.emoji}`,
-                                    price: `¥${planInfo.priceMonthly}/月`,
-                                    billing: 'monthly',
-                                    reason: `${needPro ? 'AI尊享图' : 'AI定制图'}为${planInfo.name}专属`,
-                                  });
-                                  return;
-                                }
-                              }
-                              setDirectImgMode(val);
-                            }}
-                            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
-                          >
-                            <option value="none">纯净无图</option>
-                            <option value="theme">免费套图</option>
-                            <option value="web">精选网图</option>
-                            <option value="ai">{getPlan(user?.plan_type || 'free').allowedAiModels.length > 0 ? 'AI定制图 (2积分/图)' : '🔒 AI定制图 · 标准会员'}</option>
-                            <option value="ai-pro">{getPlan(user?.plan_type || 'free').allowedAiModels.includes('imagen-3-pro') ? 'AI尊享图 (10积分/图)' : '🔒 AI尊享图 · 高级会员'}</option>
-                          </select>
+                        <div className="col-span-3">
+                          <label className="text-xs text-gray-500 mb-2 block">配图风格</label>
+                          <div className="grid grid-cols-5 gap-2">
+                            {[
+                              { value: 'none', icon: '📝', label: '纯净无图', req: null },
+                              { value: 'theme', icon: '🎨', label: '免费套图', req: null },
+                              { value: 'web', icon: '🌐', label: '精选网图', req: 'basic' as const },
+                              { value: 'ai', icon: '🤖', label: 'AI定制图', req: 'standard' as const, badge: '2积分/图' },
+                              { value: 'ai-pro', icon: '✨', label: 'AI尊享图', req: 'pro' as const, badge: '10积分/图' },
+                            ].map(opt => {
+                              const userPlan = getPlan(user?.plan_type || 'free');
+                              const locked = opt.req && userPlan.id !== 'free' && !PLAN_LIST.slice(PLAN_LIST.findIndex(p => p.id === (opt.req || 'free'))).some(p => p.id === userPlan.id);
+                              const hasAccess = !opt.req || (opt.req === 'basic' ? ['basic','standard','pro'].includes(userPlan.id) : opt.req === 'standard' ? ['standard','pro'].includes(userPlan.id) : userPlan.id === 'pro');
+                              const isSelected = directImgMode === opt.value;
+                              return (
+                                <button
+                                  key={opt.value}
+                                  onClick={() => {
+                                    if (!hasAccess) {
+                                      const planInfo = getPlan(opt.req!);
+                                      openPayment({
+                                        id: planInfo.id,
+                                        name: `${planInfo.name} · ${planInfo.emoji}`,
+                                        price: `¥${planInfo.priceMonthly}/月`,
+                                        billing: 'monthly',
+                                        reason: `${opt.label}为${planInfo.name}专享，开通后即可使用`,
+                                      });
+                                      return;
+                                    }
+                                    setDirectImgMode(opt.value);
+                                  }}
+                                  className={`py-2 px-1 rounded-xl border text-center transition-all cursor-pointer ${
+                                    isSelected
+                                      ? 'border-[#5B4FE9] bg-[#F5F3FF] shadow-sm'
+                                      : hasAccess
+                                        ? 'border-gray-100 hover:border-gray-200 bg-white'
+                                        : 'border-gray-50 bg-gray-50/80 cursor-pointer'
+                                  }`}
+                                >
+                                  <div className={`text-xs ${isSelected ? 'font-bold text-[#4338CA]' : hasAccess ? 'font-semibold text-gray-600' : 'font-semibold text-gray-300'}`}>{opt.icon}</div>
+                                  <div className={`text-[10px] mt-0.5 leading-tight ${isSelected ? 'font-semibold text-[#4338CA]' : hasAccess ? 'text-gray-500' : 'text-gray-300'}`}>{opt.label}</div>
+                                  {opt.badge && <div className={`text-[8px] mt-0.5 ${isSelected ? 'text-[#7C6FE0]' : hasAccess ? 'text-gray-400' : 'text-gray-300'}`}>{opt.badge}</div>}
+                                  {!hasAccess && <div className="text-[8px] mt-0.5 text-gray-300">{getPlan(opt.req!).emoji}专享</div>}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                         <div>
                           <label className="text-xs text-gray-500 mb-1 block">语气风格</label>
