@@ -64,27 +64,38 @@ export async function GET(req: NextRequest) {
     if (token !== devToken && !isDevCleanupAllowed(req)) {
       return NextResponse.json({ error: '无权限' }, { status: 403 });
     }
-    const phone = searchParams.get('phone') || '13800138000';
-    const password = searchParams.get('password') || 'test123456';
+    const phone = searchParams.get('phone') || '13800138001';
+    const password = searchParams.get('password') || '123456';
+    const planType = searchParams.get('plan') || 'vip';
+    const nickname = searchParams.get('nickname') || (phone === '13800138001' ? 'xichen' : '测试用户');
     const pwdHash = createHash('sha256').update(password).digest('hex');
     const sb = getSupabase();
     if (!sb) return NextResponse.json({ error: '数据库未配置' }, { status: 500 });
 
-    // Upsert user
-    const isXichen = !phone || phone === 'xichen';
-    const { error: upsertErr } = await sb.from('users').upsert({
-      phone: isXichen ? '13800138001' : phone,
-      nickname: isXichen ? 'xichen' : ('测试用户' + phone?.slice(-4)),
-      password_hash: pwdHash,
-      credits: 99999,
-      plan_type: 'pro',
-      is_active: true,
-    }, { ignoreDuplicates: false });
-
-    if (upsertErr) {
-      return NextResponse.json({ error: '创建失败: ' + upsertErr.message }, { status: 500 });
+    // 查找现有用户
+    const { data: existing } = await sb.from('users').select('id').eq('phone', phone).limit(1);
+    if (existing && existing.length > 0) {
+      // 更新现有用户
+      const updateData: any = { credits: 99999, plan_type: planType, is_active: true };
+      const { error: updateErr } = await sb.from('users').update(updateData).eq('id', existing[0].id);
+      if (updateErr) {
+        return NextResponse.json({ error: '更新失败: ' + updateErr.message }, { status: 500 });
+      }
+      // 尝试设置密码（如果列存在）
+      try {
+        await sb.from('users').update({ password_hash: pwdHash }).eq('id', existing[0].id);
+      } catch (e: any) {
+        console.warn('[create_test_user] password_hash列不存在，跳过');
+      }
+    } else {
+      // 创建新用户
+      const insertData: any = { phone, nickname, credits: 99999, plan_type: planType, is_active: true };
+      const { error: insErr } = await sb.from('users').insert(insertData);
+      if (insErr) {
+        return NextResponse.json({ error: '创建失败: ' + insErr.message }, { status: 500 });
+      }
     }
-    return NextResponse.json({ success: true, phone, password, plan_type: 'pro', credits: 99999 });
+    return NextResponse.json({ success: true, phone, password, plan_type: planType, credits: 99999 });
   }
 
   // ===== 检查手机号是否已注册 =====
