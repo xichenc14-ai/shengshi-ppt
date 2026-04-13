@@ -50,23 +50,39 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
   const handleNext = useCallback(async () => {
     if (!plan) return;
     setStep('confirm');
-    // 后台创建订单
-    fetch('/api/payment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ planId: plan.id, payMethod, billing: plan.billing || 'monthly', userId: user?.id }),
-    }).then(res => res.json()).then(data => {
-      if (data.error) {
-        setStep('select');
-        alert(data.error);
-      }
-    }).catch(() => {});
-  }, [plan, payMethod]);
+    // 人工确认模式：直接显示收款码，不创建订单
+  }, [plan]);
 
   const handleClose = useCallback(() => {
     setStep('select');
     onClose();
   }, [onClose]);
+
+  const handlePaymentConfirm = useCallback(async () => {
+    if (!plan || !user) {
+      handleClose();
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await fetch('/api/payment-notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          userName: user.nickname || user.phone,
+          planId: plan.id,
+          planName: plan.name,
+          price: plan.price,
+          billing: plan.billing || 'monthly',
+          payMethod,
+        }),
+      });
+    } catch (e) {
+      // 忽略错误，继续关闭
+    }
+    handleClose();
+  }, [plan, user, payMethod, handleClose]);
 
   // ESC key
   React.useEffect(() => {
@@ -245,10 +261,11 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
 
             {/* 已完成支付按钮 */}
             <button
-              onClick={handleClose}
-              className="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-2xl text-sm font-bold hover:shadow-lg hover:shadow-green-200/40 transition-all active:scale-[0.98]"
+              onClick={handlePaymentConfirm}
+              disabled={submitting}
+              className="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-2xl text-sm font-bold hover:shadow-lg hover:shadow-green-200/40 transition-all active:scale-[0.98] disabled:opacity-40"
             >
-              已完成支付 ✅
+              {submitting ? '提交中...' : '已完成支付 ✅'}
             </button>
 
             <p className="text-center text-[10px] text-gray-300 mt-3">
