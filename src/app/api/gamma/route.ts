@@ -63,13 +63,13 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 禁止出现没有任何图标的页面(即使是纯文字页也必须加装饰性图标)
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
-【配图规则】(精选网图=webFreeToUseCommercially)
-- 封面页和结尾页必须配高质量网图
-- 内容页每页至少配1张相关网图,确保图文结合
-- 网图来源:仅使用免版权可商用图片(Unsplash/Pexels/自有版权图)
-- 配图风格(必须包含):Minimalist, clean background, negative space, professional, high quality
+【配图规则】(主题套图=Pexels,精选网图=webFreeToUseCommercially)
+- 主题套图:使用Pexels高质量照片(专业摄影师,0 credits)
+- 精选网图:使用webFreeToUseCommercially(免版权商用图搜索)
+- 封面页和结尾页必须配高质量照片/网图
+- 内容页每页至少配1张相关图片,确保图文结合
+- 图片风格(必须包含):Minimalist, clean background, negative space, professional, high quality
 - 配图位置:右图或上图,禁止左图布局
-- 确保每张网图都附带明确 alt 描述文字
 - 如文字内容少于40字/页,必须额外增加配图数量
 
 【语言规则】
@@ -323,8 +323,8 @@ export async function POST(request: NextRequest) {
     } else if (imageMode === 'none') {
       finalImageOptions = { source: 'noImages' };
     } else if (imageMode === 'theme-img' || imageMode === 'theme') {
-      // 主题套图：使用Gamma主题内置的强调布局图（免费商用图库）
-      finalImageOptions = { source: 'webFreeToUseCommercially' };
+      // 主题套图：使用Pexels高质量照片（0 credits，Gamma主题配套的最佳图片源）
+      finalImageOptions = { source: 'pexels' };
     } else if (imageMode === 'web') {
       finalImageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageMode === 'ai') {
@@ -367,11 +367,12 @@ export async function POST(request: NextRequest) {
       },
       // V6新增:preserve模式(省心定制)追加强布局指令
       ...(textMode === 'preserve' && {
-        additionalInstructions: finalInstructions + '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。'
+        additionalInstructions: finalInstructions + '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。' +
+          ((imageMode === 'theme-img' || imageMode === 'theme') ? '\n\n【主题套图-强调布局】\n请为每一页使用Gamma内置的Emphasize卡片布局(主题强调布局图),这些是模板自带的装饰性元素,不需要额外credits。每页使用不同的强调布局和图标,保持视觉丰富度。' : '')
       }),
-      // 免费套图(主题强调布局图):追加Gamma内置强调布局图指令
-      ...((imageMode === 'theme-img' || imageMode === 'theme') && {
-        additionalInstructions: finalInstructions + '\n\n【免费套图-主题强调布局图】\n请为每一页自动配Gamma内置的强调布局图(Emphasize布局),这些是Gamma模板自带的免费装饰性图片,不需要额外credits。每页使用不同的强调图,保持视觉丰富度。'
+      // 免费套图(主题套图/pexels):追加Pexels照片+强调布局指令
+      ...((imageMode === 'theme-img' || imageMode === 'theme') && textMode !== 'preserve' && {
+        additionalInstructions: finalInstructions + '\n\n【主题套图-Pexels高质量照片】\n请为每一页配Pexels高质量照片(Pexels图库),照片风格:professional, clean, minimalist, business context。每页使用不同的照片和Gamma内置的Emphasize强调布局,保持视觉丰富度。'
       }),
     };
 

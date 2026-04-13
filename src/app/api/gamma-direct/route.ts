@@ -29,11 +29,12 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 禁止出现没有任何图标的页面(即使是纯文字页也必须加装饰性图标)
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
-【配图规则】(精选网图=webFreeToUseCommercially)
-- 封面页和结尾页必须配高质量网图
-- 内容页每页至少配1张相关网图,确保图文结合
-- 网图来源:仅使用免版权可商用图片(Unsplash/Pexels/自有版权图)
-- 配图风格(必须包含):Minimalist, clean background, negative space, professional, high quality
+【配图规则】(主题套图模式=Pexels高质量照片)
+- 主题套图:使用Pexels高质量照片(专业摄影师拍摄,0 credits)
+- 精选网图:使用webFreeToUseCommercially(免版权商用图搜索)
+- 封面页和结尾页必须配高质量照片
+- 内容页每页至少配1张相关照片,确保图文结合
+- 照片风格(必须包含):Minimalist, clean background, negative space, professional, high quality
 - 配图位置:右图或上图,禁止左图布局
 - 如文字内容少于40字/页,必须额外增加配图数量
 
@@ -163,9 +164,12 @@ export async function POST(request: NextRequest) {
     let imageOptions: Record<string, any> = {};
     if (imageSource === 'none' || imageSource === 'noImages') {
       imageOptions = { source: 'noImages' }; // 纯文字
-    } else if (imageSource === 'theme' || imageSource === 'theme-img' || imageSource === 'pictographic') {
-      // 主题套图:使用Gamma主题内置强调布局图(免费商用图)
-      imageOptions = { source: 'webFreeToUseCommercially' };
+    } else if (imageSource === 'theme' || imageSource === 'theme-img') {
+      // 主题套图:使用Pexels高质量照片（0 credits，Gamma主题配套的最佳图片源）
+      imageOptions = { source: 'pexels' };
+    } else if (imageSource === 'pictographic') {
+      // 插图模式:使用pictographic图标/插图库
+      imageOptions = { source: 'pictographic' };
     } else if (imageSource === 'web') {
       imageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageSource === 'ai' || imageSource === 'aiGenerated') {
@@ -185,7 +189,7 @@ export async function POST(request: NextRequest) {
       : '';
     // 免费套图:追加强调布局图指令
     const themeAppend = (imageSource === 'theme' || imageSource === 'theme-img')
-      ? `\n\n【免费套图-主题强调布局图】\n请为每一页自动配Gamma内置的强调布局图(Emphasize布局),这些是Gamma模板自带的免费装饰性图片,不需要额外credits。每页使用不同的强调图,保持视觉丰富度。`
+      ? `\n\n【主题套图-Pexels高质量照片】\n请为每一页配Pexels高质量照片,照片风格:professional, clean, minimalist, business context。每页使用不同的照片和Gamma内置的Emphasize强调布局,保持视觉丰富度。`
       : '';
     const finalInstructions = instructions + metaphorAppend + themeAppend;
     const finalThemeId = themeId || SCENE_CONFIGS.biz.themeId;
