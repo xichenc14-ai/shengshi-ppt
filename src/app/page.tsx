@@ -467,8 +467,18 @@ export default function Home() {
         // 用户可能编辑了大纲，需要重建 inputText 和更新页数
         const basePayload = smartGammaPayload.gammaPayload || smartGammaPayload;
         const imgSrc = basePayload.imageOptions?.source || 'pictographic';
-        // pictographic 是我们内部用的，Gamma API 用 webFreeToUseCommercially
-        const gammaImgSrc = imgSrc === 'pictographic' ? 'webFreeToUseCommercially' : imgSrc;
+        // 图片模式映射：内部imgMode -> Gamma API source
+        // pictographic/精选套图 -> webFreeToUseCommercially (免版权网图)
+        // theme-img/主题套图 -> themeAccent (主题内置强调图)
+        // ai -> aiGenerated
+        // none -> noImages
+        const gammaImgSrc = imgSrc === 'pictographic' ? 'webFreeToUseCommercially'
+          : imgSrc === 'theme-img' || imgSrc === 'theme' ? 'themeAccent'
+          : imgSrc === 'web' ? 'webFreeToUseCommercially'
+          : imgSrc === 'ai' ? 'aiGenerated'
+          : imgSrc === 'ai-pro' ? 'aiGenerated'
+          : imgSrc === 'none' ? 'noImages'
+          : imgSrc;
         const { markdown: rebuiltMd } = buildMdV2(outlineResult.title, editedSlides, imgSrc);
         gammaRequestBody = {
           ...basePayload,
