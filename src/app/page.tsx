@@ -463,14 +463,22 @@ export default function Home() {
       let gammaRequestBody: any;
 
       if (mode === 'smart' && smartGammaPayload) {
-        // 省心模式：用 smartGammaPayload（AI 已分析并生成完整参数）
-        // 用户可能编辑了大纲，需要重建 inputText
-        const { markdown: rebuiltMd } = buildMdV2(outlineResult.title, editedSlides, smartGammaPayload.imageOptions?.source || 'pictographic');
+        // 省心模式：用 smartGammaPayload.gammaPayload（只取 Gamma 需要的参数）
+        // 用户可能编辑了大纲，需要重建 inputText 和更新页数
+        const basePayload = smartGammaPayload.gammaPayload || smartGammaPayload;
+        const imgSrc = basePayload.imageOptions?.source || 'pictographic';
+        // pictographic 是我们内部用的，Gamma API 用 webFreeToUseCommercially
+        const gammaImgSrc = imgSrc === 'pictographic' ? 'webFreeToUseCommercially' : imgSrc;
+        const { markdown: rebuiltMd } = buildMdV2(outlineResult.title, editedSlides, imgSrc);
         gammaRequestBody = {
-          ...smartGammaPayload,
-          inputText: rebuiltMd, // 用用户编辑后的大纲覆盖
-          numCards: editedSlides.length, // 更新页数覆盖
-          textMode: 'preserve', // 省心模式强制 preserve
+          ...basePayload,
+          inputText: rebuiltMd,
+          numCards: editedSlides.length,
+          textMode: 'preserve',
+          imageOptions: {
+            ...(basePayload.imageOptions || {}),
+            source: gammaImgSrc,
+          },
         };
       } else {
         // 专业模式：用用户选择的参数
@@ -1014,7 +1022,7 @@ export default function Home() {
                         </div>
                         <div className="bg-white/70 rounded-lg px-3 py-2">
                           <p className="text-[10px] text-gray-400 mb-0.5">📄 页数</p>
-                          <p className="text-xs font-medium text-gray-700">{smartGammaPayload.numCards} 页</p>
+                          <p className="text-xs font-medium text-gray-700">{editedSlides.length} 页</p>
                         </div>
                       </div>
                       <p className="text-[10px] text-purple-400 mt-2">✨ 省心模式会自动为你选择最佳参数，直接确认即可生成</p>
