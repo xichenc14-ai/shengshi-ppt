@@ -62,8 +62,21 @@ const PLANS: Record<string, MembershipPlan> = {
     maxPages: 30,
     priceMonthly: 49.9,
     priceAnnual: 499,
-    allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'aiGenerated'],
+    allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'],
     allowedAiModels: ['imagen-3-flash', 'imagen-3-pro'], // AI普通图(2积分) + AI高级图(5积分)
+    smartMode: true,
+  },
+  // vip 是 pro 的别名（兼容旧数据）
+  vip: {
+    id: 'pro',
+    name: '高级',
+    emoji: '🏆',
+    credits: 1000,
+    maxPages: 30,
+    priceMonthly: 49.9,
+    priceAnnual: 499,
+    allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'],
+    allowedAiModels: ['imagen-3-flash', 'imagen-3-pro'],
     smartMode: true,
   },
 };
