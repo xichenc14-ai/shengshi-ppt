@@ -14,6 +14,7 @@ import Footer from '@/components/Footer';
 import ProPanel from '@/components/ProPanel';
 import LoginModal from '@/components/LoginModal';
 import PaymentModal from '@/components/PaymentModal';
+import ThemePickerModal from '@/components/ThemePickerModal';
 import StreamingOutline from '@/components/StreamingOutline';
 import GenerationProgress from '@/components/GenerationProgress';
 // FloatingButton removed (unused)
@@ -55,6 +56,7 @@ export default function Home() {
 
   // Pro mode
   const [showPro, setShowPro] = useState(false);
+
   const [genMode, setGenMode] = useState('generate');
   const [theme, setTheme] = useState('auto');
   const [tone, setTone] = useState('professional');
@@ -63,6 +65,8 @@ export default function Home() {
 
   // Generation state
   const [loading, setLoading] = useState(false);
+
+  const [showThemePicker, setShowThemePicker] = useState(false);
   const [error, setError] = useState('');
   const [stepText, setStepText] = useState('');
   const [genProgress, setGenProgress] = useState(0);
@@ -1031,39 +1035,7 @@ export default function Home() {
                           {/* 主题 - 可点击弹出选择器 */}
                           <div
                             className="bg-white/70 rounded-lg px-3 py-2 cursor-pointer hover:bg-white transition-colors"
-                            onClick={() => {
-                              // 弹出简化的主题选择面板
-                              const themeOptions = Object.entries({
-                                'consultant': { name: '商务蓝', colors: ['#1E40AF', '#3B82F6', '#93C5FD'] },
-                                'founder': { name: '路演紫', colors: ['#5B4FE9', '#8B5CF6', '#C4B5FD'] },
-                                'icebreaker': { name: '培训青', colors: ['#0D9488', '#14B8A6', '#5EEAD4'] },
-                                'aurora': { name: '科技蓝紫', colors: ['#6366F1', '#8B5CF6', '#A78BFA'] },
-                                'electric': { name: '活力橙', colors: ['#EA580C', '#F97316', '#FDBA74'] },
-                                'blues': { name: '高级金蓝', colors: ['#1E3A5F', '#C9A96E', '#F5E6CC'] },
-                                'chisel': { name: '大地棕', colors: ['#78350F', '#A16207', '#FDE68A'] },
-                                'ashrose': { name: '玫瑰粉', colors: ['#BE185D', '#EC4899', '#F9A8D4'] },
-                                'gleam': { name: '科技青', colors: ['#0F766E', '#14B8A6', '#99F6E4'] },
-                                'default-light': { name: '极简白', colors: ['#F1F5F9', '#CBD5E1', '#64748B'] },
-                              });
-                              const selected = window.confirm(
-                                '当前主题: ' + (currentTheme?.name || currentThemeId) + '\n\n可选主题:\n' +
-                                themeOptions.map(([id, t]) => (id === currentThemeId ? '✅ ' : '○ ') + t.name).join('\n') +
-                                '\n\n确定要切换主题吗？'
-                              );
-                              if (selected) {
-                                const choice = window.prompt(
-                                  '请输入主题ID:\n' + themeOptions.map(([id, t]) => id + ': ' + t.name).join('\n'),
-                                  currentThemeId
-                                );
-                                if (choice && choice !== currentThemeId) {
-                                  setSmartGammaPayload((prev: any) => prev ? {
-                                    ...prev,
-                                    themeId: choice,
-                                    gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, themeId: choice } : undefined,
-                                  } : prev);
-                                }
-                              }
-                            }}
+                            onClick={() => setShowThemePicker(true)}
                             title="点击切换主题"
                           >
                             <p className="text-[10px] text-gray-400 mb-1">🎨 主题</p>
@@ -1291,6 +1263,35 @@ export default function Home() {
 
       <LoginModal open={showLogin} onClose={closeLogin} />
       <PaymentModal open={showPayment} onClose={closePayment} plan={paymentPlan} />
+      <ThemePickerModal
+        open={showThemePicker}
+        currentThemeId={smartGammaPayload?.themeId || 'consultant'}
+        currentTone={smartGammaPayload?.tone || 'professional'}
+        currentImgSrc={smartGammaPayload?.imageOptions?.source || 'theme-img'}
+        onThemeChange={(themeId) => {
+          setSmartGammaPayload((prev: any) => prev ? {
+            ...prev,
+            themeId,
+            gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, themeId } : undefined,
+          } : prev);
+        }}
+        onToneChange={(tone) => {
+          setSmartGammaPayload((prev: any) => prev ? {
+            ...prev,
+            tone,
+            gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, tone, textOptions: { ...prev.gammaPayload.textOptions, tone } } : undefined,
+          } : prev);
+        }}
+        onImgChange={(imgSrc) => {
+          const mappedSrc = imgSrc === 'theme-img' ? 'themeAccent' : imgSrc === 'pictographic' ? 'webFreeToUseCommercially' : imgSrc;
+          setSmartGammaPayload((prev: any) => prev ? {
+            ...prev,
+            imageOptions: { ...prev.imageOptions, source: mappedSrc },
+            gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, imageOptions: { ...prev.gammaPayload.imageOptions, source: mappedSrc } } : undefined,
+          } : prev);
+        }}
+        onClose={() => setShowThemePicker(false)}
+      />
     </div>
   );
 }
