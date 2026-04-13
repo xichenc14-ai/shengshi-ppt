@@ -94,7 +94,7 @@ export default function HeroSection({ onSelectMode }: HeroSectionProps) {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900 group-hover:text-purple-700 transition-colors">🚀 Gamma 直通</h3>
+                  <h3 className="text-lg font-bold text-gray-900 group-hover:text-purple-700 transition-colors">🚀 专业模式</h3>
                   <p className="text-xs text-gray-400">快速生成</p>
                 </div>
                 <div className="ml-auto">
