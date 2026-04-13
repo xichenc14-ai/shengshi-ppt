@@ -865,61 +865,56 @@ export default function Home() {
                             {[5,6,7,8,9,10,12,15,20,25,30].map(n => {
                               const maxP = getPlan(user?.plan_type || 'free').maxPages;
                               const locked = n > maxP;
+                              // 根据页数判断需要的会员等级
+                              let lockBadge = '';
+                              if (locked) {
+                                if (n <= 15) lockBadge = ' 💎基础';
+                                else if (n <= 20) lockBadge = ' 👑标准';
+                                else lockBadge = ' 🏆高级';
+                              }
                               return (
                                 <option key={n} value={n} disabled={locked}>
-                                  {n} 页{locked ? ' 🔒 需要升级' : ''}
+                                  {n} 页{locked ? lockBadge : ''}
                                 </option>
                               );
                             })}
                           </select>
                         </div>
-                        <div className="col-span-3">
-                          <label className="text-xs text-gray-500 mb-2 block">配图风格</label>
-                          <div className="grid grid-cols-5 gap-2">
-                            {[
-                              { value: 'none', icon: '📝', label: '纯净无图', req: null },
-                              { value: 'theme', icon: '🎨', label: '免费套图', req: null },
-                              { value: 'web', icon: '🌐', label: '精选网图', req: 'basic' as const },
-                              { value: 'ai', icon: '🤖', label: 'AI定制图', req: 'standard' as const, badge: '2积分/图' },
-                              { value: 'ai-pro', icon: '✨', label: 'AI尊享图', req: 'pro' as const, badge: '10积分/图' },
-                            ].map(opt => {
-                              const userPlan = getPlan(user?.plan_type || 'free');
-                              const locked = opt.req && userPlan.id !== 'free' && !PLAN_LIST.slice(PLAN_LIST.findIndex(p => p.id === (opt.req || 'free'))).some(p => p.id === userPlan.id);
-                              const hasAccess = !opt.req || (opt.req === 'basic' ? ['basic','standard','pro'].includes(userPlan.id) : opt.req === 'standard' ? ['standard','pro'].includes(userPlan.id) : userPlan.id === 'pro');
-                              const isSelected = directImgMode === opt.value;
-                              return (
-                                <button
-                                  key={opt.value}
-                                  onClick={() => {
-                                    if (!hasAccess) {
-                                      const planInfo = getPlan(opt.req!);
-                                      openPayment({
-                                        id: planInfo.id,
-                                        name: `${planInfo.name} · ${planInfo.emoji}`,
-                                        price: `¥${planInfo.priceMonthly}/月`,
-                                        billing: 'monthly',
-                                        reason: `${opt.label}为${planInfo.name}专享，开通后即可使用`,
-                                      });
-                                      return;
-                                    }
-                                    setDirectImgMode(opt.value);
-                                  }}
-                                  className={`py-2 px-1 rounded-xl border text-center transition-all cursor-pointer ${
-                                    isSelected
-                                      ? 'border-[#5B4FE9] bg-[#F5F3FF] shadow-sm'
-                                      : hasAccess
-                                        ? 'border-gray-100 hover:border-gray-200 bg-white'
-                                        : 'border-gray-50 bg-gray-50/80 cursor-pointer'
-                                  }`}
-                                >
-                                  <div className={`text-xs ${isSelected ? 'font-bold text-[#4338CA]' : hasAccess ? 'font-semibold text-gray-600' : 'font-semibold text-gray-300'}`}>{opt.icon}</div>
-                                  <div className={`text-[10px] mt-0.5 leading-tight ${isSelected ? 'font-semibold text-[#4338CA]' : hasAccess ? 'text-gray-500' : 'text-gray-300'}`}>{opt.label}</div>
-                                  {opt.badge && <div className={`text-[8px] mt-0.5 ${isSelected ? 'text-[#7C6FE0]' : hasAccess ? 'text-gray-400' : 'text-gray-300'}`}>{opt.badge}</div>}
-                                  {!hasAccess && <div className="text-[8px] mt-0.5 text-gray-300">{getPlan(opt.req!).emoji}专享</div>}
-                                </button>
-                              );
-                            })}
-                          </div>
+                        <div>
+                          <label className="text-xs text-gray-500 mb-1 block">配图风格</label>
+                          <select
+                            value={directImgMode}
+                            onChange={e => {
+                              const val = e.target.value;
+                              if (val === 'ai' || val === 'ai-pro') {
+                                const userPlan = getPlan(user?.plan_type || 'free');
+                                const needPro = val === 'ai-pro';
+                                const hasPermission = needPro
+                                  ? userPlan.allowedAiModels.includes('imagen-3-pro')
+                                  : userPlan.allowedAiModels.length > 0;
+                                if (!hasPermission) {
+                                  const reqPlan = needPro ? 'pro' : 'standard';
+                                  const planInfo = getPlan(reqPlan);
+                                  openPayment({
+                                    id: planInfo.id,
+                                    name: `${planInfo.name} · ${planInfo.emoji}`,
+                                    price: `¥${planInfo.priceMonthly}/月`,
+                                    billing: 'monthly',
+                                    reason: `${needPro ? 'AI尊享图' : 'AI定制图'}为${planInfo.name}专享，开通后即可使用`,
+                                  });
+                                  return;
+                                }
+                              }
+                              setDirectImgMode(val);
+                            }}
+                            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                          >
+                            <option value="none">📝 纯净无图</option>
+                            <option value="theme">🎨 免费套图</option>
+                            <option value="web">🌐 精选网图</option>
+                            <option value="ai">{getPlan(user?.plan_type || 'free').allowedAiModels.length > 0 ? '🤖 AI定制图' : '🤖 AI定制图 👑标准'}</option>
+                            <option value="ai-pro">{getPlan(user?.plan_type || 'free').allowedAiModels.includes('imagen-3-pro') ? '✨ AI尊享图' : '✨ AI尊享图 🏆高级'}</option>
+                          </select>
                         </div>
                         <div>
                           <label className="text-xs text-gray-500 mb-1 block">语气风格</label>
