@@ -387,8 +387,13 @@ export async function POST(req: NextRequest) {
 
       if (pwdHashFromDB === null) {
         // 没有password_hash：仅开发模式允许测试密码123456登录
+        // 特例：测试账户 13800138001 允许在生产环境用测试密码
+        const isTestAccount = u.phone === '13800138001';
+        const testPasswordOk = isTestAccount && password === '123456';
         if (process.env.NODE_ENV !== 'production' && password === '123456') {
-          // 允许测试密码登录
+          // 开发模式：允许测试密码登录
+        } else if (testPasswordOk) {
+          // 测试账户：允许123456登录
         } else {
           return NextResponse.json({ error: 'NEED_SET_PASSWORD', needSetPassword: true, phone: u.phone }, { status: 400 });
         }
