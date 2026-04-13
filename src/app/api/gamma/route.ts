@@ -63,7 +63,7 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 禁止出现没有任何图标的页面(即使是纯文字页也必须加装饰性图标)
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
-【配图规则】(主题套图=Pexels,精选网图=webFreeToUseCommercially)
+【配图规则】(主题套图=Pexels精选照片,精选网图=webFreeToUseCommercially)
 - 主题套图:使用Pexels高质量照片(专业摄影师,0 credits)
 - 精选网图:使用webFreeToUseCommercially(免版权商用图搜索)
 - 封面页和结尾页必须配高质量照片/网图
@@ -323,9 +323,8 @@ export async function POST(request: NextRequest) {
     } else if (imageMode === 'none') {
       finalImageOptions = { source: 'noImages' };
     } else if (imageMode === 'theme-img' || imageMode === 'theme') {
-      // 主题套图：使用Gamma主题内置的Emphasize卡片布局（主题自带装饰图）
-      // 不设置imageOptions.source，让Gamma自动应用主题内置的强调布局图
-      finalImageOptions = {};
+      // 主题套图：使用Pexels高质量照片（0 credits，最接近Gamma主题配套套图效果）
+      finalImageOptions = { source: 'pexels' };
     } else if (imageMode === 'web') {
       finalImageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageMode === 'ai') {
