@@ -369,19 +369,12 @@ export async function POST(req: NextRequest) {
 
       let imageCreditsPerImage = 0;
       if (imageSource === 'aiGenerated') {
-        // 高级模型20积分/图，普通AI模型2积分/图
-        // AI图片积分：普通2积分/图，中级8积分/图，高级10积分/图
-        const MID_MODELS = ['flux-1-pro', 'imagen-3-pro'];
-        const HIGH_MODELS = ['ideogram-v3-turbo', 'luma-photon-1', 'leonardo-phoenix'];
+        // AI图片统一10积分/图（高级模型20积分仅标记，不主动使用）
         const HIGH_END_MODELS = ['flux-kontext-pro', 'imagen-4-pro', 'ideogram-v3', 'dall-e-3', 'gpt-image-1-high'];
         if (imageModel && HIGH_END_MODELS.includes(imageModel)) {
-          imageCreditsPerImage = 20; // 仅标记，不主动使用
-        } else if (imageModel && HIGH_MODELS.includes(imageModel)) {
-          imageCreditsPerImage = 10; // AI高级图
-        } else if (imageModel && MID_MODELS.includes(imageModel)) {
-          imageCreditsPerImage = 8; // AI中级图
+          imageCreditsPerImage = 20; // 仅标记
         } else {
-          imageCreditsPerImage = 2;
+          imageCreditsPerImage = 10; // 统一10积分
         }
       }
 
