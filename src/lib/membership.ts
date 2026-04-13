@@ -26,7 +26,7 @@ const PLANS: Record<string, MembershipPlan> = {
     maxPages: 8,
     priceMonthly: 0,
     priceAnnual: 0,
-    allowedImageSources: ['noImages', 'pictographic'],
+    allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent'],
     allowedAiModels: [],
     smartMode: false,
   },

@@ -345,6 +345,17 @@ export async function POST(request: NextRequest) {
     // 如果已传入 additionalInstructions（省心模式），直接使用；否则生成
     const finalInstructions = additionalInstructions || (instructions + metaphorAppend);
 
+    // 构建最终的 additionalInstructions（根据模式追加不同指令）
+    let finalAdditionalInstructions = finalInstructions;
+    if (textMode === 'preserve') {
+      finalAdditionalInstructions += '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。';
+      if (imageMode === 'theme-img' || imageMode === 'theme') {
+        finalAdditionalInstructions += '\n\n【主题套图-强调布局】\n请为每一页使用Gamma内置的Emphasize卡片布局(主题强调布局图),这些是模板自带的装饰性元素,不需要额外credits。每页使用不同的强调布局和图标,保持视觉丰富度。';
+      }
+    } else if (imageMode === 'theme-img' || imageMode === 'theme') {
+      finalAdditionalInstructions += '\n\n【主题套图-Pexels高质量照片】\n请为每一页配Pexels高质量照片(Pexels图库),照片风格:professional, clean, minimalist, business context。每页使用不同的照片和Gamma内置的Emphasize强调布局,保持视觉丰富度。';
+    }
+
     // V8修复：恢复技术部验证的完整参数
     const gammaPayload: Record<string, any> = {
       inputText: finalInputText,
@@ -353,7 +364,7 @@ export async function POST(request: NextRequest) {
       numCards,
       exportAs,
       themeId: finalThemeId,
-      additionalInstructions: finalInstructions,
+      additionalInstructions: finalAdditionalInstructions,
       // 如果已传入 textOptions（省心模式），直接使用
       textOptions: textOptions || {
         amount: 'medium',
@@ -365,15 +376,6 @@ export async function POST(request: NextRequest) {
       cardOptions: cardOptions || {
         dimensions: '16x9',
       },
-      // V6新增:preserve模式(省心定制)追加强布局指令
-      ...(textMode === 'preserve' && {
-        additionalInstructions: finalInstructions + '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。' +
-          ((imageMode === 'theme-img' || imageMode === 'theme') ? '\n\n【主题套图-强调布局】\n请为每一页使用Gamma内置的Emphasize卡片布局(主题强调布局图),这些是模板自带的装饰性元素,不需要额外credits。每页使用不同的强调布局和图标,保持视觉丰富度。' : '')
-      }),
-      // 免费套图(主题套图/pexels):追加Pexels照片+强调布局指令
-      ...((imageMode === 'theme-img' || imageMode === 'theme') && textMode !== 'preserve' && {
-        additionalInstructions: finalInstructions + '\n\n【主题套图-Pexels高质量照片】\n请为每一页配Pexels高质量照片(Pexels图库),照片风格:professional, clean, minimalist, business context。每页使用不同的照片和Gamma内置的Emphasize强调布局,保持视觉丰富度。'
-      }),
     };
 
     // 🔍 DEBUG: log key fields
@@ -406,7 +408,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       generationId,
       message: '生成任务已创建',
-      config: { themeId: finalThemeId, tone: finalTone, imageMode: imageOptions.source, numCards },
+      config: { themeId: finalThemeId, tone: finalTone, imageMode: finalImageOptions?.source || imageMode, numCards },
     });
   } catch (error: any) {
     console.error('Gamma generation error:', error);
