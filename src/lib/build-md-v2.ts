@@ -481,12 +481,20 @@ export function buildAdditionalInstructions(
 - **粗体短句** → 视觉强调（放大显示）
 - 对比内容（### 优势 / ### 劣势）→ 左右对照布局
 
+📌 图标要求（铁律）：
+- 每一页PPT必须包含2-6个图标元素（Icons）
+- 图标用于：要点标记、装饰、视觉引导
+- 禁止出现完全没有任何图标的页面
+- 推荐图标库：Font Awesome / Material Icons / Ionicons
+- 图标风格必须与PPT整体风格一致
+
 📌 禁止事项（绝对禁止）：
 - 禁止普通小字正文（必须是大文本）
 - 禁止表格嵌套超过2层
 - 禁止标题和内容混在一行
 - 禁止留大面积空白
-- 禁止在内容页堆砌超过4个要点`;
+- 禁止在内容页堆砌超过4个要点
+- 禁止页面完全没有视觉元素（纯文字墙）`;
 
   // ========== 语气风格规则（V5） ==========
   const toneRules: Record<string, string> = {
@@ -542,40 +550,60 @@ export function buildAdditionalInstructions(
   switch (imageMode) {
     case 'noImages':
       imageRules = `
+【图标规则】（图标是唯一视觉元素，必须大量使用）
+- 每一页都必须包含3-6个 Icons，用于标记要点和装饰
+- 图标风格：Simple, outlined, consistent stroke width
+- 禁止出现没有任何图标的页面
+- 推荐图标库：Font Awesome / Material Icons / Ionicons
+
 【配图规则】
 - 不使用任何外部图片
 - 用色块、图标、几何图形填充视觉空间
-- 内容少的页面用装饰性元素补充留白
-- 可使用图标库（Font Awesome / Material Icons）`;
+- 内容少的页面用装饰性元素补充留白`;
       break;
     case 'aiGenerated':
       imageRules = `
+【图标规则】（图标配合AI图增强可视化）
+- 每一页都必须包含2-5个 Icons，用于标记要点和装饰
+- 图标风格：Simple, outlined, consistent with AI image style
+- 推荐图标库：Font Awesome / Material Icons / Ionicons
+
 【配图规则】
 - 封面页和结尾页必须配AI生成图
 - 内容页仅在文字少于40字时配图
 - 配图位置：右图或上图，禁止左图布局
 - 配图风格（必须包含）：Minimalist, clean background, negative space, professional, high quality
-- 留白感：配图描述必须含 "negative space"
-- 适度使用 Icons 提高可视化`;
+- 留白感：配图描述必须含 "negative space"`;
       break;
     case 'webFreeToUseCommercially':
     case 'pexels':
     case 'theme-img':
       imageRules = `
+【图标规则】（图标配合网图增强可视化）
+- 每一页都必须包含2-5个 Icons，用于标记要点和装饰
+- 图标风格：Simple, outlined, professional, consistent stroke width
+- 禁止出现没有任何图标的页面
+- 推荐图标库：Font Awesome / Material Icons / Ionicons
+
 【配图规则】
-- 封面页配高质量照片
-- 内容页文字少于50字时可配相关图片
-- 图片风格：professional, clean, business context
-- 确保图片来源合规可商用
-- 配图位置：右图或上图`;
+- 封面页和结尾页必须配高质量网图
+- 内容页每页至少配1张相关网图，确保图文结合
+- 图片风格：professional, clean, business context, minimalist, negative space
+- 确保图片来源合规可商用（Unsplash / Pexels / 自有版权）
+- 配图位置：右图或上图
+- 如文字内容少于40字/页，必须额外增加配图数量`;
       break;
     default:
       imageRules = `
+【图标规则】（图标是视觉核心手段）
+- 每一页都必须包含2-5个 Icons，用于标记要点和装饰
+- 图标风格：Simple, outlined, professional
+- 推荐图标库：Font Awesome / Material Icons / Ionicons
+
 【配图规则】
 - 封面页配专业图片
-- 内容页仅在视觉需要时配图
-- 图片不遮挡文字，保持阅读性
-- 优先使用 Icons`;
+- 内容页适当配图
+- 图片不遮挡文字，保持阅读性`;
   }
 
   // ========== 语言规则 ==========

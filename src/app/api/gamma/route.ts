@@ -56,11 +56,21 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 布局:规整对称,信息密度适中,视觉层次清晰
 感觉:麦肯锡/BCG/贝恩咨询PPT风格,权威可信
 
-【配图规则】
-- 封面页和结尾页必须配图
+【图标规则】(图标是PPT视觉丰富度的核心,必须使用)
+- 每一页都必须包含2-5个 Icons 图标,用于标记要点和装饰
+- 图标风格:Simple, outlined, consistent stroke width, professional
+- 图标颜色:与主色调保持一致
+- 禁止出现没有任何图标的页面(即使是纯文字页也必须加装饰性图标)
+- 推荐图标库:Font Awesome, Material Icons, Ionicons
+
+【配图规则】(精选网图=webFreeToUseCommercially)
+- 封面页和结尾页必须配高质量网图
+- 内容页每页至少配1张相关网图,确保图文结合
+- 网图来源:仅使用免版权可商用图片(Unsplash/Pexels/自有版权图)
 - 配图风格(必须包含):Minimalist, clean background, negative space, professional, high quality
 - 配图位置:右图或上图,禁止左图布局
-- 适度使用 Icons 提高可视化
+- 确保每张网图都附带明确 alt 描述文字
+- 如文字内容少于40字/页,必须额外增加配图数量
 
 【语言规则】
 - 所有文字使用简体中文
@@ -90,9 +100,15 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 字体:无衬线字体,现代感强
 感觉:Notion/Figma/Slack官方演示风格,友好亲切
 
+【图标规则】(图标是视觉核心,必须大量使用)
+- 每一页都必须包含3-6个 Icons,用于标记要点和装饰
+- 图标风格:Outlined, rounded, friendly, colorful
+- 禁止出现没有任何图标的页面
+- 推荐图标库:Font Awesome, Material Icons, Ionicons
+
 【配图规则】
 - 不使用外部图片,纯文字+图标+色块设计
-- 用色块、图标、几何图形填充视觉空间
+- 内容少的页面用装饰性元素和图标补充留白
 - 可使用图标库(Font Awesome / Material Icons)
 
 【语言规则】
@@ -124,6 +140,12 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 配色:大丰富,2-3个亮色(渐变粉/紫/橙),允许大色块背景
 字体:无衬线字体,粗体突出
 感觉:Apple/特斯拉发布会风格,前卫震撼
+
+【图标规则】(图标是创意呈现的核心手段,必须大量使用)
+- 每一页都必须包含3-6个 Icons,用于标记要点和装饰
+- 图标风格:Bold, filled, colorful, creative
+- 禁止出现没有任何图标的页面
+- 推荐图标库:Font Awesome, Material Icons, Ionicons
 
 【配图规则】
 - 封面页使用AI生成配图
@@ -160,6 +182,12 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 字体:无衬线字体,极细/极粗字重对比
 感觉:高端科技公司品牌发布,引领未来
 
+【图标规则】(图标是科技感的重要体现,必须大量使用)
+- 每一页都必须包含3-6个 Icons,用于标记要点和装饰
+- 图标风格:Line icons, futuristic, technology themed
+- 禁止出现没有任何图标的页面
+- 推荐图标库:Font Awesome, Material Icons, Ionicons
+
 【配图规则】
 - 封面页使用震撼的AI生成配图
 - 配图风格:futuristic, technology, modern, sleek, minimalist, negative space
@@ -192,6 +220,12 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 配色:古典配色,红/金/墨/米白,祥云/水墨/古典边框装饰
 字体:标题粗体,正文宋体/黑体
 感觉:故宫/国潮品牌发布风格,典雅大气
+
+【图标规则】(图标是中国风PPT的重要装饰元素)
+- 每一页都必须包含2-5个 Icons,优先使用中式风格图标
+- 图标风格:Chinese traditional elements, elegant line icons
+- 禁止出现没有任何图标的页面
+- 推荐图标库:Font Awesome(中式元素), 自定义祥云/水墨图标
 
 【配图规则】
 - 封面页使用中国风配图
