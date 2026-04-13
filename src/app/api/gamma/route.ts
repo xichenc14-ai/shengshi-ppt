@@ -288,12 +288,17 @@ export async function POST(request: NextRequest) {
       finalImageOptions = imageOptions;
     } else if (imageMode === 'none') {
       finalImageOptions = { source: 'noImages' };
-    } else if (imageMode === 'emphasis' || imageMode === 'pictographic') {
-      finalImageOptions = { source: 'pictographic' }; // ⭐ 推荐!免费插图
+    } else if (imageMode === 'theme') {
+      // 免费套图：使用主题自带的强调布局图（Gamma内置，免费）
+      finalImageOptions = { source: 'pictographic' };
     } else if (imageMode === 'web') {
       finalImageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageMode === 'ai') {
+      // AI定制图：普通AI模型
       finalImageOptions = { source: 'aiGenerated', model: 'imagen-3-flash', style: 'flat illustration, minimalist, clean background, negative space' };
+    } else if (imageMode === 'ai-pro') {
+      // AI尊享图：高级AI模型
+      finalImageOptions = { source: 'aiGenerated', model: 'flux-kontext-fast', style: 'professional, high quality, cinematic, detailed' };
     } else {
       finalImageOptions = { source: 'pictographic' }; // 免费且效果好
     }
@@ -330,9 +335,9 @@ export async function POST(request: NextRequest) {
       ...(textMode === 'preserve' && {
         additionalInstructions: finalInstructions + '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。'
       }),
-      // 精选套图:追加Gamma内置强调布局图指令
-      ...(imageMode === 'emphasis' && {
-        additionalInstructions: finalInstructions + '\n\n【精选套图-强调布局图】\n请为每一页自动配Gamma内置的强调布局图(Emphasize布局),这些是Gamma模板自带的免费装饰性图片,不需要额外credits。每页使用不同的强调图,保持视觉丰富度。'
+      // 免费套图(主题强调布局图):追加Gamma内置强调布局图指令
+      ...(imageMode === 'theme' && {
+        additionalInstructions: finalInstructions + '\n\n【免费套图-主题强调布局图】\n请为每一页自动配Gamma内置的强调布局图(Emphasize布局),这些是Gamma模板自带的免费装饰性图片,不需要额外credits。每页使用不同的强调图,保持视觉丰富度。'
       }),
     };
 

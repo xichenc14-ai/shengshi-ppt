@@ -22,7 +22,7 @@ import ThemeSelector from '@/components/ThemeSelector';
 import ScrollingBanner from '@/components/ScrollingBanner';
 import { buildMdV2 } from '@/lib/build-md-v2';
 import { getThemeById } from '@/lib/theme-database';
-import { checkPermission, mapImgModeToSource, getPlan } from '@/lib/membership';
+import { checkPermission, mapImgModeToSource, getPlan, PLAN_LIST } from '@/lib/membership';
 
 /* ==================== Config ==================== */
 
@@ -59,7 +59,7 @@ export default function Home() {
   const [theme, setTheme] = useState('auto');
   const [tone, setTone] = useState('professional');
   const [imgMode, setImgMode] = useState('none');
-  const [pages, setPages] = useState(10);
+  const [pages, setPages] = useState(8);
 
   // Generation state
   const [loading, setLoading] = useState(false);
@@ -107,10 +107,12 @@ export default function Home() {
     if (!inputText.trim()) return;
     if (!user) return;
 
-    // 🔐 会员权限检查
+    // 🔐 会员权限检查（用实际最大页数，避免state不同步问题）
+    const userPlan = getPlan(user.plan_type || 'free');
+    const effectivePages = Math.min(pages, userPlan.maxPages);
     const imageSource = mapImgModeToSource(directImgMode);
     const perm = checkPermission(user.plan_type || 'free', {
-      numPages: pages,
+      numPages: effectivePages,
       imageSource,
       mode: 'direct',
     });
@@ -140,7 +142,7 @@ export default function Home() {
       const deductRes = await fetch('/api/user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: pages, imageSource: directImgMode === 'none' ? 'noImages' : directImgMode === 'ai' ? 'aiGenerated' : directImgMode === 'web' ? 'webFreeToUseCommercially' : 'pictographic' }),
+        body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: effectivePages, imageSource: directImgMode === 'none' ? 'noImages' : directImgMode === 'theme' ? 'pictographic' : directImgMode === 'web' ? 'webFreeToUseCommercially' : directImgMode === 'ai' ? 'aiGenerated' : directImgMode === 'ai-pro' ? 'aiGenerated' : 'pictographic' }),
       });
       const deductData = await deductRes.json();
       if (!deductRes.ok || deductData.error) {
@@ -242,6 +244,25 @@ export default function Home() {
     const inputText = collectText();
     if (!inputText.trim()) return;
     if (!user) return;
+
+    // 🔐 省心模式权限检查（免费用户不可用）
+    const smartPerm = checkPermission(user.plan_type || 'free', {
+      numPages: 8,
+      imageSource: 'noImages',
+      mode: 'smart',
+    });
+    if (!smartPerm.allowed) {
+      const reqPlan = smartPerm.requiredPlan || 'basic';
+      const planInfo = getPlan(reqPlan);
+      openPayment({
+        id: reqPlan,
+        name: `${planInfo.name} · ${planInfo.emoji}`,
+        price: planInfo.priceMonthly > 0 ? `¥${planInfo.priceMonthly}/月` : '免费',
+        billing: 'monthly',
+        reason: smartPerm.reason || '省心定制为会员专属功能',
+      });
+      return;
+    }
 
     setLoading(true);
     setError('');
@@ -363,8 +384,9 @@ export default function Home() {
     if (!outlineResult || !user) return;
 
     // 🔐 会员权限检查
-    const imageSource = imgMode === 'none' ? 'noImages' : imgMode === 'ai' ? 'aiGenerated' : imgMode === 'web' ? 'webFreeToUseCommercially' : 'pictographic';
-    const numPages = editedSlides.length;
+    const userPlan = getPlan(user.plan_type || 'free');
+    const imageSource = imgMode === 'none' ? 'noImages' : imgMode === 'ai' ? 'aiGenerated' : imgMode === 'ai-pro' ? 'aiGenerated' : imgMode === 'web' ? 'webFreeToUseCommercially' : 'pictographic';
+    const numPages = Math.min(editedSlides.length, userPlan.maxPages);
     const perm = checkPermission(user.plan_type || 'free', {
       numPages,
       imageSource,
@@ -802,30 +824,73 @@ export default function Home() {
                       {/* Simplified params — 3 columns: 页数(左) / 配图(中) / 风格(右) */}
                       <div className="grid grid-cols-3 gap-3 mt-3">
                         <div>
-                          <label className="text-xs text-gray-500 mb-1 block">页数{user?.plan_type && user.plan_type !== 'free' ? '' : ' · 免费最多8页'}</label>
+                          <label className="text-xs text-gray-500 mb-1 block">页数</label>
                           <select
                             value={Math.min(pages, getPlan(user?.plan_type || 'free').maxPages)}
-                            onChange={e => setPages(Number(e.target.value))}
+                            onChange={e => {
+                              const val = Number(e.target.value);
+                              const maxP = getPlan(user?.plan_type || 'free').maxPages;
+                              if (val > maxP) {
+                                const planInfo = getPlan(PLAN_LIST.find(p => p.maxPages >= val)?.id || 'basic');
+                                openPayment({
+                                  id: planInfo.id,
+                                  name: `${planInfo.name} · ${planInfo.emoji}`,
+                                  price: `¥${planInfo.priceMonthly}/月`,
+                                  billing: 'monthly',
+                                  reason: `${val}页需要${planInfo.name}或更高套餐`,
+                                });
+                                return;
+                              }
+                              setPages(val);
+                            }}
                             className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
                           >
-                            {[5,6,7,8,9,10,12,15,20,25,30]
-                              .filter(n => n <= getPlan(user?.plan_type || 'free').maxPages)
-                              .map(n => (
-                              <option key={n} value={n}>{n} 页</option>
-                            ))}
+                            {[5,6,7,8,9,10,12,15,20,25,30].map(n => {
+                              const maxP = getPlan(user?.plan_type || 'free').maxPages;
+                              const locked = n > maxP;
+                              return (
+                                <option key={n} value={n} disabled={locked}>
+                                  {n} 页{locked ? ' 🔒 需要升级' : ''}
+                                </option>
+                              );
+                            })}
                           </select>
                         </div>
                         <div>
                           <label className="text-xs text-gray-500 mb-1 block">配图风格</label>
                           <select
                             value={directImgMode}
-                            onChange={e => setDirectImgMode(e.target.value)}
+                            onChange={e => {
+                              const val = e.target.value;
+                              // AI定制图及以上需要会员
+                              if (val === 'ai' || val === 'ai-pro') {
+                                const userPlan = getPlan(user?.plan_type || 'free');
+                                const needPro = val === 'ai-pro';
+                                const hasPermission = needPro
+                                  ? userPlan.allowedAiModels.includes('flux-kontext-pro')
+                                  : userPlan.allowedAiModels.length > 0;
+                                if (!hasPermission) {
+                                  const reqPlan = needPro ? 'vip' : 'pro';
+                                  const planInfo = getPlan(reqPlan);
+                                  openPayment({
+                                    id: reqPlan,
+                                    name: `${planInfo.name} · ${planInfo.emoji}`,
+                                    price: `¥${planInfo.priceMonthly}/月`,
+                                    billing: 'monthly',
+                                    reason: `${needPro ? 'AI尊享图' : 'AI定制图'}为${planInfo.name}专属`,
+                                  });
+                                  return;
+                                }
+                              }
+                              setDirectImgMode(val);
+                            }}
                             className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
                           >
                             <option value="none">纯净无图</option>
-                            <option value="emphasis">精选套图</option>
-                            <option value="web">定制网图</option>
-                            <option value="ai">定制AI图</option>
+                            <option value="theme">免费套图</option>
+                            <option value="web">精选网图</option>
+                            <option value="ai">AI定制图</option>
+                            <option value="ai-pro">AI尊享图</option>
                           </select>
                         </div>
                         <div>
@@ -888,14 +953,14 @@ export default function Home() {
                               className="w-full mt-1 text-xs text-gray-500 bg-gray-50 rounded-lg px-2.5 py-1.5 border border-transparent focus:border-[#5B4FE9] outline-none resize-none" />
                           )}
                         </div>
-                        <div className="flex-shrink-0 flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => moveSlide(idx, -1)} className="w-7 h-7 rounded-lg text-gray-300 hover:text-gray-600 hover:bg-gray-100 flex items-center justify-center transition-colors" title="上移">
+                        <div className="flex-shrink-0 flex items-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                          <button onClick={(e) => { e.stopPropagation(); moveSlide(idx, -1); }} className="w-7 h-7 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex items-center justify-center transition-colors active:scale-90" title="上移">
                             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
                           </button>
-                          <button onClick={() => moveSlide(idx, 1)} className="w-7 h-7 rounded-lg text-gray-300 hover:text-gray-600 hover:bg-gray-100 flex items-center justify-center transition-colors" title="下移">
+                          <button onClick={(e) => { e.stopPropagation(); moveSlide(idx, 1); }} className="w-7 h-7 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex items-center justify-center transition-colors active:scale-90" title="下移">
                             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
                           </button>
-                          <button onClick={() => removeSlide(idx)} className="w-7 h-7 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-colors" title="删除此页">
+                          <button onClick={(e) => { e.stopPropagation(); removeSlide(idx); }} className="w-7 h-7 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-colors active:scale-90" title="删除此页">
                             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                           </button>
                         </div>

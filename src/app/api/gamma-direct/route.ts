@@ -70,21 +70,22 @@ export async function POST(request: NextRequest) {
       finalInputText = finalInputText.split(/\n\n+/).filter((p: string) => p.trim()).join('\n\n---\n\n');
     }
 
-    // 图片选项(按照技术部 gamma-phase2-report.md 验证的11种图片源)
-    // pictographic 是技术部验证有效的免费插图源(0 credits)
+    // 图片选项(按照技术部验证)
     let imageOptions: Record<string, any> = {};
     if (imageSource === 'none' || imageSource === 'noImages') {
       imageOptions = { source: 'noImages' }; // 纯文字
-    } else if (imageSource === 'emphasis' || imageSource === 'pictographic') {
-      // 精选套图/插图:技术部验证的 pictographic(免费摘要图)
-      imageOptions = { source: 'pictographic' }; // ⭐ 推荐!免费插图
+    } else if (imageSource === 'theme' || imageSource === 'pictographic') {
+      // 免费套图:主题自带的强调布局图(免费)
+      imageOptions = { source: 'pictographic' };
     } else if (imageSource === 'web') {
       imageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageSource === 'ai' || imageSource === 'aiGenerated') {
-      // 定制AI图:只用普通模型,禁用高级模型
+      // AI定制图:普通AI模型
       imageOptions = { source: 'aiGenerated', model: 'imagen-3-flash', style: 'flat illustration, minimalist, clean background, negative space' };
+    } else if (imageSource === 'ai-pro') {
+      // AI尊享图:高级AI模型
+      imageOptions = { source: 'aiGenerated', model: 'flux-kontext-fast', style: 'professional, high quality, cinematic, detailed' };
     } else {
-      // 默认:pictographic(技术部推荐)
       imageOptions = { source: 'pictographic' };
     }
 
@@ -93,11 +94,11 @@ export async function POST(request: NextRequest) {
     const metaphorAppend = visualMetaphor
       ? `\n\n【全局视觉隐喻】\n贯穿全演示的统一意象:${visualMetaphor}。\n所有配图、图标、色块风格应与此意象一致,配图描述中必须体现该意象关键词。`
       : '';
-    // 精选套图:追加强调布局图指令
-    const emphasisAppend = imageSource === 'emphasis'
-      ? `\n\n【精选套图-强调布局图】\n请为每一页自动配Gamma内置的强调布局图(Emphasize布局),这些是Gamma模板自带的免费装饰性图片,不需要额外credits。每页使用不同的强调图,保持视觉丰富度。`
+    // 免费套图:追加强调布局图指令
+    const themeAppend = imageSource === 'theme'
+      ? `\n\n【免费套图-主题强调布局图】\n请为每一页自动配Gamma内置的强调布局图(Emphasize布局),这些是Gamma模板自带的免费装饰性图片,不需要额外credits。每页使用不同的强调图,保持视觉丰富度。`
       : '';
-    const finalInstructions = instructions + metaphorAppend + emphasisAppend;
+    const finalInstructions = instructions + metaphorAppend + themeAppend;
     const finalThemeId = themeId || SCENE_CONFIGS.biz.themeId;
 
     // 步骤1:创建 Gamma 生成任务(恢复技术部验证的完整参数)

@@ -23,7 +23,7 @@ const PLANS: Record<string, MembershipPlan> = {
     id: 'free',
     name: '免费体验',
     emoji: '💚',
-    credits: 100,
+    credits: 50,
     maxPages: 8,
     priceMonthly: 0,
     priceAnnual: 0,
@@ -175,9 +175,10 @@ export function getMinPlanForImage(imageSource: string, aiModel?: string): Membe
 export function mapImgModeToSource(imgMode: string): string {
   switch (imgMode) {
     case 'none': return 'noImages';
-    case 'pictographic': return 'pictographic';
+    case 'theme': return 'pictographic';      // 免费套图
     case 'web': return 'webFreeToUseCommercially';
-    case 'ai': return 'aiGenerated';
+    case 'ai': return 'aiGenerated';           // AI定制图(普通)
+    case 'ai-pro': return 'aiGenerated';       // AI尊享图(高级)
     default: return 'noImages';
   }
 }
