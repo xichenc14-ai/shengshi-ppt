@@ -88,9 +88,12 @@ export default function HeroSection({ onSelectMode }: HeroSectionProps) {
             
             <div className="relative">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-400 flex items-center justify-center shadow-lg shadow-blue-200/50">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-purple-400 flex items-center justify-center shadow-lg shadow-purple-200/50">
                   <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-.5a5.5 5.5 0 00-5.5-5.5H14a3 3 0 01-3 3h-1a3 3 0 01-3-3V5" />
+                    <circle cx="11" cy="8" r="1" fill="currentColor" />
+                    <circle cx="15" cy="8" r="1" fill="currentColor" />
+                    <circle cx="13" cy="11" r="1" fill="currentColor" />
                   </svg>
                 </div>
                 <div>
