@@ -347,25 +347,52 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                     <span className="text-xs text-gray-400">验证码发送至 {maskedPhone}</span>
                   </div>
 
-                  {/* 验证码输入区域 */}
+                  {/* 验证码输入区域 - 单个隐藏input支持iOS自动填充 */}
                   <div className="flex gap-2.5 justify-center mb-4" onPaste={handleCodePaste}>
+                    {/* 隐藏的真实input（iOS自动填充会填这里） */}
+                    <input
+                      ref={el => { codeRefs.current[0] = el; }}
+                      id="sms-code-input"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="\d*"
+                      autoComplete="one-time-code"
+                      value={code.join('')}
+                      onChange={e => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                        if (val.length > 0) {
+                          const digits = val.split('');
+                          const newCode = ['', '', '', '', '', ''];
+                          for (let i = 0; i < 6; i++) newCode[i] = digits[i] || '';
+                          setCode(newCode);
+                          if (digits.length === 6) {
+                            setTimeout(() => handleVerifyLogin(val), 200);
+                          }
+                        }
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Backspace') {
+                          const currentCode = code.join('');
+                          if (currentCode.length === 0 && codeRefs.current[0]) {
+                            codeRefs.current[0]?.focus();
+                          }
+                        }
+                      }}
+                      className="sr-only"
+                    />
+                    {/* 展示用的6个格子 */}
                     {code.map((c, i) => (
-                      <input
+                      <div
                         key={i}
-                        ref={el => { codeRefs.current[i] = el; }}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={1}
-                        value={c}
-                        onChange={e => handleCodeInput(i, e.target.value)}
-                        onKeyDown={e => handleCodeKeyDown(i, e)}
-                        className={`w-11 h-13 text-center text-xl font-bold rounded-xl border-2 outline-none transition-all ${
+                        onClick={() => codeRefs.current[0]?.focus()}
+                        className={`w-11 h-13 text-center text-xl font-bold rounded-xl border-2 outline-none transition-all cursor-text ${
                           c
                             ? 'border-[#5B4FE9] bg-[#F5F3FF] scale-105'
-                            : 'border-gray-200 bg-gray-50 focus:border-[#5B4FE9] focus:bg-white'
+                            : 'border-gray-200 bg-gray-50'
                         }`}
-                        autoComplete="one-time-code"
-                      />
+                      >
+                        <span className="leading-[3rem]">{c}</span>
+                      </div>
                     ))}
                   </div>
 
