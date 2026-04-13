@@ -577,7 +577,6 @@ export function buildAdditionalInstructions(
       break;
     case 'webFreeToUseCommercially':
     case 'pexels':
-    case 'theme-img':
       imageRules = `
 【图标规则】（图标配合网图增强可视化）
 - 每一页都必须包含2-5个 Icons，用于标记要点和装饰
@@ -592,6 +591,22 @@ export function buildAdditionalInstructions(
 - 确保图片来源合规可商用（Unsplash / Pexels / 自有版权）
 - 配图位置：右图或上图
 - 如文字内容少于40字/页，必须额外增加配图数量`;
+      break;
+    case 'theme-img':
+      imageRules = `
+【图标规则】（图标配合主题强调图增强可视化）
+- 每一页都必须包含2-5个 Icons，用于标记要点和装饰
+- 图标风格：Simple, outlined, professional, consistent stroke width
+- 禁止出现没有任何图标的页面
+- 推荐图标库：Font Awesome / Material Icons / Ionicons
+
+【配图规则】（主题套图=themeAccent）
+- 使用Gamma主题内置的主题强调图（themeAccent）
+- 这些是主题编辑器中配置的强调图，与主题风格完美匹配
+- 封面页和结尾页使用主题强调图
+- 内容页每页至少使用1张主题强调图，确保图文结合
+- 配图位置：右图或上图
+- 如文字内容少于40字/页，必须额外增加主题强调图`;
       break;
     default:
       imageRules = `
