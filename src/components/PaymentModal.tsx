@@ -54,7 +54,7 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
     fetch('/api/payment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ planId: plan.id, payMethod, billing: plan.billing || 'monthly' }),
+      body: JSON.stringify({ planId: plan.id, payMethod, billing: plan.billing || 'monthly', userId: user?.id }),
     }).then(res => res.json()).then(data => {
       if (data.error) {
         setStep('select');
@@ -223,7 +223,7 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
                   <img
                     src={getQRCode(plan.id, (plan.billing as 'monthly' | 'annual') || 'monthly')!}
                     alt="收款码"
-                    className="w-52 h-52 mx-auto bg-white rounded-2xl shadow-md mb-3"
+                    className="w-64 h-64 mx-auto bg-white rounded-2xl shadow-md mb-3 object-contain"
                   />
                   <p className="text-xs text-gray-500 font-medium">
                     请使用{isWechat ? '微信' : '支付宝'}扫描上方二维码支付
