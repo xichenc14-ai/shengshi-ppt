@@ -376,7 +376,8 @@ export async function POST(request: NextRequest) {
       }),
     };
 
-    console.log('[Gamma] Payload:', JSON.stringify(gammaPayload, null, 2));
+    // 🔍 DEBUG: log key fields
+    console.log('[Gamma] textMode:', textMode, '| imageOptions:', JSON.stringify(finalImageOptions), '| imageMode:', imageMode, '| finalInstructions len:', finalInstructions.length);
 
     // 创建 Gamma 生成任务
     const gammaResponse = await fetch(`${GAMMA_API_BASE}/generations`, {
