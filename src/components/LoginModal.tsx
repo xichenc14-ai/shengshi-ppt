@@ -347,53 +347,49 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                     <span className="text-xs text-gray-400">验证码发送至 {maskedPhone}</span>
                   </div>
 
-                  {/* 验证码输入区域 - 单个隐藏input支持iOS自动填充 */}
-                  <div className="flex gap-2.5 justify-center mb-4" onPaste={handleCodePaste}>
-                    {/* 隐藏的真实input（iOS自动填充会填这里） */}
-                    <input
-                      ref={el => { codeRefs.current[0] = el; }}
-                      id="sms-code-input"
-                      type="text"
-                      inputMode="numeric"
-                      pattern="\d*"
-                      autoComplete="one-time-code"
-                      value={code.join('')}
-                      onChange={e => {
-                        const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                        if (val.length > 0) {
+                  {/*                   {/* 验证码输入区域 - 透明overlay输入框，支持所有浏览器自动填充 */}
+                  <div className="flex gap-2.5 justify-center mb-4">
+                    <div className="relative flex gap-2.5">
+                      {code.map((c, i) => (
+                        <div key={i} className={`w-11 h-13 text-center text-xl font-bold rounded-xl border-2 transition-all select-none ${c ? 'border-[#5B4FE9] bg-[#F5F3FF] scale-105' : 'border-gray-200 bg-gray-50'}`}>
+                          <span className="leading-[3rem]">{c}</span>
+                        </div>
+                      ))}
+                      {/* 透明输入框覆盖格子，接收所有输入（键盘+粘贴+浏览器自动填充） */}
+                      <input
+                        ref={el => { codeRefs.current[0] = el; }}
+                        id="sms-code-input"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        autoComplete="one-time-code"
+                        enterKeyHint="done"
+                        value={code.join('')}
+                        onChange={e => {
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 6);
                           const digits = val.split('');
                           const newCode = ['', '', '', '', '', ''];
                           for (let i = 0; i < 6; i++) newCode[i] = digits[i] || '';
                           setCode(newCode);
-                          if (digits.length === 6) {
-                            setTimeout(() => handleVerifyLogin(val), 200);
-                          }
-                        }
-                      }}
-                      onKeyDown={e => {
-                        if (e.key === 'Backspace') {
-                          const currentCode = code.join('');
-                          if (currentCode.length === 0 && codeRefs.current[0]) {
-                            codeRefs.current[0]?.focus();
-                          }
-                        }
-                      }}
-                      className="sr-only"
-                    />
-                    {/* 展示用的6个格子 */}
-                    {code.map((c, i) => (
-                      <div
-                        key={i}
-                        onClick={() => codeRefs.current[0]?.focus()}
-                        className={`w-11 h-13 text-center text-xl font-bold rounded-xl border-2 outline-none transition-all cursor-text ${
-                          c
-                            ? 'border-[#5B4FE9] bg-[#F5F3FF] scale-105'
-                            : 'border-gray-200 bg-gray-50'
-                        }`}
-                      >
-                        <span className="leading-[3rem]">{c}</span>
-                      </div>
-                    ))}
+                          if (val.length === 6) setTimeout(() => handleVerifyLogin(val), 200);
+                        }}
+                        onKeyDown={e => {
+                          if (e.key === 'Backspace' && code.join('') === '') codeRefs.current[0]?.focus();
+                          if (e.key === 'Enter') { const full = code.join(''); if (full.length === 6) handleVerifyLogin(full); }
+                        }}
+                        onPaste={e => {
+                          e.preventDefault();
+                          const paste = (e.clipboardData || (window as any).clipboardData).getData('text').replace(/\D/g, '').slice(0, 6);
+                          const digits = paste.split('');
+                          const newCode = ['', '', '', '', '', ''];
+                          for (let i = 0; i < 6; i++) newCode[i] = digits[i] || '';
+                          setCode(newCode);
+                          if (paste.length === 6) setTimeout(() => handleVerifyLogin(paste), 200);
+                        }}
+                        className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-text"
+                        style={{ fontSize: '40px', letterSpacing: '2.2rem', paddingLeft: '8px' }}
+                      />
+                    </div>
                   </div>
 
                   {/* 重新发送 */}
