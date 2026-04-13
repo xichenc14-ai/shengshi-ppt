@@ -678,8 +678,8 @@ export default function Home() {
     <div className="min-h-screen bg-[#FAFBFE] flex flex-col">
       <Navbar onLogoClick={backToLanding} />
 
-      {/* 顶部通知条 - 仅非生成阶段显示 */}
-      {phase !== 'generating' && phase !== 'direct-generating' && phase !== 'streaming' && (
+      {/* 顶部通知条 - 仅生成中阶段隐藏 */}
+      {phase !== 'generating' && phase !== 'direct-generating' && (
         <ScrollingBanner variant="top" />
       )}
 
