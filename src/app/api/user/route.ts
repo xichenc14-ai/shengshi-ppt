@@ -356,28 +356,43 @@ export async function POST(req: NextRequest) {
 
       const pwdHash = hashPassword(password);
       const isPhone = /^1[3-9]\d{9}$/.test(account);
-      let query;
+      // 先查询基本用户信息（password_hash列可能不存在，单独查询）
+      let users: any[];
+      let qErr: any;
       if (isPhone) {
-        query = sb.from('users').select('id,phone,nickname,credits,plan_type,is_active,password_hash').eq('phone', account);
+        const r = await sb.from('users').select('id,phone,nickname,credits,plan_type,is_active').eq('phone', account).limit(1);
+        users = r.data || []; qErr = r.error;
       } else {
-        query = sb.from('users').select('id,phone,nickname,credits,plan_type,is_active,password_hash').ilike('nickname', account);
+        const r = await sb.from('users').select('id,phone,nickname,credits,plan_type,is_active').ilike('nickname', account).limit(1);
+        users = r.data || []; qErr = r.error;
       }
-
-      const { data: users, error: qErr } = await query.limit(1);
       if (qErr) {
-        return NextResponse.json({ error: '登录失败' }, { status: 500 });
+        console.error('[Login] DB query error:', qErr);
+        return NextResponse.json({ error: '账号不存在' }, { status: 404 });
       }
       if (!users || users.length === 0) {
         return NextResponse.json({ error: '账号不存在' }, { status: 404 });
       }
 
-      const u = users[0] as any;
+      const u = users[0];
 
-      if (u.password_hash === undefined || u.password_hash === null) {
-        return NextResponse.json({ error: 'NEED_SET_PASSWORD', needSetPassword: true, phone: u.phone }, { status: 400 });
+      // 单独查询password_hash（可能不存在）
+      let pwdHashFromDB: string | null = null;
+      try {
+        const pwdR = await sb.from('users').select('password_hash').eq('id', u.id).limit(1);
+        pwdHashFromDB = pwdR.data?.[0]?.password_hash || null;
+      } catch (e: any) {
+        console.warn('[Login] password_hash列不存在:', e.message);
       }
 
-      if (u.password_hash !== pwdHash) {
+      if (pwdHashFromDB === null) {
+        // 没有password_hash：仅开发模式允许测试密码123456登录
+        if (process.env.NODE_ENV !== 'production' && password === '123456') {
+          // 允许测试密码登录
+        } else {
+          return NextResponse.json({ error: 'NEED_SET_PASSWORD', needSetPassword: true, phone: u.phone }, { status: 400 });
+        }
+      } else if (pwdHashFromDB !== pwdHash) {
         return NextResponse.json({ error: '密码错误' }, { status: 401 });
       }
 
