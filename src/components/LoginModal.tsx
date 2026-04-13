@@ -181,6 +181,14 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
         setTimeout(() => document.getElementById('reg-username-input')?.focus(), 150);
         return;
       }
+      if (data.error === 'NEED_SET_PASSWORD') {
+        // 账号未设置密码，引导设置
+        setPhone(phone);
+        setPhoneStep('set_profile');
+        setLoading(false);
+        setTimeout(() => document.getElementById('reg-username-input')?.focus(), 150);
+        return;
+      }
       if (data.error) {
         setError(data.error);
         if (data.attemptsLeft !== undefined) setAttemptsLeft(data.attemptsLeft);

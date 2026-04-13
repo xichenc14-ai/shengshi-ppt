@@ -363,7 +363,7 @@ export async function POST(req: NextRequest) {
       const u = users[0] as any;
 
       if (u.password_hash === undefined || u.password_hash === null) {
-        return NextResponse.json({ error: '该账号未设置密码，请使用手机验证码登录' }, { status: 400 });
+        return NextResponse.json({ error: 'NEED_SET_PASSWORD', needSetPassword: true, phone: u.phone }, { status: 400 });
       }
 
       if (u.password_hash !== pwdHash) {
