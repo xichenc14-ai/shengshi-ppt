@@ -262,12 +262,12 @@ export default function Home() {
         setStepText('正在等待 AI 渲染 PPT...');
 
         const startTime = Date.now();
-        const pollInterval = 4000;
+        const pollInterval = 3000; // 🚨 优化：缩短轮询间隔，快速响应
         let finalExportUrl = '';
 
         let finalGammaUrl = '';
 
-        while (Date.now() - startTime < 120000) {
+        while (Date.now() - startTime < 180000) { // 🚨 优化：延长超时到3分钟（复杂PPT需要更多时间）
           await new Promise(r => setTimeout(r, pollInterval));
 
           const statusRes = await fetch(`/api/gamma?id=${gd.generationId}`);
@@ -450,8 +450,8 @@ export default function Home() {
         setGenStep(3); setGenProgress(80);
         setStepText('正在等待 AI 渲染 PPT...');
         const startTime = Date.now();
-        while (Date.now() - startTime < 120000) {
-          await new Promise(r => setTimeout(r, 4000));
+        while (Date.now() - startTime < 180000) { // 🚨 优化：延长超时到3分钟
+          await new Promise(r => setTimeout(r, 3000)); // 🚨 优化：缩短轮询间隔到3秒
           const statusRes = await fetch(`/api/gamma?id=${gd.generationId}`);
           if (!statusRes.ok) continue;
           const statusData = await statusRes.json();
@@ -465,7 +465,7 @@ export default function Home() {
           if (statusData.status === 'failed') { throw new Error(statusData.error || '生成失败'); }
           setStepText(`AI 渲染中... ${Math.floor((Date.now() - startTime) / 1000)}秒`);
         }
-        throw new Error('生成超时（2分钟）');
+        throw new Error('生成超时（3分钟），PPT内容较复杂，请稍后重试');
       }
     } catch (e: any) {
       setError(e.message);
@@ -661,12 +661,12 @@ export default function Home() {
         setGenProgress(60);
         setStepText('正在等待 AI 渲染 PPT...');
 
-        // 轮询状态（最多 2 分钟）
+        // 轮询状态（最多 3 分钟）
         const startTime = Date.now();
-        const pollInterval = 4000;
+        const pollInterval = 3000; // 🚨 优化：缩短轮询间隔，快速响应
         let finalExportUrl = '';
 
-        while (Date.now() - startTime < 120000) {
+        while (Date.now() - startTime < 180000) { // 🚨 优化：延长超时到3分钟
           await new Promise(r => setTimeout(r, pollInterval));
 
           const statusRes = await fetch(`/api/gamma?id=${gd.generationId}`);
@@ -1372,8 +1372,14 @@ export default function Home() {
                       document.body.appendChild(link);
                       link.click();
                       document.body.removeChild(link);
-                    } else {
+                    } else if (result.dlUrl.includes('gamma.app') || result.dlUrl.includes('Gamma')) {
+                      // Gamma 网页链接：告诉用户去 Gamma 在线查看和下载
                       window.open(result.dlUrl, '_blank');
+                    } else {
+                      // 未知格式 URL：尝试通过代理下载
+                      const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                      const proxyUrl = `/api/export?url=${encodeURIComponent(result.dlUrl)}&name=${encodeURIComponent(filename)}`;
+                      window.location.href = proxyUrl;
                     }
                   }} className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 transition-all">
                     📥 下载 PPTX

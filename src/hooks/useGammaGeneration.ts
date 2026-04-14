@@ -130,7 +130,7 @@ export function useGammaGeneration(): UseGammaGenerationReturn {
       setStepText('正在等待 AI 渲染 PPT...');
 
       const startTime = Date.now();
-      const pollInterval = 4000;
+      const pollInterval = 3000; // 🚨 优化：缩短轮询间隔，快速响应
       let finalExportUrl = '';
       let finalGammaUrl = '';
 

@@ -233,8 +233,8 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       if (gd.generationId) {
         setGenStep(2); setGenProgress(50); setStepText('正在等待 AI 渲染 PPT...');
         const startTime = Date.now(); let finalExportUrl = '';
-        while (Date.now() - startTime < 120000) {
-          await new Promise(r => setTimeout(r, 4000));
+        while (Date.now() - startTime < 180000) { // 🚨 优化：延长超时到3分钟
+          await new Promise(r => setTimeout(r, 3000)); // 🚨 优化：缩短轮询间隔到3秒
           const statusRes = await fetch(`/api/gamma?id=${gd.generationId}`);
           if (!statusRes.ok) continue;
           const statusData = await statusRes.json();
@@ -243,7 +243,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
           const elapsed = Math.floor((Date.now() - startTime) / 1000);
           setStepText(`AI 渲染中... ${elapsed}秒`);
         }
-        if (!finalExportUrl) throw new Error('生成超时（2分钟），PPT内容较复杂，请稍后重试');
+        if (!finalExportUrl) throw new Error('生成超时（3分钟），PPT内容较复杂，请稍后重试');
         await new Promise(r => setTimeout(r, 500));
         const topicText = inputText.split('\n')[0].replace(/^#\s*/, '').trim();
         setResult({ title: topicText || 'PPT', slides: [], dlUrl: finalExportUrl, actualPages: pages });
@@ -364,8 +364,8 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       if (gd.generationId) {
         setGenStep(3); setGenProgress(60); setStepText('正在等待 AI 渲染 PPT...');
         const startTime = Date.now(); let finalExportUrl = '';
-        while (Date.now() - startTime < 120000) {
-          await new Promise(r => setTimeout(r, 4000));
+        while (Date.now() - startTime < 180000) { // 🚨 优化：延长超时到3分钟
+          await new Promise(r => setTimeout(r, 3000)); // 🚨 优化：缩短轮询间隔到3秒
           const statusRes = await fetch(`/api/gamma?id=${gd.generationId}`);
           if (!statusRes.ok) continue;
           const statusData = await statusRes.json();
@@ -374,7 +374,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
           const elapsed = Math.floor((Date.now() - startTime) / 1000);
           setStepText(`AI 渲染中... ${elapsed}秒`);
         }
-        if (!finalExportUrl) throw new Error('生成超时（2分钟），PPT内容较复杂，请稍后重试');
+        if (!finalExportUrl) throw new Error('生成超时（3分钟），PPT内容较复杂，请稍后重试');
         await new Promise(r => setTimeout(r, 500));
         setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalExportUrl, actualPages: editedSlides.length });
         setGenProgress(100); setPhase('result');
