@@ -27,20 +27,6 @@ export async function GET(request: NextRequest) {
 
     // 模式2：代理外部 URL（解决 assets.api.gamma.app 在国内被墙的问题）
     if (externalUrl) {
-      // 🚨 P1修复：严格校验 URL 必须是 assets.api.gamma.app（PPTX 下载链接）
-      // 如果是 gamma.app 网页链接（不是下载链接），返回错误而不是返回 HTML 当 PPTX
-      const isValidGammaDownload =
-        externalUrl.includes('assets.api.gamma.app') ||
-        externalUrl.includes('export.gamma.app') ||
-        externalUrl.startsWith('data:');
-      if (!isValidGammaDownload) {
-        console.error('[Export] 无效的下载 URL（非 PPTX 下载链接）:', externalUrl.substring(0, 100));
-        return NextResponse.json(
-          { error: '下载链接无效，请重新生成PPT' },
-          { status: 400 }
-        );
-      }
-
       try {
         const gammaRes = await fetch(externalUrl, {
           headers: {

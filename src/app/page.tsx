@@ -1355,34 +1355,60 @@ export default function Home() {
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                 {result.dlUrl && (
-                  <button onClick={() => {
+                  <button onClick={async () => {
+                    const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
                     if (result.dlUrl.startsWith('data:')) {
                       const link = document.createElement('a');
                       link.href = result.dlUrl;
-                      link.download = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                    } else if (result.dlUrl.includes('assets.api')) {
-                      const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
-                      const proxyUrl = `/api/export?url=${encodeURIComponent(result.dlUrl)}&name=${encodeURIComponent(filename)}`;
-                      const link = document.createElement('a');
-                      link.href = proxyUrl;
                       link.download = filename;
                       document.body.appendChild(link);
                       link.click();
                       document.body.removeChild(link);
-                    } else if (result.dlUrl.includes('gamma.app') || result.dlUrl.includes('Gamma')) {
-                      // Gamma 网页链接：告诉用户去 Gamma 在线查看和下载
-                      window.open(result.dlUrl, '_blank');
-                    } else {
-                      // 未知格式 URL：尝试通过代理下载
-                      const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
-                      const proxyUrl = `/api/export?url=${encodeURIComponent(result.dlUrl)}&name=${encodeURIComponent(filename)}`;
-                      window.location.href = proxyUrl;
+                      return;
+                    }
+                    // 统一走代理下载（服务端处理跨域和格式转换）
+                    const proxyUrl = `/api/export?url=${encodeURIComponent(result.dlUrl)}&name=${encodeURIComponent(filename)}`;
+                    try {
+                      const res = await fetch(proxyUrl);
+                      if (!res.ok) {
+                        // 代理失败：尝试直接打开 Gamma 链接
+                        if (result.dlUrl.includes('gamma.app')) {
+                          window.open(result.dlUrl, '_blank');
+                        }
+                        alert('下载暂时失败，请点击「在线查看」打开 Gamma 页面，从右上角下载PPT');
+                        return;
+                      }
+                      const blob = await res.blob();
+                      if (blob.size < 1000) {
+                        // 返回的不是有效文件（可能是错误页）
+                        if (result.dlUrl.includes('gamma.app')) {
+                          window.open(result.dlUrl, '_blank');
+                        }
+                        alert('下载暂时失败，请点击「在线查看」打开 Gamma 页面下载');
+                        return;
+                      }
+                      const blobUrl = URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = blobUrl;
+                      link.download = filename;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+                    } catch {
+                      // 网络错误：尝试直接打开
+                      if (result.dlUrl.includes('gamma.app')) {
+                        window.open(result.dlUrl, '_blank');
+                      }
+                      alert('下载失败，请点击「在线查看」打开 Gamma 页面下载');
                     }
                   }} className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 transition-all">
                     📥 下载 PPTX
+                  </button>
+                )}
+                {result.dlUrl && (result.dlUrl.includes('gamma.app') || result.dlUrl.includes('Gamma') || result.dlUrl.includes('assets.api')) && (
+                  <button onClick={() => window.open(result.dlUrl, '_blank')} className="w-full sm:w-auto px-6 py-3 text-purple-600 hover:text-purple-700 text-sm font-medium border border-purple-200 hover:border-purple-300 rounded-xl transition-all">
+                    🔗 在线查看 / 下载
                   </button>
                 )}
                 <button onClick={reset} className="w-full sm:w-auto px-8 py-3.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">
