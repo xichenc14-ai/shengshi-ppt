@@ -386,6 +386,14 @@ export default function Home() {
 
       setOutlineResult(od);
       setEditedSlides(od.slides || []);
+      // 🚨 V6：省心模式需要构造 smartGammaPayload（大纲确认页 UI 依赖它）
+      if (mode === 'smart') {
+        setSmartGammaPayload({
+          themeId: od.themeId || 'consultant',
+          tone: od.tone || 'professional',
+          imageOptions: { source: od.imageMode || 'pictographic' },
+        });
+      }
       setPhase('outline');
       setGenProgress(100);
     } catch (e: any) {
@@ -490,47 +498,23 @@ export default function Home() {
       // Step 2: Generate
       setGenStep(2);
       setGenProgress(40);
-      setStepText(mode === 'smart' && smartGammaPayload ? '正在精准渲染...' : 'AI 正在渲染 PPT 页面...');
+      setStepText('AI 正在渲染 PPT 页面...');
 
-      // 🚨 省心模式：直接用 AI 生成的完整参数
-      // 🚨 专业模式：用 buildMdV2 构建内容
-      let gammaRequestBody: any;
-
-      if (mode === 'smart' && smartGammaPayload) {
-        // 省心模式：用 smartGammaPayload.gammaPayload（只取 Gamma 需要的参数）
-        // 用户可能编辑了大纲，需要重建 inputText 和更新页数
-        const basePayload = smartGammaPayload.gammaPayload || smartGammaPayload;
-        const imgSrc = basePayload.imageOptions?.source || 'pictographic';
-        // ✅ Gamma API 直接支持这些 source 值，不需要映射
-        // pictographic, themeAccent, webFreeToUseCommercially, aiGenerated, noImages
-        const gammaImgSrc = imgSrc;
-        const { markdown: rebuiltMd } = buildMdV2(outlineResult.title, editedSlides, imgSrc, false); // 🚨 V6修复：preserve模式不允许ENHANCEMENT_MAP扩写
-        gammaRequestBody = {
-          ...basePayload,
-          inputText: rebuiltMd,
-          numCards: editedSlides.length,
-          textMode: 'preserve',
-          imageOptions: {
-            ...(basePayload.imageOptions || {}),
-            source: gammaImgSrc,
-          },
-        };
-      } else {
-        // 专业模式：用用户选择的参数
-        const { markdown: md, visualMetaphor } = buildMdV2(outlineResult.title, editedSlides, imgMode, false); // 🚨 V6修复：preserve模式不允许ENHANCEMENT_MAP扩写
-        gammaRequestBody = {
-          inputText: md,
-          textMode: 'preserve',
-          format: 'presentation',
-          numCards: editedSlides.length,
-          exportAs: 'pptx',
-          themeId: theme === 'auto' ? outlineResult.themeId : theme,
-          tone,
-          imageMode: imgMode,
-          slides: editedSlides,
-          visualMetaphor,
-        };
-      }
+      // 🚨 V6 统一：所有模式（省心+专业）都用 buildMdV2 构建内容
+      const imgSrc = imgMode;
+      const { markdown: md, visualMetaphor } = buildMdV2(outlineResult.title, editedSlides, imgSrc, false);
+      const gammaRequestBody: any = {
+        inputText: md,
+        textMode: 'preserve',
+        format: 'presentation',
+        numCards: editedSlides.length,
+        exportAs: 'pptx',
+        themeId: theme === 'auto' ? outlineResult.themeId : theme,
+        tone,
+        imageMode: imgSrc,
+        slides: editedSlides,
+        visualMetaphor,
+      };
 
       const gRes = await fetch('/api/gamma', {
         method: 'POST',

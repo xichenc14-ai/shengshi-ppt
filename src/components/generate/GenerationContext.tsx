@@ -348,16 +348,11 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       updateCredits(deductData.balance);
       setGenStep(1); setGenProgress(25); setStepText('AI 正在优化内容...');
       await new Promise(r => setTimeout(r, 600));
-      setGenStep(2); setGenProgress(40); setStepText(mode === 'smart' && smartGammaPayload ? '正在精准渲染...' : 'AI 正在渲染 PPT 页面...');
+      setGenStep(2); setGenProgress(40); setStepText('AI 正在渲染 PPT 页面...');
 
-      let gammaRequestBody: any;
-      if (mode === 'smart' && smartGammaPayload) {
-        const { markdown: rebuiltMd } = buildMdV2(outlineResult.title, editedSlides, smartGammaPayload.imageOptions?.source || 'pictographic');
-        gammaRequestBody = { ...smartGammaPayload, inputText: rebuiltMd, numCards: editedSlides.length, textMode: 'preserve' };
-      } else {
-        const { markdown: md, visualMetaphor } = buildMdV2(outlineResult.title, editedSlides, directImgMode);
-        gammaRequestBody = { inputText: md, textMode: 'preserve', format: 'presentation', numCards: editedSlides.length, exportAs: 'pptx', themeId: directTheme, tone: directTone, imageMode: directImgMode, slides: editedSlides, visualMetaphor };
-      }
+      // 🚨 V6 统一：所有模式都用 buildMdV2
+      const { markdown: md, visualMetaphor } = buildMdV2(outlineResult.title, editedSlides, directImgMode);
+      const gammaRequestBody = { inputText: md, textMode: 'preserve', format: 'presentation', numCards: editedSlides.length, exportAs: 'pptx', themeId: directTheme, tone: directTone, imageMode: directImgMode, slides: editedSlides, visualMetaphor };
 
       const gRes = await fetch('/api/gamma', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -391,7 +386,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       setError(e.message); setPhase('outline');
     }
     setLoading(false);
-  }, [user, outlineResult, editedSlides, mode, smartGammaPayload, directTheme, directTone, directImgMode, updateCredits]);
+  }, [user, outlineResult, editedSlides, mode, directTheme, directTone, directImgMode, updateCredits]);
 
   // Track hasInput
   useState(() => {
@@ -402,7 +397,8 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
     phase, mode, topic, files, hasInput,
     directTheme, directTone, directImgMode, directTextMode, pages,
     loading, error, stepText, genProgress, genStep,
-    outlineResult, smartGammaPayload, editedSlides, streamingSlides, dragIndex, dragOverIndex,
+    outlineResult, editedSlides, streamingSlides, dragIndex, dragOverIndex,
+    smartGammaPayload,
     result,
   };
 
