@@ -73,7 +73,7 @@ export default function Home() {
   const [genStep, setGenStep] = useState(0);
 
   // Outline & 省心模式 Payload
-  const [outlineResult, setOutlineResult] = useState<{ title: string; slides: SlideItem[]; themeId?: string } | null>(null);
+  const [outlineResult, setOutlineResult] = useState<{ title: string; slides: SlideItem[]; themeId?: string; tone?: string; imageMode?: string } | null>(null);
   const [smartGammaPayload, setSmartGammaPayload] = useState<any>(null); // 省心模式 AI 生成的完整参数
   const [editedSlides, setEditedSlides] = useState<SlideItem[]>([]);
   const [streamingSlides, setStreamingSlides] = useState<SlideItem[]>([]);
@@ -503,14 +503,17 @@ export default function Home() {
       // 🚨 V6 统一：所有模式（省心+专业）都用 buildMdV2 构建内容
       const imgSrc = imgMode;
       const { markdown: md, visualMetaphor } = buildMdV2(outlineResult.title, editedSlides, imgSrc, false);
+      // 🚨 V6.1 修复：themeId/tone 优先从 outlineResult 取（outline API 已匹配最佳配置）
+      const finalThemeId = (theme !== 'auto' ? theme : outlineResult.themeId) || 'consultant';
+      const finalTone = tone || outlineResult.tone || 'professional';
       const gammaRequestBody: any = {
         inputText: md,
         textMode: 'preserve',
         format: 'presentation',
         numCards: editedSlides.length,
         exportAs: 'pptx',
-        themeId: theme === 'auto' ? outlineResult.themeId : theme,
-        tone,
+        themeId: finalThemeId,
+        tone: finalTone,
         imageMode: imgSrc,
         slides: editedSlides,
         visualMetaphor,
@@ -1237,25 +1240,17 @@ export default function Home() {
                       document.body.removeChild(link);
                       return;
                     }
-                    // 统一走代理下载（服务端处理跨域和格式转换）
+                    // 统一走代理下载
                     const proxyUrl = `/api/export?url=${encodeURIComponent(result.dlUrl)}&name=${encodeURIComponent(filename)}`;
                     try {
                       const res = await fetch(proxyUrl);
                       if (!res.ok) {
-                        // 代理失败：尝试直接打开 Gamma 链接
-                        if (result.dlUrl.includes('gamma.app')) {
-                          window.open(result.dlUrl, '_blank');
-                        }
-                        alert('下载暂时失败，请点击「在线查看」打开 Gamma 页面，从右上角下载PPT');
+                        alert('下载暂时失败，请稍后重试');
                         return;
                       }
                       const blob = await res.blob();
                       if (blob.size < 1000) {
-                        // 返回的不是有效文件（可能是错误页）
-                        if (result.dlUrl.includes('gamma.app')) {
-                          window.open(result.dlUrl, '_blank');
-                        }
-                        alert('下载暂时失败，请点击「在线查看」打开 Gamma 页面下载');
+                        alert('下载暂时失败，请稍后重试');
                         return;
                       }
                       const blobUrl = URL.createObjectURL(blob);
@@ -1267,19 +1262,10 @@ export default function Home() {
                       document.body.removeChild(link);
                       setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
                     } catch {
-                      // 网络错误：尝试直接打开
-                      if (result.dlUrl.includes('gamma.app')) {
-                        window.open(result.dlUrl, '_blank');
-                      }
-                      alert('下载失败，请点击「在线查看」打开 Gamma 页面下载');
+                      alert('下载失败，请稍后重试');
                     }
                   }} className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 transition-all">
                     📥 下载 PPTX
-                  </button>
-                )}
-                {result.dlUrl && (result.dlUrl.includes('gamma.app') || result.dlUrl.includes('Gamma') || result.dlUrl.includes('assets.api')) && (
-                  <button onClick={() => window.open(result.dlUrl, '_blank')} className="w-full sm:w-auto px-6 py-3 text-purple-600 hover:text-purple-700 text-sm font-medium border border-purple-200 hover:border-purple-300 rounded-xl transition-all">
-                    🔗 在线查看 / 下载
                   </button>
                 )}
                 <button onClick={reset} className="w-full sm:w-auto px-8 py-3.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">

@@ -101,8 +101,8 @@ function buildContentPage(
 export function buildMdV2(
   title: string,
   slides: SlideItem[],
-  _imageMode: string = 'noImages',  // 保留参数但 V6 核心逻辑不再依赖
-  _allowEnhancement: boolean = false  // V6：此参数已废弃，扩写永远关闭
+  _imageMode: string = 'noImages',
+  _allowEnhancement: boolean = false
 ): BuildMdV2Result {
   if (!slides || slides.length === 0) {
     return {
@@ -117,12 +117,9 @@ export function buildMdV2(
 
   // 遍历每一页幻灯片
   slides.forEach((slide, index) => {
-    const isFirst = index === 0;
-    const isLast = index === total - 1;
-    const points = slide.points ?? slide.content ?? [];  // 兼容 content[] 字段名
+    const points = slide.points ?? slide.content ?? [];
 
     // ===== 强制拆页：>4 点自动拆成多页 =====
-    // V6 核心熔断：哪怕上游 AI 输出了 10 个点，也要拆成 4+4+2
     const chunks = chunkArray(points, MAX_POINTS_PER_PAGE);
 
     chunks.forEach((chunk, chunkIndex) => {
@@ -130,28 +127,19 @@ export function buildMdV2(
       const isLastChunk = chunkIndex === chunks.length - 1;
       const isContinuation = !isFirstChunk;
 
-      if (isFirst && isFirstChunk) {
-        // 首页 = 封面
-        outputParts.push(buildCoverPage(slide.title));
-      } else if (isLast && isLastChunk) {
-        // 末页 = 结尾页
-        outputParts.push(buildEndingPage(slide.title, slide.notes));
-      } else {
-        // 中间内容页（含续页）
-        outputParts.push(
-          buildContentPage(
-            slide.title,
-            chunk,
-            isLastChunk ? slide.notes : undefined,  // 备注只加在最后一 chunk
-            isContinuation
-          )
-        );
-      }
+      // 🚨 V6.1 修复：不再强制首页=封面、末页=结尾
+      // 每一页都按正常内容页处理，让 Gamma 自己决定封面/结尾
+      outputParts.push(
+        buildContentPage(
+          slide.title,
+          chunk,
+          isLastChunk ? slide.notes : undefined,
+          isContinuation
+        )
+      );
 
-      // ===== 强制物理分页符：每页后加强制 --- =====
-      // V6：除最后一页的最后一个 chunk 外，全部加分页符
-      const isVeryLast = isLast && isLastChunk;
-      if (!isVeryLast) {
+      // 强制物理分页符
+      if (!(index === total - 1 && isLastChunk)) {
         outputParts.push('---\n');
       }
     });
@@ -159,7 +147,7 @@ export function buildMdV2(
 
   return {
     markdown: outputParts.join('\n').trim(),
-    visualMetaphor: '山峰',  // V6：静态默认值，避免干扰核心逻辑
+    visualMetaphor: '山峰',
   };
 }
 

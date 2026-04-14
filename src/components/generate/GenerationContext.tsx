@@ -31,7 +31,7 @@ interface GenerationState {
   genStep: number;
   
   // Outline & Smart mode
-  outlineResult: { title: string; slides: SlideItem[]; themeId?: string } | null;
+  outlineResult: { title: string; slides: SlideItem[]; themeId?: string; tone?: string; imageMode?: string } | null;
   smartGammaPayload: any;
   editedSlides: SlideItem[];
   streamingSlides: SlideItem[];
@@ -99,7 +99,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
   const [genProgress, setGenProgress] = useState(0);
   const [genStep, setGenStep] = useState(0);
   
-  const [outlineResult, setOutlineResult] = useState<{ title: string; slides: SlideItem[]; themeId?: string } | null>(null);
+  const [outlineResult, setOutlineResult] = useState<{ title: string; slides: SlideItem[]; themeId?: string; tone?: string; imageMode?: string } | null>(null);
   const [smartGammaPayload, setSmartGammaPayload] = useState<any>(null);
   const [editedSlides, setEditedSlides] = useState<SlideItem[]>([]);
   const [streamingSlides, setStreamingSlides] = useState<SlideItem[]>([]);
@@ -352,7 +352,10 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
 
       // 🚨 V6 统一：所有模式都用 buildMdV2
       const { markdown: md, visualMetaphor } = buildMdV2(outlineResult.title, editedSlides, directImgMode);
-      const gammaRequestBody = { inputText: md, textMode: 'preserve', format: 'presentation', numCards: editedSlides.length, exportAs: 'pptx', themeId: directTheme, tone: directTone, imageMode: directImgMode, slides: editedSlides, visualMetaphor };
+      // 🚨 V6.1 修复：themeId/tone 优先从 outlineResult 取
+      const finalThemeId = (directTheme !== 'auto' ? directTheme : outlineResult.themeId) || 'consultant';
+      const finalTone = directTone || outlineResult.tone || 'professional';
+      const gammaRequestBody = { inputText: md, textMode: 'preserve', format: 'presentation', numCards: editedSlides.length, exportAs: 'pptx', themeId: finalThemeId, tone: finalTone, imageMode: directImgMode, slides: editedSlides, visualMetaphor };
 
       const gRes = await fetch('/api/gamma', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
