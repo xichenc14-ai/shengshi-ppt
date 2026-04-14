@@ -447,7 +447,7 @@ export default function Home() {
       const gd = await gRes.json();
 
       if (gd.generationId) {
-        setGenStep(3); setGenProgress(80);
+        setGenStep(2); setGenProgress(80);
         setStepText('正在等待 AI 渲染 PPT...');
         const startTime = Date.now();
         while (Date.now() - startTime < 180000) { // 🚨 优化：延长超时到3分钟
@@ -657,7 +657,7 @@ export default function Home() {
 
       if (gd.generationId) {
         // API 是异步的，需要轮询状态
-        setGenStep(3);
+        setGenStep(2);
         setGenProgress(60);
         setStepText('正在等待 AI 渲染 PPT...');
 

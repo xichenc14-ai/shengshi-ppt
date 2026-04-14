@@ -362,7 +362,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       if (!gRes.ok) { const d = await gRes.json(); throw new Error(d.error || `生成失败(${gRes.status})`); }
       const gd = await gRes.json();
       if (gd.generationId) {
-        setGenStep(3); setGenProgress(60); setStepText('正在等待 AI 渲染 PPT...');
+        setGenStep(2); setGenProgress(60); setStepText('正在等待 AI 渲染 PPT...');
         const startTime = Date.now(); let finalExportUrl = '';
         while (Date.now() - startTime < 180000) { // 🚨 优化：延长超时到3分钟
           await new Promise(r => setTimeout(r, 3000)); // 🚨 优化：缩短轮询间隔到3秒

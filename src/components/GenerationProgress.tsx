@@ -13,7 +13,7 @@ const STEPS = [
   { id: 'analyze', label: '分析需求', icon: '🔍', desc: 'AI 正在理解你的主题...' },
   { id: 'outline', label: '生成大纲', icon: '📋', desc: '构建内容框架...' },
   { id: 'render', label: '渲染PPT', icon: '🎨', desc: '设计精美页面...' },
-  { id: 'check', label: '最终检查', icon: '✅', desc: '确保完美呈现...' },
+  // 🚨 精简：移除「最终检查」这个空步骤
 ];
 
 // 趣味等待提示
