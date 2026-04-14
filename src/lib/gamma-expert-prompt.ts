@@ -1,8 +1,10 @@
-// gamma-expert-prompt.ts — Gamma PPT 专家知识库
+// gamma-expert-prompt.ts — Gamma PPT 专家知识库 V7
 // 将我们所有的 Gamma 研究成果压缩成提示词，让远程大模型具备专业 Gamma 设计能力
 //
-// 核心思想：远程模型没有我们的本地研究资料，所以必须把所有关键知识
-// 以 system prompt 的方式嵌入，让模型「变成」Gamma PPT 设计专家
+// V7 核心升级：故事线引擎 + 数据可视化 + 逻辑结构强化
+// - 嵌入 5 种经典故事线模板（SCQA / Hero's Journey / Problem-Solution / Timeline / Before-After）
+// - 数据可视化图表选择规则
+// - 页面间逻辑衔接 + 金句注入
 
 // ===== Gamma API 核心参数 =====
 export const GAMMA_API_PARAMS = `
