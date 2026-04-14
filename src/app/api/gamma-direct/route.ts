@@ -194,8 +194,14 @@ export async function POST(request: NextRequest) {
     const finalInstructions = instructions + metaphorAppend + themeAppend;
     const finalThemeId = themeId || SCENE_CONFIGS.biz.themeId;
 
-    // 🚨 V6修复：追加CRITICAL强制指令 + cardSplit精确分页
-    const criticalInstruction = '\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作或修改任何事实信息。严格按照提供的Markdown层级和\'---\'分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。保持所有 \'>\' 作为演讲者备注不做展示。';
+    // 🚨 V7修复：cardSplit 仅用于 preserve 模式，generate/condense 模式让 Gamma 自己扩充
+    // - preserve 模式：用户已分好页，需要精确分页 → cardSplit: 'inputTextBreaks'
+    // - generate/condense 模式：用户输入简短，Gamma 需要扩充 → 不传 cardSplit，让 Gamma 自己决定页数
+    const shouldUseCardSplit = textMode === 'preserve';
+
+    const criticalInstruction = textMode === 'preserve'
+      ? '\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作或修改任何事实信息。严格按照提供的Markdown层级和\'---\'分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。保持所有 \'>\' 作为演讲者备注不做展示。'
+      : '\n\n【CRITICAL - AI 扩充模式】\n你是一个专业的 PPT 内容扩充引擎。用户提供了简短的主题或大纲，你需要扩充为完整的 multi-page PPT。目标页数：' + numCards + ' 页。每页必须有明确的标题和 3-4 个核心要点。扩充内容必须紧扣主题，禁止编造虚假数据或案例。';
 
     // 步骤1:创建 Gamma 生成任务(恢复技术部验证的完整参数)
     const gammaPayload = {
@@ -205,7 +211,8 @@ export async function POST(request: NextRequest) {
       numCards,
       exportAs,
       themeId: finalThemeId,
-      cardSplit: 'inputTextBreaks',  // 🚨 V6修复：精确分页，防止Gamma自行合并/拆分页面
+      // 🚨 V7修复：只有 preserve 模式才强制分页，其他模式让 Gamma 自己扩充
+      ...(shouldUseCardSplit ? { cardSplit: 'inputTextBreaks' } : {}),
       additionalInstructions: finalInstructions + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji(如✅❌📊📈💡🎯⭐🔑🚀💼📧📞📍📌🔍✨⚡🔥💎🏆🔧📋📌)代替web SVG图标。不要使用任何需要在线加载的图标或外部图片URL，确保PPTX下载后所有视觉元素完整显示。' + criticalInstruction,
       textOptions: { amount: 'medium', tone, language: 'zh-cn' },
       imageOptions,
