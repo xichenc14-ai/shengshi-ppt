@@ -265,51 +265,24 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   }, [user, collectText, directTheme, directTone, directImgMode, directTextMode, pages, openPayment, updateCredits]);
 
-  // ========== generateSmartOutline ==========
-  const generateSmartOutline = useCallback(async () => {
-    const inputText = collectText();
-    if (!inputText.trim()) return;
-    if (!user) { openLogin(); return; }
-    const smartPerm = checkPermission(user.plan_type || 'free', { numPages: 8, imageSource: 'noImages', mode: 'smart' });
-    if (!smartPerm.allowed) {
-      const reqPlan = smartPerm.requiredPlan || 'basic';
-      const planInfo = getPlan(reqPlan);
-      openPayment({ id: reqPlan, name: `${planInfo.name} · ${planInfo.emoji}`, price: planInfo.priceMonthly > 0 ? `¥${planInfo.priceMonthly}/月` : '免费', billing: 'monthly', reason: smartPerm.reason || '省心定制为会员专属功能' });
-      return;
-    }
-    setLoading(true); setError(''); setPhase('streaming'); setGenStep(0); setGenProgress(5); setStepText('AI 正在深度理解你的需求...');
-    try {
-      setGenProgress(15); setStepText('AI 正在分析场景和确定最佳方案...');
-      const smartRes = await fetch('/api/smart-outline', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputText, uploadedFiles: files.map(f => ({ name: f.name, type: f.type, size: f.size })) }),
-      });
-      if (!smartRes.ok) { const d = await smartRes.json(); throw new Error(d.error || '需求分析失败'); }
-      const smartData = await smartRes.json();
-      setGenProgress(30); setStepText(`识别场景: ${smartData.analysis?.scene || '通用'} · 主题: ${smartData.config?.themeName || '商务蓝'}`);
-      await new Promise(r => setTimeout(r, 800));
-      setGenProgress(50); setStreamingSlides(smartData.outline?.slides || []); setStepText('生成专业大纲...');
-      await new Promise(r => setTimeout(r, (smartData.outline?.slides?.length || 0) * 200 + 400));
-      setOutlineResult({ title: smartData.outline?.title || 'PPT', slides: smartData.outline?.slides || [], themeId: smartData.config?.themeId });
-      setEditedSlides(smartData.outline?.slides || []);
-      setSmartGammaPayload(smartData.gammaPayload);
-      setGenProgress(100); setPhase('outline');
-    } catch (e: any) { setError(e.message); setPhase('input'); }
-    setLoading(false);
-  }, [user, files, collectText]);
-
-  // ========== generateOutline ==========
+  // ========== generateOutline（V6 标准化：所有模式统一走 outline API）==========
   const generateOutline = useCallback(async () => {
-    if (mode === 'smart') return generateSmartOutline();
     const inputText = collectText();
     if (!inputText.trim()) return;
     setLoading(true); setError(''); setPhase('streaming'); setGenStep(0); setGenProgress(10); setStepText('AI 正在分析你的需求...');
     try {
+      // ====== V6 标准化 ======
+      let textMode = 'generate';
+      let auto = false;
+      if (mode === 'smart') { textMode = 'preserve'; auto = true; }
+      // 专业模式（direct）在 GenerationContext 中默认 generate
+      // genMode 的判断由 page.tsx 的 generateOutline 处理
+
       await new Promise(r => setTimeout(r, 800));
       setGenStep(1); setGenProgress(30); setStepText('AI 正在生成大纲...');
       const oRes = await fetch('/api/outline', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputText, slideCount: pages, textMode: 'generate', auto: true }),
+        body: JSON.stringify({ inputText, slideCount: pages, textMode, auto }),
       });
       if (!oRes.ok) { const d = await oRes.json(); throw new Error(d.error || '大纲生成失败'); }
       const od = await oRes.json();
@@ -318,7 +291,20 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       setOutlineResult(od); setEditedSlides(od.slides || []); setPhase('outline'); setGenProgress(100);
     } catch (e: any) { setError(e.message); setPhase('input'); }
     setLoading(false);
-  }, [mode, collectText, pages, generateSmartOutline]);
+  }, [mode, collectText, pages]);
+
+  // ========== generateSmartOutline（V6 简化：权限检查 + 调用统一流程）==========
+  const generateSmartOutline = useCallback(async () => {
+    if (!user) { openLogin(); return; }
+    const smartPerm = checkPermission(user.plan_type || 'free', { numPages: 8, imageSource: 'noImages', mode: 'smart' });
+    if (!smartPerm.allowed) {
+      const reqPlan = smartPerm.requiredPlan || 'basic';
+      const planInfo = getPlan(reqPlan);
+      openPayment({ id: reqPlan, name: `${planInfo.name} · ${planInfo.emoji}`, price: planInfo.priceMonthly > 0 ? `¥${planInfo.priceMonthly}/月` : '免费', billing: 'monthly', reason: smartPerm.reason || '省心定制为会员专属功能' });
+      return;
+    }
+    return generateOutline();
+  }, [user, generateOutline]);
 
   // ========== confirmAndGenerate ==========
   const { buildMdV2 } = require('@/lib/build-md-v2');

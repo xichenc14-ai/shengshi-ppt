@@ -335,191 +335,8 @@ export default function Home() {
     setLoading(false);
   }, [user, collectText, directTheme, directTone, directImgMode, directTextMode, pages, openPayment, rollbackCredits]);
 
-  // 省心模式生成流程：调用 smart-outline API（深度理解需求 + 自动确定参数）
-  const generateSmartOutline = useCallback(async () => {
-    const inputText = collectText();
-    if (!inputText.trim()) return;
-    if (!user) return;
-
-    // 🔐 省心模式权限检查（免费用户不可用）
-    const smartPerm = checkPermission(user.plan_type || 'free', {
-      numPages: 8,
-      imageSource: 'noImages',
-      mode: 'smart',
-    });
-    if (!smartPerm.allowed) {
-      const reqPlan = smartPerm.requiredPlan || 'basic';
-      const planInfo = getPlan(reqPlan);
-      openPayment({
-        id: reqPlan,
-        name: `${planInfo.name} · ${planInfo.emoji}`,
-        price: planInfo.priceMonthly > 0 ? `¥${planInfo.priceMonthly}/月` : '免费',
-        billing: 'monthly',
-        reason: smartPerm.reason || '省心定制为会员专属功能',
-      });
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    setPhase('streaming');
-    setGenStep(0);
-    setGenProgress(5);
-    setStepText('AI 正在深度理解你的需求...');
-
-    // 🚨 V6新增：计算待扣积分（用于回滚，提前声明避免catch作用域问题）
-    // 注意：pageCount 和 configImageSrc 在 API 调用成功后才有，这里用保守默认值估算
-    const BASE2 = 2;
-    const fallbackPages = 8;
-    const imgCredits2 = 0; // pictographic 不产生图片积分
-    const estImg2 = Math.ceil(fallbackPages / 2);
-    const creditsToDeduct2 = fallbackPages * BASE2 + estImg2 * imgCredits2;
-
-    try {
-      // Step 1: 调用 smart-outline API（自动分析需求 + 确定参数 + 生成大纲）
-      setGenProgress(15);
-      setStepText('AI 正在分析场景和确定最佳方案...');
-
-      const smartRes = await fetch('/api/smart-outline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          inputText,
-          uploadedFiles: files.map(f => ({ name: f.name, type: f.type, size: f.size }))
-        }),
-      });
-
-      if (!smartRes.ok) {
-        const d = await smartRes.json();
-        throw new Error(d.error || '需求分析失败');
-      }
-
-      const smartData = await smartRes.json();
-
-      // Step 2: 显示分析结果（V3 使用 gammaScript，不再依赖 outline）
-      const gammaScript = smartData.gammaScript || '';
-      const pageCount = smartData.pageCount || 8;
-      const configThemeId = smartData.config?.themeId || 'consultant';
-      const configTone = smartData.config?.tone || 'professional';
-      const configImageSrc = smartData.config?.imageSource || 'pictographic';
-      const configVisualMetaphor = smartData.config?.visualMetaphor || '';
-
-      if (!gammaScript || gammaScript.trim().length < 50) {
-        throw new Error('AI 生成的脚本内容为空，请重试');
-      }
-
-      setGenProgress(30);
-      setStepText(`识别场景: ${smartData.analysis?.scene || '通用'} · 页数: ${pageCount}页`);
-
-      await new Promise(r => setTimeout(r, 800));
-
-      // Step 3: 流式显示"正在生成专业脚本..."
-      setGenProgress(50);
-      setStepText('AI 正在生成 Gamma 定制脚本...');
-      await new Promise(r => setTimeout(r, pageCount * 150 + 400));
-
-      // ====== 省心模式 V3：直接使用 AI 生成的 gammaScript ======
-      setGenProgress(60);
-      setPhase('generating');
-      setGenStep(0);
-      setStepText('正在准备渲染...');
-
-      const userPlan = getPlan(user.plan_type || 'free');
-      const perm = checkPermission(user.plan_type || 'free', { numPages: pageCount, imageSource: configImageSrc, mode: 'smart' });
-      if (!perm.allowed) { setLoading(false); setPhase('input'); setError(perm.reason || '权限不足'); return; }
-
-      // 扣积分
-      setGenStep(1); setGenProgress(65);
-      const deductRes = await fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: pageCount, imageSource: configImageSrc }) });
-      const deductData = await deductRes.json();
-      if (!deductRes.ok || deductData.error) {
-        setLoading(false); setPhase('input');
-        if (deductData.error === '积分不足') { openPayment({ id: 'shengxin', name: '积分不足', price: '¥9.9/月', billing: 'monthly', reason: '积分不足' }); }
-        else { setError(deductData.error || '积分扣除失败'); }
-        return;
-      }
-      updateCredits(deductData.balance);
-
-      // 构建 Gamma 请求（V3：直接使用 AI 生成的 gammaScript）
-      setGenStep(2); setGenProgress(75);
-      setStepText('正在精准渲染...');
-
-      // 构建 additionalInstructions
-      const instructions = buildAdditionalInstructions(configTone, smartData.analysis?.scene || 'biz', configImageSrc, configVisualMetaphor);
-
-      // 🚨 P0 Fix: 移除 cardSplit（Gamma 不认识此参数，会导致 400）
-      // 🚨 P0 Fix: preserve 模式需要忠实呈现用户原始内容，不做 AI 提炼
-      //   gammaScript 是 AI 提炼过的，会改变用户内容
-      //   改为：直接用用户的原始输入（inputText）传给 Gamma preserve 模式
-      const rawInput = collectText();
-      // 构建用于 preserve 的 markdown：只用用户的原始内容加基础分页，不做 AI 提炼
-      const preserveMd = buildPreserveMarkdown(rawInput, pageCount);
-
-      const gammaRequestBody: Record<string, any> = {
-        inputText: preserveMd,   // ✅ preserve 模式忠实呈现用户原文
-        textMode: 'preserve',    // ✅ 保持原文结构，不做 AI 改写
-        format: 'presentation',
-        numCards: pageCount,
-        themeId: configThemeId,
-        additionalInstructions: instructions,
-        textOptions: { amount: 'medium', tone: configTone, language: 'zh-cn' },
-        imageOptions: { source: configImageSrc },
-        cardOptions: { dimensions: '16x9' },
-        exportAs: 'pptx',
-      };
-
-      // 调用 Gamma API
-      let gRes = await fetch('/api/gamma', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(gammaRequestBody) });
-
-      // 失败自动降级：pictographic → noImages
-      if (!gRes.ok && configImageSrc !== 'noImages') {
-        console.warn('[SmartMode V3] Gamma failed, fallback to noImages');
-        setStepText('图片模式不支持，切换渲染...');
-        gammaRequestBody.imageOptions = { source: 'noImages' };
-        gRes = await fetch('/api/gamma', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(gammaRequestBody) });
-      }
-
-      if (!gRes.ok) { const d = await gRes.json(); throw new Error(d.error || `生成失败(${gRes.status})`); }
-      const gd = await gRes.json();
-
-      if (gd.generationId) {
-        setGenStep(2); setGenProgress(80);
-        setStepText('正在等待 AI 渲染 PPT...');
-        const startTime = Date.now();
-        while (Date.now() - startTime < 180000) { // 🚨 优化：延长超时到3分钟
-          await new Promise(r => setTimeout(r, 3000)); // 🚨 优化：缩短轮询间隔到3秒
-          const statusRes = await fetch(`/api/gamma?id=${gd.generationId}`);
-          if (!statusRes.ok) continue;
-          const statusData = await statusRes.json();
-          if (statusData.status === 'completed') {
-            setGenProgress(95); setStepText('PPT 生成完成！');
-            await new Promise(r => setTimeout(r, 500));
-            const pptTitle = smartData.analysis?.keyTopics?.[0] || smartData.analysis?.scene || 'PPT';
-            setResult({ title: pptTitle, slides: [], dlUrl: statusData.exportUrl || '', actualPages: pageCount });
-            setGenProgress(100); setPhase('result'); return;
-          }
-          if (statusData.status === 'failed') { throw new Error(statusData.error || '生成失败'); }
-          setStepText(`AI 渲染中... ${Math.floor((Date.now() - startTime) / 1000)}秒`);
-        }
-        throw new Error('生成超时（3分钟），PPT内容较复杂，请稍后重试');
-      }
-    } catch (e: any) {
-      // 🚨 V6新增：生成失败/超时时回滚积分
-      rollbackCredits(creditsToDeduct2, e.message || '生成失败');
-      setError(e.message);
-      setPhase('input');
-    }
-    setLoading(false);
-  }, [user, files, topic, collectText, updateCredits, openPayment, rollbackCredits]);
-
-  // 专业模式生成流程：调用 outline API（用户手动选择参数）
+  // 🚨 V6 标准化：所有模式统一走 outline API → 大纲确认 → Gamma
   const generateOutline = useCallback(async () => {
-    // 如果是省心模式，调用新的智能流程
-    if (mode === 'smart') {
-      return generateSmartOutline();
-    }
-
-    // 专业模式：原流程
     const inputText = collectText();
     if (!inputText.trim()) return;
 
@@ -531,10 +348,24 @@ export default function Home() {
     setStepText('AI 正在分析你的需求...');
 
     try {
-      const isEasy = !showPro;
-      const tm = isEasy ? 'generate' : genMode;
+      // ====== V6 标准化：所有模式统一走 outline API ======
+      // · 保持文本原样 (genMode='preserve') → outline API textMode='preserve'
+      // · 省心模式 (mode='smart')           → outline API textMode='preserve' + auto=true
+      // · 专业模式 (mode='direct')           → outline API textMode=genMode + auto=false
+      let textMode: string = 'generate';
+      let auto = false;
+      if (mode === 'smart') {
+        textMode = 'preserve'; // 省心模式：AI最佳实践，自动确定
+        auto = true;
+      } else if (genMode === 'preserve') {
+        textMode = 'preserve'; // 保持文本原样：零改动分页
+      } else if (genMode === 'condense') {
+        textMode = 'condense'; // 缩减：压缩冗余
+      } else {
+        textMode = 'generate'; // 扩充：从零生成
+      }
 
-      // Step 1: Analyze
+      // Step 1: 调用 outline API（所有模式统一入口）
       await new Promise(r => setTimeout(r, 800));
       setGenStep(1);
       setGenProgress(30);
@@ -543,16 +374,14 @@ export default function Home() {
       const oRes = await fetch('/api/outline', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputText, slideCount: pages, textMode: tm, auto: isEasy }),
+        body: JSON.stringify({ inputText, slideCount: pages, textMode, auto }),
       });
       if (!oRes.ok) { const d = await oRes.json(); throw new Error(d.error || '大纲生成失败'); }
       const od = await oRes.json();
 
-      // Step 2: Show streaming outline
+      // Step 2: 流式显示大纲 → 进入大纲编辑页（所有模式都确认）
       setGenProgress(60);
       setStreamingSlides(od.slides || []);
-
-      // Wait for streaming animation
       await new Promise(r => setTimeout(r, od.slides.length * 300 + 500));
 
       setOutlineResult(od);
@@ -564,7 +393,20 @@ export default function Home() {
       setPhase('input');
     }
     setLoading(false);
-  }, [user, files, topic, showPro, genMode, pages, collectText, mode, generateSmartOutline]);
+  }, [user, files, topic, showPro, genMode, pages, collectText, mode]);
+
+  // 🚨 V6 简化：省心模式入口（权限检查 + 调用统一流程）
+  const generateSmartOutline = useCallback(async () => {
+    if (!user) return;
+    const smartPerm = checkPermission(user.plan_type || 'free', { numPages: 8, imageSource: 'noImages', mode: 'smart' });
+    if (!smartPerm.allowed) {
+      const reqPlan = smartPerm.requiredPlan || 'basic';
+      const planInfo = getPlan(reqPlan);
+      openPayment({ id: reqPlan, name: `${planInfo.name} · ${planInfo.emoji}`, price: planInfo.priceMonthly > 0 ? `¥${planInfo.priceMonthly}/月` : '免费', billing: 'monthly', reason: smartPerm.reason || '省心定制为会员专属功能' });
+      return;
+    }
+    return generateOutline();
+  }, [user, generateOutline]);
 
   // Step 2: Confirm and generate PPT
   const confirmAndGenerate = useCallback(async () => {

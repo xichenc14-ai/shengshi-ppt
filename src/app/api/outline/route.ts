@@ -97,22 +97,24 @@ export async function POST(request: NextRequest) {
 
     // ===== 构建 prompts =====
     const modePrompts: Record<string, string> = {
-      generate: `你是一个专业的PPT内容策划师。用户会给一个主题，你需要从零生成完整的PPT大纲。
+      generate: `你是一个专业的PPT内容策划师。用户会给内容，你需要适度丰富，生成完整的PPT大纲。
 
-核心原则：你必须真正理解用户主题的含义，不要想当然！
-- 如果用户提到的是品牌/公司/产品，你必须保留其真实名称和核心信息
-- 不要将用户主题替换为你理解的普通概念
-- 如果对某个专有名词不了解，可以使用你的知识库推断
+核心原则：
+- 严格保留用户提供的主题、品牌名、产品名、公司名等核心信息
+- 可以补充背景信息、常见案例、合理推断（但必须标注为"可补充"性质）
+- 每个要点最多25字，禁止超长堆砌
+- 每页3-4个要点，禁止超过4个
+- 禁止编造具体数据（百分比、具体金额等必须来自原文或常识）
 
 严格输出JSON，不要用markdown代码块包裹：
 {
-  "title": "PPT主标题",
+  "title": "PPT主标题（必须包含用户提供的主题关键词）",
   "scene": "场景类型",
   "themeId": "主题ID",
   "tone": "professional/casual/creative/bold",
   "imageMode": "noImages/pictographic/aiGenerated",
   "slides": [
-    {"title": "页面标题（≤15字）", "content": ["要点1（≤20字）", "要点2", "要点3"], "notes": "备注"}
+    {"title": "页面标题（≤15字）", "content": ["要点1（≤25字）", "要点2", "要点3（≤25字）"], "notes": "备注"}
   ]
 }
 
@@ -125,27 +127,16 @@ export async function POST(request: NextRequest) {
 - 路演/融资/创业 → founder + professional + pictographic
 - 如果不确定，选 default-light + professional
 
-规则：第一页封面，第二页目录，中间3-4要点/页，最后总结。总共${numCards}页`,
+规则：适度丰富，禁止编造数据。总共${numCards}页`,
 
-      condense: `你是专业的PPT内容策划师。用户会给内容，你需要浓缩为PPT大纲。
+      condense: `你是专业的PPT内容策划师。用户会给内容，你需要提炼精华，生成精简的PPT大纲。
 
-核心原则：必须保留用户提到的品牌名、产品名、公司名等专有名词，不要替换！
-
-严格输出JSON，不要用markdown代码块包裹：
-{
-  "title": "PPT主标题",
-  "scene": "场景类型",
-  "themeId": "主题ID",
-  "tone": "professional/casual/creative/bold",
-  "imageMode": "noImages/pictographic/aiGenerated",
-  "slides": [{"title": "页面标题", "content": ["要点"], "notes": "备注"}]
-}
-
-规则：提取核心信息，保留专有名词。总共${numCards}页`,
-
-      preserve: `你是专业的PPT内容策划师。用户会给已有内容，你需要整理为标准格式。
-
-核心原则：必须保留用户提到的品牌名、产品名、公司名等专有名词，不要替换！
+核心原则：
+- 严格保留品牌名、产品名、公司名等专有名词，一字不改
+- 删除冗余重复的表达，只保留核心信息
+- 每个要点压缩到20字以内
+- 每页只保留3-4个核心要点
+- 禁止编造任何原文没有的数据、案例或细节
 
 严格输出JSON，不要用markdown代码块包裹：
 {
@@ -154,10 +145,35 @@ export async function POST(request: NextRequest) {
   "themeId": "主题ID",
   "tone": "professional/casual/creative/bold",
   "imageMode": "noImages/pictographic/aiGenerated",
-  "slides": [{"title": "标题", "content": ["要点"], "notes": "备注"}]
+  "slides": [{"title": "页面标题（≤15字）", "content": ["压缩后的要点1（≤20字）", "要点2", "要点3"], "notes": "备注"}]
 }
 
-规则：保留原文结构和专有名词。总共${numCards}页`,
+规则：提炼核心要点，禁止扩写。总共${numCards}页`,
+
+      preserve: `你是专业的PPT内容策划师。用户会提供已有内容，你的唯一任务是将其**结构化分页**，**一字不改**原文。
+
+核心原则（必须严格遵守）：
+- **逐字保留**：用户写的每一个字都要出现在输出中，禁止删改、合并、拆分任何句子
+- **仅做结构化**：将原文按内容自然段落分配到不同页面
+- **禁止精简/扩写**：不压缩原文，不补充新内容
+- **保留专有名词**：品牌名、产品名、数字、日期等必须完整保留
+- **分页规则**：每个页面最多4个要点，超出则拆页，标题加"(续)"
+
+严格输出JSON，不要用markdown代码块包裹：
+{
+  "title": "PPT主标题（从原文提取，不得自行拟定）",
+  "scene": "场景类型",
+  "themeId": "主题ID",
+  "tone": "professional/casual/creative/bold",
+  "imageMode": "noImages/pictographic/aiGenerated",
+  "slides": [{
+    "title": "页面标题（从原文提取，不得自行拟定）",
+    "content": ["原文逐句/逐段复制（每个要点即原文一个完整句子或段落，一字不改）"],
+    "notes": "备注（原文超长时可截取，但正文content必须完整保留）"
+  }]
+}
+
+规则：忠实分页，一字不改。总共${numCards}页`,
     };
 
     const systemPrompt = modePrompts[finalTextMode] || modePrompts.generate;
