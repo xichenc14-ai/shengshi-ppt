@@ -194,6 +194,9 @@ export async function POST(request: NextRequest) {
     const finalInstructions = instructions + metaphorAppend + themeAppend;
     const finalThemeId = themeId || SCENE_CONFIGS.biz.themeId;
 
+    // 🚨 V6修复：追加CRITICAL强制指令 + cardSplit精确分页
+    const criticalInstruction = '\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作或修改任何事实信息。严格按照提供的Markdown层级和\'---\'分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。保持所有 \'>\' 作为演讲者备注不做展示。';
+
     // 步骤1:创建 Gamma 生成任务(恢复技术部验证的完整参数)
     const gammaPayload = {
       inputText: finalInputText,
@@ -202,7 +205,8 @@ export async function POST(request: NextRequest) {
       numCards,
       exportAs,
       themeId: finalThemeId,
-      additionalInstructions: finalInstructions + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji(如✅❌📊📈💡🎯⭐🔑🚀💼📧📞📍📌🔍✨⚡🔥💎🏆🔧📋📌)代替web SVG图标。不要使用任何需要在线加载的图标或外部图片URL，确保PPTX下载后所有视觉元素完整显示。',
+      cardSplit: 'inputTextBreaks',  // 🚨 V6修复：精确分页，防止Gamma自行合并/拆分页面
+      additionalInstructions: finalInstructions + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji(如✅❌📊📈💡🎯⭐🔑🚀💼📧📞📍📌🔍✨⚡🔥💎🏆🔧📋📌)代替web SVG图标。不要使用任何需要在线加载的图标或外部图片URL，确保PPTX下载后所有视觉元素完整显示。' + criticalInstruction,
       textOptions: { amount: 'medium', tone, language: 'zh-cn' },
       imageOptions,
       cardOptions: {

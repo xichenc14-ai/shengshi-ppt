@@ -349,7 +349,8 @@ export async function POST(request: NextRequest) {
     // 构建最终的 additionalInstructions（根据模式追加不同指令）
     let finalAdditionalInstructions = finalInstructions + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji(如✅❌📊📈💡🎯⭐🔑🚀💼📧📞📍📌🔍✨⚡🔥💎🏆🔧📋📌)代替web SVG图标。不要使用任何需要在线加载的图标或外部图片URL，确保PPTX下载后所有视觉元素完整显示。';
     if (textMode === 'preserve') {
-      finalAdditionalInstructions += '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。';
+      // 🚨 V6修复：追加CRITICAL强制指令，封锁Gamma的发散权限
+      finalAdditionalInstructions += '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作、扩写或修改任何事实信息。严格按照提供的Markdown层级和\'---\'分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。保持所有 \'>\' 作为演讲者备注不做展示。';
       if (imageMode === 'theme-img' || imageMode === 'theme') {
         finalAdditionalInstructions += '\n\n【主题套图-强调布局】\n请为每一页使用Gamma内置的Emphasize卡片布局(主题强调布局图),这些是模板自带的装饰性元素,不需要额外credits。每页使用不同的强调布局和图标,保持视觉丰富度。';
       }
@@ -366,8 +367,10 @@ export async function POST(request: NextRequest) {
       exportAs,
       themeId: finalThemeId,
       additionalInstructions: finalAdditionalInstructions,
-      // 如果传入 cardSplit（省心模式精确分页），使用它
-      ...(cardSplit ? { cardSplit } : {}),
+      // 🚨 V6修复：preserve模式强制cardSplit，generate模式仅在使用时传入
+      ...(textMode === 'preserve'
+        ? { cardSplit: cardSplit || 'inputTextBreaks' }  // preserve模式强制精确分页
+        : cardSplit ? { cardSplit } : {}),
       // 如果已传入 textOptions（省心模式），直接使用
       textOptions: textOptions || {
         amount: 'medium',

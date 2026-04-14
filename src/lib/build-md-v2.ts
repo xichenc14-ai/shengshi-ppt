@@ -49,27 +49,33 @@ const ENHANCEMENT_MAP: Record<string, { desc: string; details: string[] }> = {
   '整合': { desc: '资源整合', details: ['渠道整合', '业务协同', '价值链优化'] },
 };
 
-function enhanceBullet(text: string): { main: string; expanded: string[] } {
+function enhanceBullet(text: string, allowEnhancement: boolean = false): { main: string; expanded: string[] } {
   const trimmed = text.trim();
-  
-  // 来自 gamma-ppt-database.md：短标题必须扩展
+
+  // 🚨 V6修复：preserve模式默认不扩写！ENHANCEMENT_MAP只对generate模式开放
+  // 原因：preserve模式要求忠实呈现用户原文，AI擅自扩写会扭曲用户原意
+  if (!allowEnhancement) {
+    return { main: trimmed, expanded: [] };
+  }
+
+  // 以下扩写逻辑仅在 allowEnhancement=true 时生效（generate模式可开启）
   if (trimmed.length > 35) {
     return { main: trimmed, expanded: [] };
   }
-  
+
   // 精确匹配
   if (ENHANCEMENT_MAP[trimmed]) {
     const entry = ENHANCEMENT_MAP[trimmed];
     return { main: entry.desc, expanded: entry.details };
   }
-  
+
   // 部分匹配
   for (const [key, val] of Object.entries(ENHANCEMENT_MAP)) {
     if (trimmed.includes(key) && key.length >= 2) {
       return { main: val.desc, expanded: val.details };
     }
   }
-  
+
   return { main: trimmed, expanded: [] };
 }
 
@@ -209,7 +215,7 @@ function buildTocPage(title: string, content: string[]): string {
 // - ### 大文本触发（非普通小字）
 // - - **粗体** 触发卡片
 // - 1. 2. 3. 触发时间轴
-function buildContentPage(title: string, content: string[], pageType: PageType): string {
+function buildContentPage(title: string, content: string[], pageType: PageType, allowEnhancement: boolean = false): string {
   const lines: string[] = [];
   // P0修复：强制截断超长内容到50-80字范围
   const enforcedContent = enforcePageCharLimit(title, content);
@@ -231,7 +237,7 @@ function buildContentPage(title: string, content: string[], pageType: PageType):
         // 来自 gamma-ppt-database.md：三列/四宫格卡片
         for (const pt of enforcedContent) {
           if (!pt.trim()) continue;
-          const { main, expanded } = enhanceBullet(pt);
+          const { main, expanded } = enhanceBullet(pt, allowEnhancement);
           lines.push(`- **${main}**`);
           if (expanded.length > 0) {
             // 嵌套卡片：子要点用 ### 大文本
@@ -251,10 +257,10 @@ function buildContentPage(title: string, content: string[], pageType: PageType):
           lines.push('');
         }
       } else {
-        // V5 中等内容：标准列表 + 大文本强制
+        // V5 中等原因：标准列表 + 大文本强制
         for (const pt of enforcedContent) {
           if (!pt.trim()) continue;
-          const { main, expanded } = enhanceBullet(pt);
+          const { main, expanded } = enhanceBullet(pt, allowEnhancement);
           if (expanded.length > 0) {
             lines.push(`- **${main}**`);
             for (const ex of expanded) {
@@ -290,7 +296,7 @@ function buildContentPage(title: string, content: string[], pageType: PageType):
       // V5 时间轴/流程：有序列表（来自 gamma-ppt-database.md）
       enforcedContent.forEach((step, idx) => {
         if (!step.trim()) return;
-        const { main, expanded } = enhanceBullet(step);
+        const { main, expanded } = enhanceBullet(step, allowEnhancement);
         lines.push(`${idx + 1}. **${main}**`);
         if (expanded.length > 0) {
           for (const ex of expanded) {
@@ -321,7 +327,7 @@ function buildContentPage(title: string, content: string[], pageType: PageType):
     default: {
       for (const pt of enforcedContent) {
         if (!pt.trim()) continue;
-        const { main, expanded } = enhanceBullet(pt);
+        const { main, expanded } = enhanceBullet(pt, allowEnhancement);
         lines.push(`### ${main}`);
         if (expanded.length > 0) {
           for (const ex of expanded) {
@@ -369,7 +375,8 @@ export type BuildMdV2Result = {
 export function buildMdV2(
   title: string,
   slides: SlideItem[],
-  imageMode: string = 'noImages'
+  imageMode: string = 'noImages',
+  allowEnhancement: boolean = false  // 🚨 V6修复：ENHANCEMENT_MAP默认关闭（preserve模式不应扩写）
 ): BuildMdV2Result {
   if (!slides || slides.length === 0) {
     return {
@@ -407,7 +414,7 @@ export function buildMdV2(
         break;
       
       default:
-        pageContent = buildContentPage(s.title, s.content || [], pageType);
+        pageContent = buildContentPage(s.title, s.content || [], pageType, allowEnhancement);
     }
 
     pages.push(pageContent);
@@ -427,16 +434,44 @@ export function buildMdV2(
       }
     }
 
-    // V5 分页符控制
-    if (!isFirst && !isLast) {
-      pages.push('\n---\n');
-    } else if (isFirst && total > 1) {
+    // V5 分页符控制：每一页结束后加强制分页符（除最后一页外）
+    // 🚨 V6修复：确保每一页都有物理分页符，防止Gamma合并页面或留白
+    if (!isLast) {
       pages.push('\n---\n');
     }
   }
 
+  const rawMarkdown = pages.join('\n');
+
+  // 🚨 V6新增：最终大文本验证
+  // 确保所有正文行都有大文本标记（### 或 **），绝不出现裸小字正文
+  const validatedMarkdown = rawMarkdown
+    // 保护已有的 ### 大文本行（不重复处理）
+    .split('\n')
+    .map(line => {
+      const trimmed = line.trim();
+      // 跳过结构性行：标题、分隔符、空行、列表前缀、图表元标签
+      if (!trimmed) return line;
+      if (trimmed.startsWith('#')) return line;           // # ## ### 标题
+      if (trimmed === '---') return line;                 // 分页符
+      if (trimmed.startsWith('> ')) return line;         // 演讲者备注
+      if (trimmed.startsWith('- ')) return line;          // 列表项
+      if (trimmed.startsWith('1.') || trimmed.startsWith('2.') || trimmed.startsWith('3.') || trimmed.startsWith('4.') || trimmed.startsWith('5.')) return line; // 有序列表
+      if (/^[0-9]+[.、]/.test(trimmed)) return line;     // 有序列表（中文序号）
+      if (trimmed.startsWith('📈') || trimmed.startsWith('📊') || trimmed.startsWith('🥧') || trimmed.startsWith('💡')) return line; // 图表元标签
+      if (trimmed.startsWith('**')) return line;          // 粗体行
+
+      // 裸小字正文检测：普通中文句子没有触发器 → 强制加 ###
+      // 仅对4个字以上的非结构行生效（排除emoji、单字等）
+      if (trimmed.length >= 4 && /[\u4e00-\u9fff]/.test(trimmed)) {
+        return `### ${trimmed}`;
+      }
+      return line;
+    })
+    .join('\n');
+
   return {
-    markdown: pages.join('\n'),
+    markdown: validatedMarkdown,
     visualMetaphor: globalVisualMetaphor,
   };
 }
@@ -459,6 +494,16 @@ export function buildAdditionalInstructions(
   visualMetaphor?: string
 ): string {
   // ========== 通用排版规则（V5 核心） ==========
+  const CRITICAL_DEFENSE = `CRITICAL INSTRUCTION — 你是一个纯粹的布局渲染引擎，严格遵循以下所有规则：
+- 禁止发明、扩写或补充任何未提供的事实、数据或案例
+- 禁止修改用户提供的内容文字
+- 禁止合并或拆分由 --- 分隔符指定的页面边界
+- 所有正文必须以大文本形式展示（### 或 **加粗**），禁止普通小字正文
+- > 引用块严格作为演讲者备注，不做正文展示
+- 仅执行排版布局，不执行内容创作
+
+`;
+
   const baseRules = `【排版规则 — 严格遵守】
 
 📐 字号规范（必须精确）：
@@ -635,7 +680,7 @@ export function buildAdditionalInstructions(
     ? `\n\n【全局视觉隐喻】\n贯穿全演示的统一意象：${visualMetaphor}。\n所有配图、图标、色块风格应与此意象一致（如：使用山峰图片、光线效果、渐变金到白）。\n配图描述中必须体现该意象关键词。`
     : '';
 
-  return `${baseRules}\n\n${toneRule}${metaphorSection}${imageRules}${languageRules}`;
+  return `${CRITICAL_DEFENSE}${baseRules}\n\n${toneRule}${metaphorSection}${imageRules}${languageRules}`;
 }
 
 /**

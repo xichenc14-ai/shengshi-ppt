@@ -494,6 +494,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, creditsUsed: totalCredit, balance: newBalance });
     }
 
+    // ===== 积分回滚（生成失败/超时时返还） =====
+    if (action === 'rollback') {
+      const { userId, credits, reason } = body;
+      if (!userId || typeof credits !== 'number' || credits <= 0) {
+        return NextResponse.json({ error: '参数错误' }, { status: 400 });
+      }
+      const { data: updated, error: updErr } = await sb
+        .from('users').select('credits').eq('id', userId).single();
+      if (updErr || !updated) return NextResponse.json({ error: '用户不存在' }, { status: 404 });
+      const newBal = (updated.credits || 0) + credits;
+      const { error: setErr } = await sb
+        .from('users').update({ credits: newBal }).eq('id', userId).eq('credits', updated.credits);
+      if (setErr) return NextResponse.json({ error: '回滚失败' }, { status: 500 });
+      try {
+        await sb.from('credit_transactions').insert({
+          user_id: userId, amount: credits, balance_after: newBal,
+          type: 'rollback', description: `回滚-${reason || '生成失败'}-返还${credits}积分`,
+        });
+      } catch {}
+      return NextResponse.json({ success: true, balance: newBal });
+    }
+
     return NextResponse.json({ error: '未知操作' }, { status: 400 });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : '操作失败';

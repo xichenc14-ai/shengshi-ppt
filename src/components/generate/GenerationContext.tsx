@@ -206,7 +206,13 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
 
     setLoading(true); setError(''); setPhase('direct-generating'); setGenStep(0); setGenProgress(10); setStepText('AI 正在提交生成任务...');
 
+    // 🚨 V6新增：计算待扣积分（用于回滚，提前声明避免catch作用域问题）
+    const imgCredits = directImgMode === 'ai' || directImgMode === 'ai-pro' ? 2 : 0;
+    const estImgs = Math.ceil(effectivePages / 2);
+    const creditsToRollback = effectivePages * 2 + estImgs * imgCredits;
+
     try {
+
       const deductRes = await fetch('/api/user', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: effectivePages, imageSource }),
@@ -249,7 +255,13 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
         setResult({ title: topicText || 'PPT', slides: [], dlUrl: finalExportUrl, actualPages: pages });
         setGenProgress(100); setPhase('result');
       }
-    } catch (e: any) { setError(e.message); setPhase('input'); }
+    } catch (e: any) {
+      // 🚨 V6新增：生成失败/超时时回滚积分
+      if (user) {
+        fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'rollback', userId: user.id, credits: creditsToRollback, reason: e.message || '生成失败' }) }).then(r => r?.ok && r.json().then(d => d?.balance != null && updateCredits(d.balance))).catch(() => {});
+      }
+      setError(e.message); setPhase('input');
+    }
     setLoading(false);
   }, [user, collectText, directTheme, directTone, directImgMode, directTextMode, pages, openPayment, updateCredits]);
 
@@ -325,6 +337,12 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       return;
     }
     setLoading(true); setError(''); setPhase('generating'); setGenStep(0); setGenProgress(0); setStepText('AI 正在准备渲染...');
+
+    // 🚨 V6新增：计算待扣积分（用于回滚，提前声明避免catch作用域问题）
+    const imgCredits3 = directImgMode === 'ai' || directImgMode === 'ai-pro' ? 2 : 0;
+    const estImgs3 = Math.ceil(editedSlides.length / 2);
+    const creditsToRollback3 = editedSlides.length * 2 + estImgs3 * imgCredits3;
+
     try {
       const tm = mode === 'smart' ? 'preserve' : 'generate';
       setGenStep(0); setGenProgress(10);
@@ -379,7 +397,13 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
         setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalExportUrl, actualPages: editedSlides.length });
         setGenProgress(100); setPhase('result');
       }
-    } catch (e: any) { setError(e.message); setPhase('outline'); }
+    } catch (e: any) {
+      // 🚨 V6新增：生成失败/超时时回滚积分
+      if (user) {
+        fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'rollback', userId: user.id, credits: creditsToRollback3, reason: e.message || '生成失败' }) }).then(r => r?.ok && r.json().then(d => d?.balance != null && updateCredits(d.balance))).catch(() => {});
+      }
+      setError(e.message); setPhase('outline');
+    }
     setLoading(false);
   }, [user, outlineResult, editedSlides, mode, smartGammaPayload, directTheme, directTone, directImgMode, updateCredits]);
 

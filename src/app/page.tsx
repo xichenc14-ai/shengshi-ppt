@@ -158,6 +158,25 @@ export default function Home() {
     return sections.join('\n');
   }
 
+  // 🚨 V6新增：积分回滚工具（生成失败/超时时调用）
+  const rollbackCredits = useCallback(async (credits: number, reason: string) => {
+    if (!user || credits <= 0) return;
+    try {
+      const res = await fetch('/api/user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'rollback', userId: user.id, credits, reason }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        updateCredits(data.balance);
+        console.log(`[Rollback] 返还${credits}积分成功，余额：${data.balance}`);
+      }
+    } catch (e) {
+      console.error('[Rollback] 积分回滚失败:', e);
+    }
+  }, [user, updateCredits]);
+
   // Track hasInput
   useEffect(() => { setHasInput(files.length > 0 || topic.trim().length > 0); }, [files, topic]);
 
@@ -205,7 +224,14 @@ export default function Home() {
     setGenProgress(10);
     setStepText('AI 正在提交生成任务...');
 
+    // 🚨 V6新增：计算待扣积分（用于回滚，提前声明避免catch作用域问题）
+    const BASE_CREDIT_PER_PAGE = 2;
+    const imgCreditsPerImg = directImgMode === 'ai' || directImgMode === 'ai-pro' ? 2 : 0;
+    const estImgCount = Math.ceil(effectivePages / 2);
+    const creditsToDeduct = effectivePages * BASE_CREDIT_PER_PAGE + estImgCount * imgCreditsPerImg;
+
     try {
+
       // Step 0: Deduct credits
       const deductRes = await fetch('/api/user', {
         method: 'POST',
@@ -301,11 +327,13 @@ export default function Home() {
         setPhase('result');
       }
     } catch (e: any) {
+      // 🚨 V6新增：生成失败/超时时回滚积分
+      rollbackCredits(creditsToDeduct, e.message || '生成失败');
       setError(e.message);
       setPhase('input');
     }
     setLoading(false);
-  }, [user, collectText, directTheme, directTone, directImgMode, directTextMode, pages, openPayment]);
+  }, [user, collectText, directTheme, directTone, directImgMode, directTextMode, pages, openPayment, rollbackCredits]);
 
   // 省心模式生成流程：调用 smart-outline API（深度理解需求 + 自动确定参数）
   const generateSmartOutline = useCallback(async () => {
@@ -338,6 +366,14 @@ export default function Home() {
     setGenStep(0);
     setGenProgress(5);
     setStepText('AI 正在深度理解你的需求...');
+
+    // 🚨 V6新增：计算待扣积分（用于回滚，提前声明避免catch作用域问题）
+    // 注意：pageCount 和 configImageSrc 在 API 调用成功后才有，这里用保守默认值估算
+    const BASE2 = 2;
+    const fallbackPages = 8;
+    const imgCredits2 = 0; // pictographic 不产生图片积分
+    const estImg2 = Math.ceil(fallbackPages / 2);
+    const creditsToDeduct2 = fallbackPages * BASE2 + estImg2 * imgCredits2;
 
     try {
       // Step 1: 调用 smart-outline API（自动分析需求 + 确定参数 + 生成大纲）
@@ -468,11 +504,13 @@ export default function Home() {
         throw new Error('生成超时（3分钟），PPT内容较复杂，请稍后重试');
       }
     } catch (e: any) {
+      // 🚨 V6新增：生成失败/超时时回滚积分
+      rollbackCredits(creditsToDeduct2, e.message || '生成失败');
       setError(e.message);
       setPhase('input');
     }
     setLoading(false);
-  }, [user, files, topic, collectText, updateCredits, openPayment]);
+  }, [user, files, topic, collectText, updateCredits, openPayment, rollbackCredits]);
 
   // 专业模式生成流程：调用 outline API（用户手动选择参数）
   const generateOutline = useCallback(async () => {
@@ -562,6 +600,11 @@ export default function Home() {
     setGenProgress(0);
     setStepText('AI 正在准备渲染...');
 
+    // 🚨 V6新增：计算待扣积分（用于回滚，提前声明避免catch作用域问题）
+    const imgCredits3 = imgMode === 'ai' || imgMode === 'ai-pro' ? 2 : 0;
+    const estImg3 = Math.ceil(editedSlides.length / 2);
+    const creditsToDeduct3 = editedSlides.length * 2 + estImg3 * imgCredits3;
+
     try {
       const tm = mode === 'smart' ? 'preserve' : genMode;
 
@@ -619,7 +662,7 @@ export default function Home() {
         // ✅ Gamma API 直接支持这些 source 值，不需要映射
         // pictographic, themeAccent, webFreeToUseCommercially, aiGenerated, noImages
         const gammaImgSrc = imgSrc;
-        const { markdown: rebuiltMd } = buildMdV2(outlineResult.title, editedSlides, imgSrc);
+        const { markdown: rebuiltMd } = buildMdV2(outlineResult.title, editedSlides, imgSrc, false); // 🚨 V6修复：preserve模式不允许ENHANCEMENT_MAP扩写
         gammaRequestBody = {
           ...basePayload,
           inputText: rebuiltMd,
@@ -632,7 +675,7 @@ export default function Home() {
         };
       } else {
         // 专业模式：用用户选择的参数
-        const { markdown: md, visualMetaphor } = buildMdV2(outlineResult.title, editedSlides, imgMode);
+        const { markdown: md, visualMetaphor } = buildMdV2(outlineResult.title, editedSlides, imgMode, false); // 🚨 V6修复：preserve模式不允许ENHANCEMENT_MAP扩写
         gammaRequestBody = {
           inputText: md,
           textMode: 'preserve',
@@ -700,11 +743,13 @@ export default function Home() {
         setPhase('result');
       }
     } catch (e: any) {
+      // 🚨 V6新增：生成失败/超时时回滚积分
+      rollbackCredits(creditsToDeduct3, e.message || '生成失败');
       setError(e.message);
       setPhase('outline');
     }
     setLoading(false);
-  }, [user, outlineResult, editedSlides, showPro, genMode, theme, tone, imgMode]);
+  }, [user, outlineResult, editedSlides, showPro, genMode, theme, tone, imgMode, rollbackCredits]);
 
   const reset = () => {
     setLoading(false);
