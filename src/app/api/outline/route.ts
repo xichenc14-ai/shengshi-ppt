@@ -108,11 +108,7 @@ export async function POST(request: NextRequest) {
 
 ## 四、金句注入
 
-在以下位置注入有冲击力的金句（写在对应页的notes中）：
-- 封面页：主题相关的slogan
-- 问题页：揭示痛点的金句
-- 方案页：核心理念金句
-- 结尾页：升华总结金句
+仅在封面和结尾页各放一句金句（写在notes中），其他页面不需要金句。
 
 ## 五、内容规则
 
@@ -133,7 +129,7 @@ export async function POST(request: NextRequest) {
   "tone": "professional/casual/creative/bold",
   "imageMode": "noImages/pictographic/aiGenerated",
   "slides": [
-    {"title": "页面标题（≤15字）", "content": ["要点1（≤25字）", "要点2", "要点3"], "notes": "备注（含图表推荐+金句）"}
+    {"title": "页面标题（≤15字）", "content": ["要点1（≤25字）", "要点2", "要点3"], "notes": "简短备注"}
   ]
 }
 
@@ -146,7 +142,7 @@ export async function POST(request: NextRequest) {
 - 路演/融资/创业 → founder + professional + pictographic
 - 如果不确定，选 default-light + professional
 
-规则：有故事线、有数据图表、有金句。总共${numCards}页`,
+规则：有故事线、有数据图表、精简notes。总共${numCards}页`,
 
       condense: `你是一位顶级PPT内容策划师。用户会给内容，你需要提炼精华，生成精简的PPT大纲。
 
@@ -172,7 +168,7 @@ export async function POST(request: NextRequest) {
 - 起：背景/问题（精简为1-2页）
 - 承：核心内容（保留关键论点）
 - 转：数据/成果（保留关键数字）
-- 合：总结/行动（提炼为金句）
+- 合：总结/行动（一句话金句收尾）
 
 ## 四、内容规则
 
@@ -181,7 +177,7 @@ export async function POST(request: NextRequest) {
 - 每个要点压缩到20字以内
 - 每页只保留3-4个核心要点
 - 禁止编造任何原文没有的数据、案例或细节
-- 结尾页notes中放入升华金句
+- 结尾页notes中放一句金句即可
 
 严格输出JSON，不要用markdown代码块包裹：
 {
@@ -191,7 +187,7 @@ export async function POST(request: NextRequest) {
   "themeId": "主题ID",
   "tone": "professional/casual/creative/bold",
   "imageMode": "noImages/pictographic/aiGenerated",
-  "slides": [{"title": "页面标题（≤15字）", "content": ["压缩后的要点1（≤20字）", "要点2", "要点3"], "notes": "备注（含图表+金句）"}]
+  "slides": [{"title": "页面标题（≤15字）", "content": ["压缩后的要点1（≤20字）", "要点2", "要点3"], "notes": "简短备注"}]
 }
 
 规则：提炼核心要点，保持故事线。总共${numCards}页`,
@@ -217,7 +213,7 @@ export async function POST(request: NextRequest) {
   "slides": [{
     "title": "页面标题（从原文提取，不得自行拟定）",
     "content": ["原文逐句复制（一字不改）"],
-    "notes": "备注（故事线+图表标注）"
+    "notes": "简短备注"
   }]
 }
 
@@ -244,29 +240,29 @@ ${inputText}`
     let rawContent = '';
     let aiError = '';
 
-    // 1️⃣ Kimi K2.5（首选：多模态+长上下文，免费）
+    // 1️⃣ MiniMax M2.7（首选：速度快，质量高）
     try {
-      const kimiResult = await callKimiWithSearch(
-        baseUserPrompt,
-        searchContext,
+      rawContent = await callMiniMax(
+        [{ role: 'user', content: baseUserPrompt }],
         { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
       );
-      rawContent = kimiResult.content || '';
-    } catch (e: any) {
-      aiError = `Kimi: ${e.message}`;
-      console.warn('[Outline] Kimi failed:', aiError);
+    } catch (e2: any) {
+      aiError = `MiniMax: ${e2.message}`;
+      console.warn('[Outline] MiniMax failed:', aiError);
     }
 
-    // 2️⃣ MiniMax M2.7（备用）
+    // 2️⃣ Kimi K2.5（备用：多模态+长上下文）
     if (!rawContent) {
       try {
-        rawContent = await callMiniMax(
-          [{ role: 'user', content: baseUserPrompt }],
+        const kimiResult = await callKimiWithSearch(
+          baseUserPrompt,
+          searchContext,
           { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
         );
-      } catch (e2: any) {
-        aiError += ` | MiniMax: ${e2.message}`;
-        console.warn('[Outline] MiniMax failed:', e2.message);
+        rawContent = kimiResult.content || '';
+      } catch (e: any) {
+        aiError += ` | Kimi: ${e.message}`;
+        console.warn('[Outline] Kimi failed:', e.message);
       }
     }
 
@@ -298,14 +294,47 @@ ${inputText}`
     try {
       parsed = JSON.parse(cleaned);
     } catch (e) {
-      console.error('[Outline] JSON parse error. Raw content (first 500 chars):', cleaned.substring(0, 500));
-      console.error('[Outline] Full raw content:', rawContent);
-      // 尝试修复常见问题
-      try {
-        // 尝试移除控制字符
-        const fixed = cleaned.replace(/[\x00-\x1F\x7F]/g, '');
-        parsed = JSON.parse(fixed);
-      } catch (e2) {
+      console.error('[Outline] JSON parse error. Raw (first 500):', cleaned.substring(0, 500));
+      console.error('[Outline] Raw (last 200):', cleaned.substring(cleaned.length - 200));
+      // 尝试多层修复
+      const attempts = [
+        cleaned, // 原始
+        cleaned.replace(/[\x00-\x1F\x7F]/g, ''), // 移除控制字符
+      ];
+      let repaired = false;
+      for (const attempt of attempts) {
+        if (repaired) break;
+        try {
+          parsed = JSON.parse(attempt);
+          repaired = true;
+        } catch {
+          // 尝试截断修复：找到最后一个完整对象并闭合
+          const last = attempt.lastIndexOf('}');
+          if (last > 0) {
+            let fixed = attempt.substring(0, last + 1);
+            if (!fixed.endsWith(']')) fixed += ']';
+            // 计算缺少的闭合花括号
+            let openCount = 0;
+            let closeCount = 0;
+            for (const ch of fixed) {
+              if (ch === '{') openCount++;
+              if (ch === '}') closeCount++;
+            }
+            const missing = openCount - closeCount;
+            if (missing > 0 && missing < 10) {
+              fixed += '}'.repeat(missing);
+            }
+            try {
+              parsed = JSON.parse(fixed);
+              repaired = true;
+              console.log('[Outline] Truncated JSON repaired successfully');
+            } catch {
+              // 继续下一个 attempt
+            }
+          }
+        }
+      }
+      if (!repaired) {
         throw new Error('大纲格式解析失败，请重试或简化输入内容');
       }
     }
