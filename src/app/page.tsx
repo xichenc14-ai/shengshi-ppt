@@ -1473,40 +1473,25 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Gamma 嵌入预览 */}
+              {result.gammaUrl && (() => {
+                // 将 gamma.app/docs/xxx 转为 gamma.app/embed/xxx
+                const embedId = result.gammaUrl?.match(/gamma\.app\/(?:docs|documents|embed)\/([a-zA-Z0-9]+)/)?.[1];
+                const embedUrl = embedId ? `https://gamma.app/embed/${embedId}` : null;
+                return embedUrl ? (
+                  <div className="mb-6 rounded-xl overflow-hidden border border-gray-200 shadow-sm">
+                    <iframe
+                      src={embedUrl}
+                      style={{ width: '100%', maxWidth: '100%', height: '450px' }}
+                      allow="fullscreen"
+                      title={result.title || 'PPT预览'}
+                      loading="lazy"
+                    />
+                  </div>
+                ) : null;
+              })()}
+
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                {/* 在线预览按钮（服务端预下载PDF） */}
-                {result.gammaUrl && (
-                  <button
-                    onClick={async () => {
-                      try {
-                        // 从generationId或gammaUrl提取ID
-                        const genId = result.gammaUrl?.match(/gamma\.app\/documents\/([a-zA-Z0-9]+)/)?.[1] ||
-                                     result.gammaUrl?.match(/generationId=([a-zA-Z0-9]+)/)?.[1] ||
-                                     result.dlUrl?.match(/generations\/([a-zA-Z0-9]+)/)?.[1];
-                        if (!genId) {
-                          // 没有ID，直接打开Gamma链接
-                          window.open(result.gammaUrl, '_blank');
-                          return;
-                        }
-                        // 调用preview-pdf API获取预览
-                        const res = await fetch(`/api/preview-pdf?generationId=${genId}`);
-                        const data = await res.json();
-                        if (data.status === 'ready' && data.pdfUrl) {
-                          window.open(data.pdfUrl, '_blank');
-                        } else {
-                          // fallback到Gamma链接
-                          window.open(data.gammaUrl || result.gammaUrl, '_blank');
-                        }
-                      } catch (e) {
-                        // 出错也fallback到Gamma
-                        window.open(result.gammaUrl, '_blank');
-                      }
-                    }}
-                    className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-purple-200/50 transition-all"
-                  >
-                    👁️ 在线预览
-                  </button>
-                )}
                 {/* 下载 PPTX 按钮 */}
                 {result.dlUrl && (
                   <button onClick={async () => {
