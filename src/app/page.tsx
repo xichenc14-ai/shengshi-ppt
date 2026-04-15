@@ -1473,23 +1473,31 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Gamma 嵌入预览 */}
-              {result.gammaUrl && (() => {
-                // 将 gamma.app/docs/xxx 转为 gamma.app/embed/xxx
-                const embedId = result.gammaUrl?.match(/gamma\.app\/(?:docs|documents|embed)\/([a-zA-Z0-9]+)/)?.[1];
-                const embedUrl = embedId ? `https://gamma.app/embed/${embedId}` : null;
-                return embedUrl ? (
-                  <div className="mb-6 rounded-xl overflow-hidden border border-gray-200 shadow-sm">
-                    <iframe
-                      src={embedUrl}
-                      style={{ width: '100%', maxWidth: '100%', height: '450px' }}
-                      allow="fullscreen"
-                      title={result.title || 'PPT预览'}
-                      loading="lazy"
-                    />
+              {/* 在线预览入口 */}
+              {result.gammaUrl && (
+                <div className="mb-6">
+                  <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl border border-purple-100 p-6">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-md">
+                        <span className="text-white text-lg">👁️</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">在线预览</p>
+                        <p className="text-xs text-gray-400">在 Gamma 中查看完整演示效果</p>
+                      </div>
+                    </div>
+                    <a
+                      href={result.gammaUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-white rounded-xl border border-purple-200 text-sm font-medium text-purple-700 hover:bg-purple-50 hover:border-purple-300 active:scale-[0.97] transition-all shadow-sm"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                      打开在线预览
+                    </a>
                   </div>
-                ) : null;
-              })()}
+                </div>
+              )}
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                 {/* 下载 PPTX 按钮 */}
@@ -1542,7 +1550,7 @@ export default function Home() {
                         alert('下载暂时失败，请稍后重试');
                       }
                     }
-                  }} className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 transition-all">
+                  }} className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 active:scale-95 active:shadow-md transition-all cursor-pointer">
                     📥 下载 PPTX
                   </button>
                 )}
