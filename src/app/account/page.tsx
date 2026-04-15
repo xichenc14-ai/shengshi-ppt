@@ -144,19 +144,19 @@ export default function AccountPage() {
         {/* Quick Links */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm mb-4 overflow-hidden">
           {[
-            { icon: '📋', label: '生成历史', desc: '查看历史PPT记录', href: '#' },
+            { icon: '📋', label: '生成历史', desc: '查看历史PPT记录', href: '/history' },
             { icon: '⭐', label: '我的收藏', desc: '收藏喜欢的模板', href: '#' },
             { icon: '🎁', label: '邀请好友', desc: '邀请得积分奖励', href: '#' },
             { icon: '💬', label: '意见反馈', desc: '帮助我们变得更好', href: '#' },
           ].map((item, i) => (
-            <button key={i} onClick={() => {}} className={`w-full flex items-center gap-3 px-5 py-4 hover:bg-[#FAFBFE] transition-colors ${i > 0 ? 'border-t border-gray-50' : ''}`}>
+            <Link key={i} href={item.href} className={`w-full flex items-center gap-3 px-5 py-4 hover:bg-[#FAFBFE] transition-colors ${i > 0 ? 'border-t border-gray-50' : ''}`}>
               <span className="text-xl">{item.icon}</span>
-              <div className="flex-1 text-left">
+              <div className="flex-1">
                 <p className="text-sm font-medium text-gray-800">{item.label}</p>
                 <p className="text-[11px] text-gray-400">{item.desc}</p>
               </div>
               <svg className="w-4 h-4 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
-            </button>
+            </Link>
           ))}
         </div>
 

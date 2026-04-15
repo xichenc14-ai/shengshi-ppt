@@ -28,7 +28,16 @@ import { checkPermission, mapImgModeToSource, getPlan, PLAN_LIST } from '@/lib/m
 
 /* ==================== Config ==================== */
 
+export const dynamic = 'force-dynamic';
+
 const GEN_MODES_MAP: Record<string, string> = { generate: 'generate', condense: 'condense', preserve: 'preserve' };
+
+const HOT_SCENES = [
+  { label: '📊 工作汇报', text: '本周工作汇报，包含完成任务、问题分析、下周计划' },
+  { label: '💼 商业方案', text: '咖啡品牌市场推广方案PPT' },
+  { label: '🎓 教学课件', text: '初中数学《勾股定理》教学课件' },
+  { label: '📋 年终总结', text: '2025年度工作总结，包含主要成绩、数据亮点和明年规划' },
+];
 
 type UploadedFile = { name: string; type: string; size: number; content?: string };
 type SlideItem = { id: string; title: string; content?: string[]; notes?: string };
@@ -189,6 +198,23 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [user]);
 
+  // 🆕 Landing mode selection handler
+  const handleModeSelect = useCallback((m: 'direct' | 'smart', prefill?: string) => {
+    if (!user) { openLogin(); return; }
+    setMode(m);
+    if (prefill) setTopic(prefill);
+    setPhase('input');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [user, openLogin]);
+
+  // 🆕 Hot scene click handler
+  const handleSceneClick = useCallback((text: string) => {
+    if (!user) { openLogin(); return; }
+    setTopic(text);
+    setMode('direct');
+    setPhase('input');
+  }, [user, openLogin]);
+
   // Direct mode: generate directly without outline editing
   const generateDirect = useCallback(async () => {
     const inputText = collectText();
@@ -333,6 +359,15 @@ export default function Home() {
         setResult({ title: topicText || 'PPT', slides: [], dlUrl: finalExportUrl, gammaUrl: lastStatusData?.gammaUrl || '', actualPages: pages });
         setGenProgress(100);
         setPhase('result');
+
+        // 🆕 保存生成历史
+        try {
+          await fetch('/api/history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'save', userId: user.id, title: topicText || 'PPT', slides: [], themeId: directTheme, downloadUrl: finalExportUrl, pageCount: pages, imageMode: directImgMode }),
+          });
+        } catch (e) { console.warn('[History] 保存失败:', e); }
       }
     } catch (e: any) {
       // 🚨 V6新增：生成失败/超时时回滚积分
@@ -583,6 +618,15 @@ export default function Home() {
         setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalExportUrl, gammaUrl: lastStatusData?.gammaUrl || '', actualPages: editedSlides.length });
         setGenProgress(100);
         setPhase('result');
+
+        // 🆕 保存生成历史
+        try {
+          await fetch('/api/history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'save', userId: user.id, title: outlineResult.title, slides: editedSlides, themeId: finalThemeId, downloadUrl: finalExportUrl, pageCount: editedSlides.length, imageMode: imgSrc }),
+          });
+        } catch (e) { console.warn('[History] 保存失败:', e); }
       }
     } catch (e: any) {
       // 🚨 V6新增：生成失败/超时时回滚积分
@@ -719,19 +763,168 @@ export default function Home() {
       {/* ===== LANDING PAGE ===== */}
       {phase === 'landing' && (
         <>
-          <HeroSection onSelectMode={(m, prefillText) => { setMode(m); if (prefillText) setTopic(prefillText); setPhase('input'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
+          {/* Mobile-optimized Hero */}
+          <div className="relative pt-6 pb-8 md:pt-12 md:pb-16 overflow-hidden">
+            {/* Background */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+              <div className="absolute -top-20 -right-20 w-[300px] h-[300px] md:w-[500px] md:h-[500px] bg-gradient-to-br from-purple-200/30 to-purple-100/20 rounded-full blur-3xl" />
+            </div>
+
+            <div className="relative max-w-3xl mx-auto px-3 md:px-6">
+              {/* Badge - mobile compact */}
+              <div className="flex justify-center mb-4 md:mb-6">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 md:px-4 md:py-2 bg-white/80 rounded-full shadow-sm border border-purple-100/50">
+                  <span className="relative flex h-1.5 w-1.5 md:h-2 md:w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 md:h-2 md:w-2 bg-purple-500"></span>
+                  </span>
+                  <span className="text-[10px] md:text-xs font-medium text-purple-700">AI驱动 · 30秒出稿</span>
+                </div>
+              </div>
+
+              {/* Headline - mobile compact */}
+              <div className="text-center mb-6 md:mb-8">
+                <h1 className="text-2xl md:text-4xl lg:text-5xl font-black text-gray-900 leading-tight tracking-tight mb-3">
+                  <span className="block">输入主题，</span>
+                  <span className="block bg-gradient-to-r from-purple-600 to-amber-500 bg-clip-text text-transparent">AI一键生成PPT</span>
+                </h1>
+                <p className="text-sm md:text-base text-gray-500 max-w-md mx-auto">告别繁琐排版，AI自动生成精美演示文稿</p>
+              </div>
+
+              {/* Mobile: Single input card */}
+              <div className="bg-white rounded-xl md:rounded-2xl shadow-lg border border-gray-100 p-4 md:p-6 mb-4 md:hidden">
+                <div className="relative">
+                  <textarea
+                    value={topic}
+                    onChange={e => setTopic(e.target.value)}
+                    placeholder="输入PPT主题，如：年度工作汇报"
+                    className="w-full min-h-[80px] px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none resize-none text-sm"
+                  />
+                  <button
+                    onClick={() => fileRef.current?.click()}
+                    className="absolute bottom-2 right-2 w-6 h-6 flex items-center justify-center rounded-md text-gray-300 hover:text-purple-500 transition-colors"
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                  </button>
+                </div>
+                <input ref={fileRef} type="file" multiple className="hidden" onChange={async e => {
+                  const raw = e.target.files;
+                  if (!raw) return;
+                  const processed = await fileProcess(raw);
+                  setFiles(prev => [...prev, ...processed]);
+                  e.target.value = '';
+                }} />
+
+                {files.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {files.map((f, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 rounded text-[10px] text-purple-600">
+                        {f.type.startsWith('image/') ? '🖼' : '📄'} {f.name.slice(0, 10)}
+                        <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="text-gray-300 hover:text-red-400">×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  onClick={() => { if (!user) { openLogin(); return; } if (hasInput) startGenerate(); }}
+                  disabled={!hasInput}
+                  className={`w-full mt-3 py-3 rounded-xl text-sm font-semibold transition-all ${hasInput ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md hover:shadow-lg' : 'bg-gray-100 text-gray-400'}`}
+                >
+                  ✨ 生成PPT
+                </button>
+              </div>
+
+              {/* Desktop: Dual mode cards */}
+              <div className="hidden md:grid grid-cols-2 gap-5 mb-8">
+                <button
+                  onClick={() => handleModeSelect('direct')}
+                  className="group p-6 bg-white rounded-2xl border-2 border-gray-100 hover:border-purple-200 transition-all text-left"
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-500 to-purple-400 flex items-center justify-center shadow-lg shadow-purple-200/40">
+                      <span className="text-white text-lg">🚀</span>
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-gray-900 group-hover:text-purple-700">专业模式</h3>
+                      <p className="text-xs text-gray-400">快速生成</p>
+                    </div>
+                    <span className="ml-auto px-2 py-0.5 bg-green-50 text-green-600 rounded-full text-xs">免费</span>
+                  </div>
+                  <p className="text-sm text-gray-500 mb-3">输入内容直接生成，AI智能排版，适合快速制作</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="px-2 py-0.5 bg-gray-50 text-gray-600 rounded text-xs">即时生成</span>
+                    <span className="px-2 py-0.5 bg-gray-50 text-gray-600 rounded text-xs">智能排版</span>
+                    <span className="px-2 py-0.5 bg-gray-50 text-gray-600 rounded text-xs">4种图片</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleModeSelect('smart')}
+                  className="group p-6 bg-white rounded-2xl border-2 border-gray-100 hover:border-amber-200 transition-all text-left"
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-lg shadow-amber-200/40">
+                      <span className="text-white text-lg">✨</span>
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-gray-900 group-hover:text-amber-700">省心定制</h3>
+                      <p className="text-xs text-gray-400">深度优化</p>
+                    </div>
+                    <span className="ml-auto px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full text-xs">会员</span>
+                  </div>
+                  <p className="text-sm text-gray-500 mb-3">AI深度预处理，专业级呈现，适合高质量需求</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="px-2 py-0.5 bg-gray-50 text-gray-600 rounded text-xs">AI预处理</span>
+                    <span className="px-2 py-0.5 bg-gray-50 text-gray-600 rounded text-xs">preserve</span>
+                    <span className="px-2 py-0.5 bg-gray-50 text-gray-600 rounded text-xs">深度定制</span>
+                  </div>
+                </button>
+              </div>
+
+              {/* Hot scenes - mobile scrollable */}
+              <div className="mb-6 md:mb-8">
+                <p className="text-center text-xs text-gray-400 mb-3 md:hidden">热门场景</p>
+                <div className="flex flex-wrap justify-center gap-2 md:gap-3">
+                  {HOT_SCENES.slice(0, 4).map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => handleSceneClick(s.text)}
+                      className="px-3 py-2 bg-white border border-gray-200 rounded-full text-xs text-gray-600 hover:text-purple-600 hover:border-purple-200 hover:bg-purple-50/50 transition-all md:px-4"
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Social proof - desktop only */}
+              <div className="hidden md:flex items-center justify-center gap-6 text-xs text-gray-400">
+                <span className="flex items-center gap-2">
+                  <div className="flex -space-x-1.5">
+                    {['👨','👩','👨','👩'].map((e, i) => <div key={i} className="w-6 h-6 rounded-full bg-gray-100 border border-white flex items-center justify-center text-xs">{e}</div>)}
+                  </div>
+                  10万+用户
+                </span>
+                <span>★★★★★ 4.9</span>
+                <span>已生成100万+份PPT</span>
+              </div>
+            </div>
+          </div>
 
           <SceneCards />
           <ProcessSection />
           <FAQSection />
           <TestimonialSection />
-          {/* 底部极简导航 */}
-          <div className="max-w-3xl mx-auto px-4 pt-6 pb-4">
-            <div className="flex items-center justify-center gap-6 text-xs text-gray-400">
-              <a href="/pricing" className="hover:text-[#5B4FE9] transition-colors">定价</a>
-              <span>·</span>
-              <a href="/account" className="hover:text-[#5B4FE9] transition-colors">用户中心</a>
-              <span>·</span>
+          {/* Footer - mobile compact */}
+          <div className="max-w-3xl mx-auto px-3 md:px-4 pt-4 pb-3 md:pt-6 md:pb-4">
+            <div className="flex items-center justify-center gap-4 md:gap-6 text-xs text-gray-400">
+              <a href="/pricing" className="hover:text-purple-500">定价</a>
+              <span className="hidden md:inline">·</span>
+              <a href="/account" className="hover:text-purple-500">用户中心</a>
+              <span className="hidden md:inline">·</span>
+              <a href="/history" className="hover:text-purple-500">历史</a>
+              <span className="hidden md:inline">·</span>
               <span>© 2026 省心PPT</span>
             </div>
           </div>

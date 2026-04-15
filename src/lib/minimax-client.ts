@@ -178,3 +178,43 @@ export async function callMiniMaxWithSearch(
 }
 
 export { MINIMAX_API_KEY };
+
+/**
+ * MiniMax 带重试的调用（自动重试 + 超时控制）
+ * - maxRetries: 最大重试次数（默认3次）
+ * - retryDelayMs: 重试间隔（默认1000ms）
+ * - timeoutMs: 单次请求超时（默认30000ms）
+ */
+export async function callMiniMaxWithRetry(
+  messages: MiniMaxMessage[],
+  options: MiniMaxOptions & { maxRetries?: number; retryDelayMs?: number } = {}
+): Promise<string> {
+  const { maxRetries = 3, retryDelayMs = 1000, timeoutMs = 30000, ...rest } = options;
+  const startTime = Date.now();
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await callMiniMax(messages, { ...rest, timeoutMs });
+      console.log(`[MiniMax] 尝试 ${attempt}/${maxRetries} 成功，耗时 ${Date.now() - startTime}ms`);
+      return result;
+    } catch (e: any) {
+      const elapsed = Date.now() - startTime;
+      console.error(`[MiniMax] 尝试 ${attempt}/${maxRetries} 失败:`, e.message, `耗时 ${elapsed}ms`);
+
+      // 529 过载或网络超时 → 重试
+      if (e.message?.includes('529') || e.message?.includes('超时') || e.name === 'AbortError') {
+        if (attempt < maxRetries) {
+          const delay = retryDelayMs * attempt; // 递增延迟
+          console.log(`[MiniMax] 等待 ${delay}ms 后重试...`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+      }
+
+      // 其他错误或已达最大重试次数 → 抛出
+      throw e;
+    }
+  }
+
+  throw new Error('MiniMax 所有重试均失败');
+}

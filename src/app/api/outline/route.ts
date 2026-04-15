@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
 import { callKimi, callKimiWithSearch } from '@/lib/kimi-client';
-import { callMiniMax } from '@/lib/minimax-client';
+import { callMiniMax, callMiniMaxWithRetry } from '@/lib/minimax-client';
 import { callGLM } from '@/lib/glm-client';
 
 const SCENE_THEME_MAP: Record<string, { themeId: string; tone: string; imageMode: string }> = {
@@ -236,15 +236,15 @@ ${inputText}`
     // ===== 联网搜索（暂不需要，AI 知识库足够） =====
     const searchContext = '';
 
-    // ===== 调用 AI（带 fallback 链） =====
+    // ===== 调用 AI（带 fallback 链 + 重试机制） =====
     let rawContent = '';
     let aiError = '';
 
-    // 1️⃣ MiniMax M2.7（首选：速度快，质量高）
+    // 1️⃣ MiniMax M2.7（首选：速度快，质量高）- 带重试
     try {
-      rawContent = await callMiniMax(
+      rawContent = await callMiniMaxWithRetry(
         [{ role: 'user', content: baseUserPrompt }],
-        { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
+        { system: systemPrompt, maxTokens: 8192, temperature: 0.7, maxRetries: 3, timeoutMs: 30000 }
       );
     } catch (e2: any) {
       aiError = `MiniMax: ${e2.message}`;
