@@ -3,6 +3,10 @@ import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
 import { callKimi, callKimiWithSearch } from '@/lib/kimi-client';
 import { callMiniMax, callMiniMaxWithRetry } from '@/lib/minimax-client';
 import { callGLM } from '@/lib/glm-client';
+import { THEME_DATABASE } from '@/lib/theme-database';
+
+// 有效主题ID集合（用于验证AI返回值）
+const THEME_DATABASE_IDS = new Set(THEME_DATABASE.map(t => t.id));
 
 const SCENE_THEME_MAP: Record<string, { themeId: string; tone: string; imageMode: string }> = {
   '商务汇报': { themeId: 'consultant', tone: 'professional', imageMode: 'theme-img' },
@@ -260,6 +264,10 @@ ${inputText}`
     const detectedScene = parsed.scene || detectScene(fullText);
     const sceneConfig = SCENE_THEME_MAP[detectedScene] || SCENE_THEME_MAP['通用'];
 
+    // 验证 AI 返回的 themeId 是否有效，无效则用场景默认
+    const aiThemeId = parsed.themeId;
+    const validThemeId = aiThemeId && THEME_DATABASE_IDS.has(aiThemeId) ? aiThemeId : sceneConfig.themeId;
+
     const slides = (parsed.slides || []).map((s: any, i: number) => ({
       id: Math.random().toString(36).substring(2, 9),
       title: s.title || `第${i + 1}页`,
@@ -270,7 +278,7 @@ ${inputText}`
     return NextResponse.json({
       title: parsed.title || 'PPT',
       slides,
-      themeId: parsed.themeId || sceneConfig.themeId,
+      themeId: validThemeId,
       tone: parsed.tone || sceneConfig.tone,
       imageMode: parsed.imageMode || sceneConfig.imageMode,
       scene: detectedScene,
