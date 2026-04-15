@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
+import { selectBestKey, updateKeyBalance, recordKeyFailure } from '@/lib/gamma-key-pool';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -147,10 +148,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '请输入内容' }, { status: 400 });
     }
 
-    const apiKey = process.env.GAMMA_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'Gamma API Key 未配置' }, { status: 500 });
-    }
+    // 🚨 V8: 使用Key池智能选择
+    const selectedKey = selectBestKey();
+    const apiKey = selectedKey.key;
+    console.log('[Gamma Direct] 使用Key:', selectedKey.label, '| 余额:', selectedKey.remaining);
 
     // 构建最终文本
     let finalInputText = inputText.trim();
@@ -236,6 +237,7 @@ export async function POST(request: NextRequest) {
     if (!createRes.ok) {
       const errText = await createRes.text();
       console.error('[Gamma Direct] API error:', createRes.status, errText);
+      recordKeyFailure(apiKey);
       return NextResponse.json({
         error: `Gamma API 调用失败: ${createRes.status}`,
         detail: errText.substring(0, 500)
@@ -245,9 +247,16 @@ export async function POST(request: NextRequest) {
     const createData = await createRes.json();
     const generationId = createData.generationId || createData.id;
 
+    // 🚨 V8: 记录积分信息（如果有返回）
+    if (createData.credits) {
+      updateKeyBalance(apiKey, createData.credits.deducted, createData.credits.remaining);
+      console.log('[Gamma Direct] 积分扣除:', createData.credits.deducted, '| 剩余:', createData.credits.remaining);
+    }
+
     return NextResponse.json({
       generationId,
       message: '直通生成任务已创建',
+      credits: createData.credits,
     });
   } catch (error: any) {
     console.error('Gamma direct error:', error);

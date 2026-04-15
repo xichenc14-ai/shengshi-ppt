@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
+import { selectBestKey, updateKeyBalance, recordKeyFailure, getKeyPoolStatus, convertCreditsToUserPoints } from '@/lib/gamma-key-pool';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -310,10 +311,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '请输入内容' }, { status: 400 });
     }
 
-    const apiKey = process.env.GAMMA_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'Gamma API Key 未配置' }, { status: 500 });
-    }
+    // 🚨 V8: 使用Key池智能选择（替代单一环境变量）
+    const selectedKey = selectBestKey();
+    const apiKey = selectedKey.key;
+    console.log('[Gamma] 使用Key:', selectedKey.label, '| 余额:', selectedKey.remaining);
 
     const sceneConfig = SCENE_CONFIGS[scene] || SCENE_CONFIGS.biz;
     const finalThemeId = themeId || sceneConfig.themeId;
@@ -407,6 +408,8 @@ export async function POST(request: NextRequest) {
     if (!gammaResponse.ok) {
       const errText = await gammaResponse.text();
       console.error('[Gamma] API error:', gammaResponse.status, errText);
+      // 记录Key失败
+      recordKeyFailure(apiKey);
       return NextResponse.json(
         { error: `Gamma API 调用失败: ${gammaResponse.status}`, detail: errText.substring(0, 500) },
         { status: 502 }
@@ -416,10 +419,17 @@ export async function POST(request: NextRequest) {
     const gammaData = await gammaResponse.json();
     const generationId = gammaData.generationId || gammaData.id;
 
+    // 🚨 V8: 记录积分信息（如果有返回）
+    if (gammaData.credits) {
+      updateKeyBalance(apiKey, gammaData.credits.deducted, gammaData.credits.remaining);
+      console.log('[Gamma] 积分扣除:', gammaData.credits.deducted, '| 剩余:', gammaData.credits.remaining);
+    }
+
     return NextResponse.json({
       generationId,
       message: '生成任务已创建',
       config: { themeId: finalThemeId, tone: finalTone, imageMode: finalImageOptions?.source || imageMode, numCards },
+      credits: gammaData.credits, // 返回积分信息供前端使用
     });
   } catch (error: any) {
     console.error('Gamma generation error:', error);
@@ -433,10 +443,9 @@ export async function POST(request: NextRequest) {
 // GET: 查询 Gamma 生成状态(前端轮询)
 export async function GET(request: NextRequest) {
   try {
-    const apiKey = process.env.GAMMA_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'Gamma API Key 未配置' }, { status: 500 });
-    }
+    // GET查询可以使用任意key（generationId不依赖key）
+    const selectedKey = selectBestKey();
+    const apiKey = selectedKey.key;
 
     const { searchParams } = new URL(request.url);
     const generationId = searchParams.get('id');
@@ -457,6 +466,12 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await response.json();
+    
+    // 🚨 V8: 更新积分信息（completed状态时）
+    if (data.status === 'completed' && data.credits) {
+      updateKeyBalance(apiKey, data.credits.deducted, data.credits.remaining);
+    }
+    
     return NextResponse.json(data);
   } catch (error: any) {
     console.error('Gamma status error:', error);
