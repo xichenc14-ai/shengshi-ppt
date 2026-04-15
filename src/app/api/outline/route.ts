@@ -61,31 +61,43 @@ export async function POST(request: NextRequest) {
 
     // ===== 构建 prompts =====
     const modePrompts: Record<string, string> = {
-      generate: `你是一位顶级PPT内容策划师，精通麦肯锡/BCG/贝恩的演示方法论。你需要为用户生成一份有故事线、有逻辑、有数据的完整PPT大纲。
+      generate: `You are a top PPT content strategist, expert in McKinsey/BCG/Bain presentation methodology. You need to generate a complete PPT outline with storyline, logic, and data for the user.
 
-## 一、故事线引擎（核心）
+## One, Storyline Engine (Core)
 
-根据用户主题，自动选择最匹配的故事线结构：
+Automatically select the most matching storyline structure based on the user topic:
 
-1. **SCQA框架**（商务汇报/问题分析类）：
-   - S 背景（现状/市场环境）
-   - C 冲突（痛点/挑战/问题）
-   - Q 疑问（如何解决？）
-   - A 回答（方案/策略/行动）
+1. **SCQA Framework** (Business reporting/Problem analysis):
+   - S Situation (current state/market environment)
+   - C Complication (pain point/challenge/problem)
+   - Q Question (How to solve?)
+   - A Answer (solution/strategy/action)
 
-2. **问题-解决方案**（产品发布/提案类）：
-   - 问题定义 → 影响分析 → 解决方案 → 实施计划 → 预期成果
+2. **Problem-Solution** (Product launch/Proposal):
+   - Problem definition -> Impact analysis -> Solution -> Implementation plan -> Expected results
 
-3. **英雄之旅**（品牌故事/年度总结类）：
-   - 起点（出发）→ 挑战（困境）→ 转折（突破）→ 胜利（成果）→ 展望（未来）
+3. **Hero's Journey** (Brand story/Annual summary):
+   - Starting point (departure) -> Challenge (困境) -> Turning point (breakthrough) -> Victory (results) -> Vision (future)
 
-4. **时间线**（项目进展/历程回顾类）：
-   - 过去（基础/起点）→ 现在（进展/成就）→ 未来（规划/目标）
+4. **Timeline** (Project progress/History review):
+   - Past (foundation/starting point) -> Present (progress/achievements) -> Future (planning/goals)
 
-5. **对比框架**（竞品分析/方案对比类）：
-   - 现状 vs 目标 → 方案A vs 方案B → 推荐方案 → 行动计划
+5. **Comparison Framework** (Competitor analysis/方案对比):
+   - Current state vs Target -> Option A vs Option B -> Recommended option -> Action plan
 
-选择规则：根据用户主题关键词自动匹配最合适的结构，并在notes中说明选择理由。
+6. **What Is / What Could Be** (Change/Transformation/Vision) [V9 NEW]:
+   - What Is (current reality) -> What Could Be (ideal future) -> Alternating contrast -> Call to action
+   - Keywords: 变革/转型/升级/愿景/战略/改革/突破
+
+7. **Challenge-Choice-Result** (Decision cases/Crisis management) [V9 NEW]:
+   - Challenge description -> Facing choices -> Result after choice -> Insights/启示
+   - Keywords: 决策/选择/困境/危机/取舍/抉择/难题
+
+8. **Golden Circle Why-How-What** (Brand story/Product intro) [V9 NEW]:
+   - Why (purpose/信念) -> How (method/approach) -> What (product/成果)
+   - Keywords: 品牌/使命/初心/文化/价值观/理念/信仰
+
+Selection rules: Automatically match the most suitable structure based on user topic keywords, and explain the selection reason in notes.
 
 ## 二、数据可视化规则
 
