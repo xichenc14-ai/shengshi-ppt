@@ -23,6 +23,13 @@ export interface MembershipPlan {
   pricePerPage?: number;          // 超出后按页付费（¥0.2/页）
 }
 
+export interface UserDownloadInfo {
+  plan_type: string;
+  download_count_month: number;
+  ppt_trial_count_month: number;
+  download_reset_month: string; // '2026-04'
+}
+
 const PLANS: Record<string, MembershipPlan> = {
   free: {
     id: 'free',
@@ -174,7 +181,7 @@ export function mapImgModeToSource(imgMode: string): string {
  * 超出后按页数付费（¥0.2/页）
  * 付费会员：无限制免费下载
  */
-export function checkDownloadPermission(user: any, pageCount: number, format: 'pptx' | 'pdf'): {
+export function checkDownloadPermission(user: UserDownloadInfo, pageCount: number, format: 'pptx' | 'pdf'): {
   allowed: boolean;
   needPayment?: boolean;
   cost?: number;

@@ -1464,21 +1464,6 @@ export default function Home() {
                 {/* 下载 PPTX 按钮 */}
                 {result.dlUrl && (
                   <button onClick={async () => {
-                    // 🆕 记录下载计数
-                    if (user) {
-                      try {
-                        await fetch("/api/download", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            action: "record",
-                            userId: user.id,
-                            pageCount: result.actualPages || result.slides?.length || pages,
-                            format: "pptx",
-                          }),
-                        });
-                      } catch (err) { console.warn("[Download] 记录失败:", err); }
-                    }
                     const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
                     if (result.dlUrl.startsWith('data:')) {
                       const link = document.createElement('a');
