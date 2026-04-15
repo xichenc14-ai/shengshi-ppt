@@ -138,7 +138,9 @@ export async function POST(request: NextRequest) {
       themeId,
       numCards = 8,
       tone = 'professional',
-      textMode = 'generate',
+      // 🚨 V8.2：textMode 不再从请求读取，Gamma 固定使用 preserve
+      // 原因：gamma-direct 的 inputText 已经是前端处理好的 markdown
+      // （可能来自 buildPreserveMarkdown 或用户手动输入的结构化内容）
       imageSource = 'webFreeToUseCommercially',
       exportAs = 'pptx',
       visualMetaphor,
@@ -195,31 +197,27 @@ export async function POST(request: NextRequest) {
     const finalInstructions = instructions + metaphorAppend + themeAppend;
     const finalThemeId = themeId || SCENE_CONFIGS.biz.themeId;
 
-    // 🚨 V7修复：cardSplit 仅用于 preserve 模式，generate/condense 模式让 Gamma 自己扩充
-    // - preserve 模式：用户已分好页，需要精确分页 → cardSplit: 'inputTextBreaks'
-    // - generate/condense 模式：用户输入简短，Gamma 需要扩充 → 不传 cardSplit，让 Gamma 自己决定页数
-    const shouldUseCardSplit = textMode === 'preserve';
+    // 🚨 V8.2：Gamma 固定使用 preserve 模式
+    // gamma-direct 的 inputText 已经是前端处理好的 markdown
+    // （可能来自 buildPreserveMarkdown 或用户手动输入的结构化内容）
+    // Gamma 只负责排版渲染，不做内容扩充/缩减
+    const textMode = 'preserve'; // 固定值！
 
-    const criticalInstruction = textMode === 'preserve'
-      ? '\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作或修改任何事实信息。严格按照提供的Markdown层级和\'---\'分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。保持所有 \'>\' 作为演讲者备注不做展示。'
-      : '\n\n【CRITICAL - AI 扩充模式】\n你是一个专业的 PPT 内容扩充引擎。用户提供了简短的主题或大纲，你需要扩充为完整的 multi-page PPT。目标页数：' + numCards + ' 页。每页必须有明确的标题和 3-4 个核心要点。扩充内容必须紧扣主题，禁止编造虚假数据或案例。';
+    const criticalInstruction = '\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作或修改任何事实信息。严格按照提供的Markdown层级和---分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。';
 
     // 步骤1:创建 Gamma 生成任务(恢复技术部验证的完整参数)
     const gammaPayload = {
       inputText: finalInputText,
-      textMode,
+      textMode: 'preserve', // 🚨 V8.2：固定使用 preserve
       format: 'presentation',
       numCards,
       exportAs,
       themeId: finalThemeId,
-      // 🚨 V7修复：只有 preserve 模式才强制分页，其他模式让 Gamma 自己扩充
-      ...(shouldUseCardSplit ? { cardSplit: 'inputTextBreaks' } : {}),
-      additionalInstructions: finalInstructions + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji(如✅❌📊📈💡🎯⭐🔑🚀💼📧📞📍📌🔍✨⚡🔥💎🏆🔧📋📌)代替web SVG图标。不要使用任何需要在线加载的图标或外部图片URL，确保PPTX下载后所有视觉元素完整显示。' + criticalInstruction,
+      cardSplit: 'inputTextBreaks', // 🚨 V8.2：强制精确分页
+      additionalInstructions: finalInstructions + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji代替web SVG图标。' + criticalInstruction,
       textOptions: { amount: 'medium', tone, language: 'zh-cn' },
       imageOptions,
-      cardOptions: {
-        dimensions: '16x9',
-      },
+      cardOptions: { dimensions: '16x9' },
     };
 
     console.log('[Gamma Direct] Payload:', JSON.stringify(gammaPayload, null, 2));

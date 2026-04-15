@@ -259,7 +259,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       inputText,
-      textMode = 'generate',
+      // 🚨 V8.2：textMode 不再从请求读取，Gamma 固定使用 preserve
+      // 原因：大纲已由 outline API 预处理，Gamma 只负责排版
+      // 用户选的扩充/缩减/保持，只影响 outline API，不影响 Gamma
       format = 'presentation',
       numCards = 8,
       exportAs = 'pptx',
@@ -276,6 +278,11 @@ export async function POST(request: NextRequest) {
       cardSplit,
       textOptions,
     } = body;
+
+    // 🚨 V8.2 核心原则：Gamma API 固定使用 preserve 模式
+    // 无论用户选什么模式（扩充/缩减/保持），Gamma 只接收 preserve
+    // 因为大纲已经由 outline API 预处理好了，Gamma 只负责排版渲染
+    const textMode = 'preserve';
 
     // 支持结构化 slides 数据或纯文本 inputText
     let finalInputText: string;
@@ -364,34 +371,33 @@ export async function POST(request: NextRequest) {
       finalAdditionalInstructions += '\n\n【主题套图-Pexels高质量照片】\n请为每一页配Pexels高质量照片(Pexels图库),照片风格:professional, clean, minimalist, business context。每页使用不同的照片和Gamma内置的Emphasize强调布局,保持视觉丰富度。';
     }
 
-    // V8修复：恢复技术部验证的完整参数
+    // 🚨 V8.2：Gamma 固定使用 preserve 模式（大纲已由 outline API 预处理）
+    // 无论用户选什么模式（扩充/缩减/保持），Gamma 只接收 preserve
     const gammaPayload: Record<string, any> = {
       inputText: finalInputText,
-      textMode, // generate=标准/g直通，preserve=省心定制
+      textMode: 'preserve', // 固定值！Gamma只负责排版渲染
       format,
       numCards,
       exportAs,
       themeId: finalThemeId,
       additionalInstructions: finalAdditionalInstructions,
-      // 🚨 V6修复：preserve模式强制cardSplit，generate模式仅在使用时传入
-      ...(textMode === 'preserve'
-        ? { cardSplit: cardSplit || 'inputTextBreaks' }  // preserve模式强制精确分页
-        : cardSplit ? { cardSplit } : {}),
-      // 如果已传入 textOptions（省心模式），直接使用
+      // 🚨 V8.2：强制精确分页（preserve 模式必须）
+      cardSplit: cardSplit || 'inputTextBreaks',
+      // textOptions 在 preserve 模式下会被 Gamma 忽略（根据API警告）
+      // 但仍保留以备将来 API 更新
       textOptions: textOptions || {
         amount: 'medium',
         tone: finalTone,
         language: 'zh-cn',
       },
       imageOptions: finalImageOptions,
-      // 如果已传入 cardOptions（省心模式），直接使用
       cardOptions: cardOptions || {
         dimensions: '16x9',
       },
     };
 
     // 🔍 DEBUG: log key fields
-    console.log('[Gamma] textMode:', textMode, '| imageOptions:', JSON.stringify(finalImageOptions), '| imageMode:', imageMode, '| finalInstructions len:', finalInstructions.length);
+    console.log('[Gamma] textMode: preserve (fixed) | imageOptions:', JSON.stringify(finalImageOptions), '| imageMode:', imageMode);
     console.log('[Gamma] FULL PAYLOAD:', JSON.stringify(gammaPayload).substring(0, 2000));
 
     // 创建 Gamma 生成任务
