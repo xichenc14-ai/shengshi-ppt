@@ -29,12 +29,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '请输入内容' }, { status: 400 });
     }
 
-    // V7 输入校验：限制字数防止超量请求
+    // V7 输入校验：只限制上限，不限制下限（"咖啡" "5页" 都要能处理）
     if (inputText.length > 10000) {
       return NextResponse.json({ error: '内容过长，请精简到10000字以内' }, { status: 400 });
-    }
-    if (inputText.length < 5) {
-      return NextResponse.json({ error: '内容过短，请提供更详细的描述' }, { status: 400 });
     }
 
     // Rate limiting

@@ -324,8 +324,8 @@ export default function Home() {
           setStepText(`AI 渲染中... ${elapsed}秒`);
         }
 
-        if (!finalExportUrl) {
-          throw new Error('生成超时（2分钟），PPT内容较复杂，请稍后重试');
+        if (!finalExportUrl && !lastStatusData?.gammaUrl) {
+          throw new Error('生成超时（3分钟），PPT内容较复杂，请稍后重试');
         }
 
         await new Promise(r => setTimeout(r, 500));
@@ -575,8 +575,8 @@ export default function Home() {
           setStepText(`AI 渲染中... ${elapsed}秒`);
         }
 
-        if (!finalExportUrl) {
-          throw new Error('生成超时（2分钟），PPT内容较复杂，请稍后重试');
+        if (!finalExportUrl && !lastStatusData?.gammaUrl) {
+          throw new Error('生成超时（3分钟），PPT内容较复杂，请稍后重试');
         }
 
         await new Promise(r => setTimeout(r, 500));
@@ -1235,89 +1235,88 @@ export default function Home() {
       {/* ===== RESULT — 在线预览 ===== */}
       {phase === 'result' && result && !loading && (
         <div className="flex-1">
-          <div className="max-w-5xl mx-auto px-4 md:px-6 pt-4 pb-24">
-            {/* 结果头部 */}
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  🎉 PPT 已生成！
-                  <span className="text-xs font-normal text-gray-400">{result.title} · {result.actualPages || pages} 页</span>
-                </h2>
+          <div className="max-w-3xl mx-auto px-4 md:px-6 pt-16 text-center animate-fade-in-up">
+            <div className="text-5xl mb-4">🎉</div>
+            <h2 className="text-xl font-bold text-gray-900 mb-1">PPT 已生成！</h2>
+            <p className="text-xs text-gray-400 mb-8">{result.title} · {result.actualPages || pages} 页</p>
+
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="text-center">
+                  <div className="text-2xl mb-1">📄</div>
+                  <p className="text-xs text-gray-500">{result.actualPages || pages} 页</p>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl mb-1">🎨</div>
+                  <p className="text-xs text-gray-500">AI 排版</p>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl mb-1">⬇️</div>
+                  <p className="text-xs text-gray-500">即下即用</p>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                {/* 在线预览按钮（Gamma托管） */}
                 {result.gammaUrl && (
                   <a
                     href={result.gammaUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-3 py-1.5 text-xs font-medium text-[#5B4FE9] bg-[#F5F3FF] rounded-lg hover:bg-[#EDE9FE] transition-colors"
+                    className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-purple-200/50 transition-all"
                   >
-                    🔗 在Gamma打开
+                    👁️ 在线预览
                   </a>
                 )}
-                <button
-                  onClick={backToOutline}
-                  className="px-3 py-1.5 text-xs font-medium text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                >
+                {/* 下载 PPTX 按钮 */}
+                {result.dlUrl && (
+                  <button onClick={async () => {
+                    const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                    if (result.dlUrl.startsWith('data:')) {
+                      const link = document.createElement('a');
+                      link.href = result.dlUrl;
+                      link.download = filename;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      return;
+                    }
+                    // 直接用 exportUrl 下载（Gamma CDN）
+                    try {
+                      const res = await fetch(`/api/export?url=${encodeURIComponent(result.dlUrl)}&name=${encodeURIComponent(filename)}`);
+                      if (!res.ok) throw new Error('download failed');
+                      const blob = await res.blob();
+                      if (blob.size < 100) throw new Error('empty file');
+                      const blobUrl = URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = blobUrl;
+                      link.download = filename;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+                    } catch {
+                      // 降级：直接打开 Gamma URL
+                      if (result.gammaUrl) {
+                        window.open(result.gammaUrl, '_blank');
+                      } else {
+                        alert('下载暂时失败，请稍后重试');
+                      }
+                    }
+                  }} className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 transition-all">
+                    📥 下载 PPTX
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center justify-center gap-3 mt-4">
+                <button onClick={backToOutline} className="px-6 py-2.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">
                   ✏️ 修改大纲重做
                 </button>
-              </div>
-            </div>
-
-            {/* iframe 预览 */}
-            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
-              {result.gammaUrl ? (
-                <iframe
-                  src={`/api/preview?url=${encodeURIComponent(result.gammaUrl)}`}
-                  className="w-full border-0"
-                  style={{ height: '70vh' }}
-                  title="PPT 预览"
-                  sandbox="allow-scripts allow-same-origin allow-popups"
-                />
-              ) : (
-                <div className="flex flex-col items-center justify-center py-20">
-                  <div className="text-5xl mb-4">📄</div>
-                  <p className="text-sm text-gray-500 mb-4">预览加载中...</p>
-                </div>
-              )}
-            </div>
-
-            {/* 操作按钮 */}
-            <div className="flex items-center justify-center gap-3 mt-4">
-              {result.dlUrl && (
-                <button onClick={async () => {
-                  const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
-                  if (result.dlUrl.startsWith('data:')) {
-                    const link = document.createElement('a');
-                    link.href = result.dlUrl;
-                    link.download = filename;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    return;
-                  }
-                  const proxyUrl = `/api/export?url=${encodeURIComponent(result.dlUrl)}&name=${encodeURIComponent(filename)}`;
-                  try {
-                    const res = await fetch(proxyUrl);
-                    if (!res.ok) { alert('下载暂时失败，请稍后重试'); return; }
-                    const blob = await res.blob();
-                    if (blob.size < 1000) { alert('下载暂时失败，请稍后重试'); return; }
-                    const blobUrl = URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = blobUrl;
-                    link.download = filename;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-                  } catch { alert('下载失败，请稍后重试'); }
-                }} className="px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 transition-all">
-                  📥 下载 PPTX
+                <button onClick={reset} className="px-6 py-2.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">
+                  继续创建
                 </button>
-              )}
-              <button onClick={reset} className="px-8 py-3.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">
-                继续创建
-              </button>
+              </div>
             </div>
           </div>
         </div>
