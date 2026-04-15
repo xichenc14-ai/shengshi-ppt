@@ -1474,16 +1474,38 @@ export default function Home() {
               </div>
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                {/* 在线预览按钮（Gamma托管） */}
+                {/* 在线预览按钮（服务端预下载PDF） */}
                 {result.gammaUrl && (
-                  <a
-                    href={result.gammaUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={async () => {
+                      try {
+                        // 从generationId或gammaUrl提取ID
+                        const genId = result.gammaUrl?.match(/gamma\.app\/documents\/([a-zA-Z0-9]+)/)?.[1] ||
+                                     result.gammaUrl?.match(/generationId=([a-zA-Z0-9]+)/)?.[1] ||
+                                     result.dlUrl?.match(/generations\/([a-zA-Z0-9]+)/)?.[1];
+                        if (!genId) {
+                          // 没有ID，直接打开Gamma链接
+                          window.open(result.gammaUrl, '_blank');
+                          return;
+                        }
+                        // 调用preview-pdf API获取预览
+                        const res = await fetch(`/api/preview-pdf?generationId=${genId}`);
+                        const data = await res.json();
+                        if (data.status === 'ready' && data.pdfUrl) {
+                          window.open(data.pdfUrl, '_blank');
+                        } else {
+                          // fallback到Gamma链接
+                          window.open(data.gammaUrl || result.gammaUrl, '_blank');
+                        }
+                      } catch (e) {
+                        // 出错也fallback到Gamma
+                        window.open(result.gammaUrl, '_blank');
+                      }
+                    }}
                     className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-purple-200/50 transition-all"
                   >
                     👁️ 在线预览
-                  </a>
+                  </button>
                 )}
                 {/* 下载 PPTX 按钮 */}
                 {result.dlUrl && (

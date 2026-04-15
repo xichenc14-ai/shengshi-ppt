@@ -280,10 +280,6 @@ ${inputText}`
       }
     }
 
-    // Clean AI response
-      }
-    }
-
     // 清理 AI 返回内容
     let cleaned = rawContent.trim();
     
