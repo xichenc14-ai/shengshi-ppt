@@ -314,8 +314,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '请输入内容' }, { status: 400 });
     }
 
-    if (!finalInputText) {
+    if (!finalInputText || !finalInputText.trim()) {
       return NextResponse.json({ error: '请输入内容' }, { status: 400 });
+    }
+
+    // 🚨 V8.3 修复：短内容增强时，确保不以空标题开头
+    if (finalInputText.length < 100) {
+      // 如果 inputText 没有 # 开头，加一个标题
+      if (!finalInputText.startsWith('#')) {
+        finalInputText = `# PPT\n\n${finalInputText}\n\n---\n`;
+      } else {
+        finalInputText = `${finalInputText}\n\n---\n`;
+      }
+    } else if (!finalInputText.includes('---') && slides && slides.length > 1) {
+      finalInputText = finalInputText.split(/\n\n+/).filter((p: string) => p.trim()).join('\n\n---\n\n');
     }
 
     // 🚨 V8: 使用Key池智能选择（替代单一环境变量）

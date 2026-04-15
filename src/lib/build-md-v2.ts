@@ -115,9 +115,16 @@ export function buildMdV2(
   const outputParts: string[] = [];
   const total = slides.length;
 
+  // 🚨 V8.3 修复：开头添加封面标题
+  outputParts.push(`# ${title}`);
+  outputParts.push('');
+
   // 遍历每一页幻灯片
   slides.forEach((slide, index) => {
-    const points = slide.points ?? slide.content ?? [];
+    const rawPoints = slide.points ?? slide.content ?? [];
+
+    // 🚨 V8.3 修复：空 points 时用标题作为唯一要点，避免输出空内容导致 Gamma 400
+    const points = rawPoints.length > 0 ? rawPoints : [slide.title];
 
     // ===== 强制拆页：>4 点自动拆成多页 =====
     const chunks = chunkArray(points, MAX_POINTS_PER_PAGE);
