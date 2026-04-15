@@ -360,7 +360,7 @@ export async function POST(request: NextRequest) {
       // AI尊享图：高质量模型(8 credits/图)
       finalImageOptions = { source: 'aiGenerated', model: 'imagen-3-pro', style: 'professional, high quality, cinematic, detailed' };
     } else {
-      finalImageOptions = { source: 'pictographic' }; // 免费且效果好
+      finalImageOptions = { source: 'themeAccent' }; // 主题套图，默认推荐
     }
 
     const instructions = INSTRUCTION_TEMPLATES[finalTone] || INSTRUCTION_TEMPLATES.professional;

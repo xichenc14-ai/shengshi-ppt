@@ -5,18 +5,18 @@ import { callMiniMax, callMiniMaxWithRetry } from '@/lib/minimax-client';
 import { callGLM } from '@/lib/glm-client';
 
 const SCENE_THEME_MAP: Record<string, { themeId: string; tone: string; imageMode: string }> = {
-  '商务汇报': { themeId: 'consultant', tone: 'professional', imageMode: 'pictographic' },
-  '路演融资': { themeId: 'founder', tone: 'professional', imageMode: 'pictographic' },
-  '培训课件': { themeId: 'icebreaker', tone: 'casual', imageMode: 'noImages' },
-  '创意方案': { themeId: 'electric', tone: 'creative', imageMode: 'aiGenerated' },
-  '美妆时尚': { themeId: 'ashrose', tone: 'casual', imageMode: 'pictographic' },
-  '数据分析': { themeId: 'gleam', tone: 'professional', imageMode: 'noImages' },
-  '年度总结': { themeId: 'blues', tone: 'professional', imageMode: 'pictographic' },
-  '产品发布': { themeId: 'aurora', tone: 'bold', imageMode: 'aiGenerated' },
-  '教育课件': { themeId: 'chisel', tone: 'casual', imageMode: 'noImages' },
-  '生活方式': { themeId: 'finesse', tone: 'casual', imageMode: 'pictographic' },
-  '科技AI': { themeId: 'aurora', tone: 'bold', imageMode: 'aiGenerated' },
-  '通用': { themeId: 'default-light', tone: 'professional', imageMode: 'pictographic' },
+  '商务汇报': { themeId: 'consultant', tone: 'professional', imageMode: 'theme-img' },
+  '路演融资': { themeId: 'founder', tone: 'professional', imageMode: 'theme-img' },
+  '培训课件': { themeId: 'icebreaker', tone: 'casual', imageMode: 'theme-img' },
+  '创意方案': { themeId: 'electric', tone: 'creative', imageMode: 'theme-img' },
+  '美妆时尚': { themeId: 'ashrose', tone: 'casual', imageMode: 'theme-img' },
+  '数据分析': { themeId: 'gleam', tone: 'professional', imageMode: 'theme-img' },
+  '年度总结': { themeId: 'blues', tone: 'professional', imageMode: 'theme-img' },
+  '产品发布': { themeId: 'aurora', tone: 'bold', imageMode: 'theme-img' },
+  '教育课件': { themeId: 'chisel', tone: 'casual', imageMode: 'theme-img' },
+  '生活方式': { themeId: 'finesse', tone: 'casual', imageMode: 'theme-img' },
+  '科技AI': { themeId: 'aurora', tone: 'bold', imageMode: 'theme-img' },
+  '通用': { themeId: 'consultant', tone: 'professional', imageMode: 'theme-img' },
 };
 
 // ===== 联网搜索（降级：直接返回空，让AI依靠知识库） =====
@@ -61,175 +61,77 @@ export async function POST(request: NextRequest) {
 
     // ===== 构建 prompts =====
     const modePrompts: Record<string, string> = {
-      generate: `You are a top PPT content strategist, expert in McKinsey/BCG/Bain presentation methodology. You need to generate a complete PPT outline with storyline, logic, and data for the user.
+      generate: `你是顶级PPT内容策划师。根据用户主题生成完整PPT大纲。
 
-## One, Storyline Engine (Core)
+## 故事线引擎（自动匹配）
+1. SCQA（商务汇报/问题分析）: S现状→C冲突→Q问题→A方案
+2. 问题-方案（产品发布/提案）: 问题→影响→方案→计划→效果
+3. 英雄之旅（品牌故事/年终总结）: 起点→挑战→转折→胜利→展望
+4. 时间线（项目进度/历史回顾）: 过去→现在→未来
+5. 对比框架（竞品分析/方案对比）: 现状vs目标→方案对比→推荐→行动
+6. What Is/What Could Be（变革/转型）: 现实→理想→交替对比→行动号召
+7. 挑战-选择-结果（决策案例）: 挑战→选择→结果→启示
+8. 黄金圈 Why-How-What（品牌/产品）: 使命→方法→成果
 
-Automatically select the most matching storyline structure based on the user topic:
+## 数据可视化标注
+涉及数据时在notes中标注图表：趋势📈 折线图 | 比较📊 柱状图 | 占比🥧 饼图 | 关系🔵 散点图 | 流程➡️ 流程图
 
-1. **SCQA Framework** (Business reporting/Problem analysis):
-   - S Situation (current state/market environment)
-   - C Complication (pain point/challenge/problem)
-   - Q Question (How to solve?)
-   - A Answer (solution/strategy/action)
+## 起承转合结构
+- 起(1-2页): 封面+背景引入
+- 承(中间页): 核心内容展开
+- 转(倒数第2页): 数据/成果/洞察
+- 合(末页): 总结+金句收尾
 
-2. **Problem-Solution** (Product launch/Proposal):
-   - Problem definition -> Impact analysis -> Solution -> Implementation plan -> Expected results
+## 内容规则
+- 保留用户主题/品牌名/产品名等核心信息
+- 每要点≤25字，每页3-4要点，禁超4
+- 禁止编造数据（百分比/金额必须来自原文）
+- 封面和结尾各一句金句(写在notes)
 
-3. **Hero's Journey** (Brand story/Annual summary):
-   - Starting point (departure) -> Challenge (困境) -> Turning point (breakthrough) -> Victory (results) -> Vision (future)
+## 场景匹配规则
+- 美妆/穿搭/潮流 → ashrose + casual
+- 科技/AI/创新 → aurora + bold
+- 教育/培训/课程 → chisel + casual
+- 商务/汇报/数据/金融 → consultant + professional
+- 年度总结/复盘 → blues + professional
+- 路演/融资/创业 → founder + professional
+- 不确定 → consultant + professional
 
-4. **Timeline** (Project progress/History review):
-   - Past (foundation/starting point) -> Present (progress/achievements) -> Future (planning/goals)
+## 输出格式
+严格输出JSON，不用markdown代码块：
+{"title":"PPT主标题","scene":"场景","storyline":"故事线名","themeId":"主题ID","tone":"professional/casual/creative/bold","imageMode":"theme-img","slides":[{"title":"页面标题≤15字","content":["要点1≤25字","要点2","要点3"],"notes":"备注"}]}
 
-5. **Comparison Framework** (Competitor analysis/方案对比):
-   - Current state vs Target -> Option A vs Option B -> Recommended option -> Action plan
+总共${numCards}页`,
 
-6. **What Is / What Could Be** (Change/Transformation/Vision) [V9 NEW]:
-   - What Is (current reality) -> What Could Be (ideal future) -> Alternating contrast -> Call to action
-   - Keywords: 变革/转型/升级/愿景/战略/改革/突破
+      condense: `你是顶级PPT内容策划师。提炼用户内容精华，生成精简PPT大纲。
 
-7. **Challenge-Choice-Result** (Decision cases/Crisis management) [V9 NEW]:
-   - Challenge description -> Facing choices -> Result after choice -> Insights/启示
-   - Keywords: 决策/选择/困境/危机/取舍/抉择/难题
+## 规则
+- 识别原文叙事结构，在notes标注故事线类型
+- 数据页标注图表(📈折线/📊柱状/🥧饼图/➡️流程图)
+- 起承转合：起(1-2页)→承(核心)→转(数据/成果)→合(金句收尾)
+- 保留品牌名/产品名等专有名词，一字不改
+- 每要点≤20字，每页3-4要点
+- 禁止编造原文没有的数据/案例
 
-8. **Golden Circle Why-How-What** (Brand story/Product intro) [V9 NEW]:
-   - Why (purpose/信念) -> How (method/approach) -> What (product/成果)
-   - Keywords: 品牌/使命/初心/文化/价值观/理念/信仰
+## 输出格式
+严格JSON，不用markdown代码块：
+{"title":"PPT主标题","scene":"场景","storyline":"故事线","themeId":"主题ID","tone":"professional/casual/creative/bold","imageMode":"theme-img","slides":[{"title":"标题≤15字","content":["要点1≤20字","要点2","要点3"],"notes":"备注"}]}
 
-Selection rules: Automatically match the most suitable structure based on user topic keywords, and explain the selection reason in notes.
+总共${numCards}页`,
 
-## 二、数据可视化规则
+      preserve: `你是PPT内容策划师。将用户内容结构化分页，一字不改原文。
 
-当内容涉及数据时，必须为该页标注推荐的图表类型（写在notes中）：
-- 趋势变化（时间序列）→ 折线图 📈
-- 数量比较（多项目对比）→ 柱状图 📊
-- 占比/份额（整体与部分）→ 饼图/环形图 🥧
-- 关系/分布（多维度）→ 散点图 🔵
-- 流程/步骤（阶段递进）→ 流程图 ➡️
-- 排名/名次 → 水平柱状图 📋
-- 无数据 → 不标注
+## 核心原则
+- 逐字保留原文，禁止删改/合并/拆分句子
+- 仅做结构化分页，每页≤4要点，超出拆页加"(续)"
+- 保留专有名词/数字/日期完整
+- 在notes标注故事线走向和数据图表(📈📊🥧➡️)
 
-## 三、逻辑结构（起承转合）
+## 输出格式
+严格JSON，不用markdown代码块：
+{"title":"从原文提取的主标题","scene":"场景","themeId":"主题ID","tone":"professional/casual/creative/bold","imageMode":"theme-img","slides":[{"title":"从原文提取的标题","content":["原文逐句复制"],"notes":"备注"}]}
 
-每份PPT必须遵循起承转合结构：
-- **起**（第1-2页）：封面 + 背景/问题引入，抓住注意力
-- **承**（第3-N-2页）：核心内容展开，层层递进
-- **转**（倒数第2页）：数据/成果/关键洞察，制造高潮
-- **合**（最后1页）：总结 + 行动项/金句收尾
-
-## 四、金句注入
-
-仅在封面和结尾页各放一句金句（写在notes中），其他页面不需要金句。
-
-## 五、内容规则
-
-- 严格保留用户提供的主题、品牌名、产品名、公司名等核心信息
-- 可以补充背景信息、常见案例、合理推断
-- 每个要点最多25字，禁止超长堆砌
-- 每页3-4个要点，禁止超过4个
-- 禁止编造具体数据（百分比、具体金额等必须来自原文或常识）
-
-## 六、输出格式
-
-严格输出JSON，不要用markdown代码块包裹：
-{
-  "title": "PPT主标题（必须包含用户提供的主题关键词）",
-  "scene": "场景类型",
-  "storyline": "使用的故事线名称",
-  "themeId": "主题ID",
-  "tone": "professional/casual/creative/bold",
-  "imageMode": "noImages/pictographic/aiGenerated",
-  "slides": [
-    {"title": "页面标题（≤15字）", "content": ["要点1（≤25字）", "要点2", "要点3"], "notes": "简短备注"}
-  ]
-}
-
-场景匹配规则（必须严格遵守）：
-- 美妆时尚/穿搭/潮流 → ashrose + casual + pictographic
-- 科技/产品/创新/AI/机器人 → aurora + bold + aiGenerated
-- 教育/培训/课程 → chisel + casual + noImages
-- 商务/汇报/数据/金融 → consultant/gleam + professional + pictographic
-- 年度总结/复盘 → blues + professional + pictographic
-- 路演/融资/创业 → founder + professional + pictographic
-- 如果不确定，选 default-light + professional
-
-规则：有故事线、有数据图表、精简notes。总共${numCards}页`,
-
-      condense: `你是一位顶级PPT内容策划师。用户会给内容，你需要提炼精华，生成精简的PPT大纲。
-
-## 一、故事线保持
-
-提炼时保持原文的故事线走向：
-- 识别原文的叙述结构（问题→方案、过去→现在→未来、背景→冲突→解决等）
-- 在notes中标注识别到的故事线类型
-- 精简内容但保持叙事弧线完整
-
-## 二、数据可视化标注
-
-当提炼的内容涉及数据时，在notes中标注推荐图表类型：
-- 趋势变化 → 折线图 📈
-- 数量比较 → 柱状图 📊
-- 占比/份额 → 饼图 🥧
-- 流程/步骤 → 流程图 ➡️
-- 无数据 → 不标注
-
-## 三、起承转合
-
-精简后仍需保持起承转合结构：
-- 起：背景/问题（精简为1-2页）
-- 承：核心内容（保留关键论点）
-- 转：数据/成果（保留关键数字）
-- 合：总结/行动（一句话金句收尾）
-
-## 四、内容规则
-
-- 严格保留品牌名、产品名、公司名等专有名词，一字不改
-- 删除冗余重复的表达，只保留核心信息
-- 每个要点压缩到20字以内
-- 每页只保留3-4个核心要点
-- 禁止编造任何原文没有的数据、案例或细节
-- 结尾页notes中放一句金句即可
-
-严格输出JSON，不要用markdown代码块包裹：
-{
-  "title": "PPT主标题",
-  "scene": "场景类型",
-  "storyline": "识别到故事线",
-  "themeId": "主题ID",
-  "tone": "professional/casual/creative/bold",
-  "imageMode": "noImages/pictographic/aiGenerated",
-  "slides": [{"title": "页面标题（≤15字）", "content": ["压缩后的要点1（≤20字）", "要点2", "要点3"], "notes": "简短备注"}]
-}
-
-规则：提炼核心要点，保持故事线。总共${numCards}页`,
-
-      preserve: `你是专业的PPT内容策划师。用户会提供已有内容，你的唯一任务是将其**结构化分页**，**一字不改**原文。
-
-核心原则（必须严格遵守）：
-- **逐字保留**：用户写的每一个字都要出现在输出中，禁止删改、合并、拆分任何句子
-- **仅做结构化**：将原文按内容自然段落分配到不同页面
-- **禁止精简/扩写**：不压缩原文，不补充新内容
-- **保留专有名词**：品牌名、产品名、数字、日期等必须完整保留
-- **分页规则**：每个页面最多4个要点，超出则拆页，标题加"(续)"
-- **识别故事线**：在notes中标注原文的故事线走向（如适用）
-- **数据标注**：如果某页包含数据，在notes中标注推荐图表类型（📈折线图/📊柱状图/🥧饼图/➡️流程图）
-
-严格输出JSON，不要用markdown代码块包裹：
-{
-  "title": "PPT主标题（从原文提取，不得自行拟定）",
-  "scene": "场景类型",
-  "themeId": "主题ID",
-  "tone": "professional/casual/creative/bold",
-  "imageMode": "noImages/pictographic/aiGenerated",
-  "slides": [{
-    "title": "页面标题（从原文提取，不得自行拟定）",
-    "content": ["原文逐句复制（一字不改）"],
-    "notes": "简短备注"
-  }]
-}
-
-规则：忠实分页，一字不改。总共${numCards}页`,
+总共${numCards}页`,
     };
 
     const systemPrompt = modePrompts[finalTextMode] || modePrompts.generate;
@@ -249,33 +151,30 @@ ${inputText}`
     const searchContext = '';
 
     // ===== 调用 AI（带 fallback 链 + 重试机制） =====
-    // V7.6: Kimi is PRIMARY (xichen's request)
+    // 优化：减小 temperature，缩短超时，精简 prompt
     let rawContent = '';
     let aiError = '';
 
-    // 1. Kimi K2.5 (Primary)
-    try {
-      const kimiResult = await callKimiWithSearch(
-        baseUserPrompt,
-        searchContext,
-        { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
-      );
-      if (typeof kimiResult === 'string') {
-        rawContent = kimiResult;
-      } else {
-        rawContent = kimiResult?.content || '';
+    // 1. Kimi K2.5 (Primary) - 快速模式
+    if (!rawContent) {
+      try {
+        const kimiResult = await callKimi(
+          [{ role: 'user', content: baseUserPrompt }],
+          { system: systemPrompt, maxTokens: 4096, temperature: 0.5, timeoutMs: 45000 }
+        );
+        rawContent = typeof kimiResult === 'string' ? kimiResult : kimiResult?.content || '';
+      } catch (e: any) {
+        aiError = `Kimi: ${e.message}`;
+        console.warn('[Outline] Kimi failed:', aiError);
       }
-    } catch (e: any) {
-      aiError = `Kimi: ${e.message}`;
-      console.warn('[Outline] Kimi failed:', aiError);
     }
 
-    // 2. MiniMax M2.7 (Fallback)
+    // 2. MiniMax M2.7 (Fallback) - 30s 超时
     if (!rawContent) {
       try {
         rawContent = await callMiniMaxWithRetry(
           [{ role: 'user', content: baseUserPrompt }],
-          { system: systemPrompt, maxTokens: 8192, temperature: 0.7, maxRetries: 3, timeoutMs: 30000 }
+          { system: systemPrompt, maxTokens: 4096, temperature: 0.5, maxRetries: 2, timeoutMs: 30000 }
         );
       } catch (e2: any) {
         aiError += ` | MiniMax: ${e2.message}`;
@@ -283,7 +182,7 @@ ${inputText}`
       }
     }
 
-    // 3. GLM-5 (Last resort)
+    // 3. GLM-5 (Last resort) - 30s 超时
     if (!rawContent) {
       try {
         rawContent = await callGLM(systemPrompt, baseUserPrompt, 'outline');

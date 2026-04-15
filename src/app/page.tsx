@@ -51,7 +51,7 @@ export default function Home() {
 
   // Dual-track mode
   const [mode, setMode] = useState<'direct' | 'smart'>('direct');
-  const [directTheme, setDirectTheme] = useState('default-light');
+  const [directTheme, setDirectTheme] = useState('consultant');
   const [directTone, setDirectTone] = useState('professional');
   const [directImgMode, setDirectImgMode] = useState('theme-img');
   const [directTextMode, setDirectTextMode] = useState<'generate' | 'condense' | 'preserve'>('generate');
@@ -437,7 +437,7 @@ export default function Home() {
         setSmartGammaPayload({
           themeId: od.themeId || 'consultant',
           tone: od.tone || 'professional',
-          imageOptions: { source: od.imageMode || 'pictographic' },
+          imageOptions: { source: od.imageMode || 'themeAccent' },
         });
       }
       setPhase('outline');
@@ -1333,7 +1333,7 @@ export default function Home() {
                           <div className="bg-white/70 rounded-lg px-3 py-2">
                             <p className="text-[10px] text-gray-400 mb-1">🖼️ 配图</p>
                             <div className="flex flex-wrap gap-1">
-                              {(['noImages','pictographic','webFreeToUseCommercially','aiGenerated'] as const).map(src => (
+                              {(['themeAccent','noImages','webFreeToUseCommercially','aiGenerated'] as const).map(src => (
                                 <button
                                   key={src}
                                   onClick={() => {
@@ -1349,7 +1349,7 @@ export default function Home() {
                                       : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                                   }`}
                                 >
-                                  {{ noImages:'无图', pictographic:'套图', webFreeToUseCommercially:'网图', aiGenerated:'AI图' }[src]}
+                                  {{ themeAccent:'主题套图', noImages:'无图', webFreeToUseCommercially:'网图', aiGenerated:'AI图' }[src]}
                                 </button>
                               ))}
                             </div>

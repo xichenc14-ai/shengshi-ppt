@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
       imageOptions = { source: 'themeAccent' };
     } else if (imageSource === 'pictographic') {
       // 插图模式:使用pictographic图标/插图库
-      imageOptions = { source: 'pictographic' };
+      imageOptions = { source: 'themeAccent' };
     } else if (imageSource === 'web') {
       imageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageSource === 'ai' || imageSource === 'aiGenerated') {
@@ -182,7 +182,7 @@ export async function POST(request: NextRequest) {
       // AI尊享图:高质量模型(8 credits/图)
       imageOptions = { source: 'aiGenerated', model: 'imagen-3-pro', style: 'professional, high quality, cinematic, detailed' };
     } else {
-      imageOptions = { source: 'pictographic' };
+      imageOptions = { source: 'themeAccent' };
     }
 
     const instructions = INSTRUCTION_TEMPLATES[tone] || INSTRUCTION_TEMPLATES.professional;
