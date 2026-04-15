@@ -237,41 +237,50 @@ ${inputText}`
     const searchContext = '';
 
     // ===== 调用 AI（带 fallback 链 + 重试机制） =====
+    // V7.6: Kimi is PRIMARY (xichen's request)
     let rawContent = '';
     let aiError = '';
 
-    // 1️⃣ MiniMax M2.7（首选：速度快，质量高）- 带重试
+    // 1. Kimi K2.5 (Primary)
     try {
-      rawContent = await callMiniMaxWithRetry(
-        [{ role: 'user', content: baseUserPrompt }],
-        { system: systemPrompt, maxTokens: 8192, temperature: 0.7, maxRetries: 3, timeoutMs: 30000 }
+      const kimiResult = await callKimiWithSearch(
+        baseUserPrompt,
+        searchContext,
+        { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
       );
-    } catch (e2: any) {
-      aiError = `MiniMax: ${e2.message}`;
-      console.warn('[Outline] MiniMax failed:', aiError);
+      if (typeof kimiResult === 'string') {
+        rawContent = kimiResult;
+      } else {
+        rawContent = kimiResult?.content || '';
+      }
+    } catch (e: any) {
+      aiError = `Kimi: ${e.message}`;
+      console.warn('[Outline] Kimi failed:', aiError);
     }
 
-    // 2️⃣ Kimi K2.5（备用：多模态+长上下文）
+    // 2. MiniMax M2.7 (Fallback)
     if (!rawContent) {
       try {
-        const kimiResult = await callKimiWithSearch(
-          baseUserPrompt,
-          searchContext,
-          { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
+        rawContent = await callMiniMaxWithRetry(
+          [{ role: 'user', content: baseUserPrompt }],
+          { system: systemPrompt, maxTokens: 8192, temperature: 0.7, maxRetries: 3, timeoutMs: 30000 }
         );
-        rawContent = kimiResult.content || '';
-      } catch (e: any) {
-        aiError += ` | Kimi: ${e.message}`;
-        console.warn('[Outline] Kimi failed:', e.message);
+      } catch (e2: any) {
+        aiError += ` | MiniMax: ${e2.message}`;
+        console.warn('[Outline] MiniMax failed:', e2.message);
       }
     }
 
-    // 3️⃣ GLM-5（兜底）
+    // 3. GLM-5 (Last resort)
     if (!rawContent) {
       try {
         rawContent = await callGLM(systemPrompt, baseUserPrompt, 'outline');
       } catch (e3: any) {
-        throw new Error(`AI调用全部失败：${aiError} | GLM: ${e3.message}`);
+        throw new Error(`All AI failed: ${aiError} | GLM: ${e3.message}`);
+      }
+    }
+
+    // Clean AI response
       }
     }
 

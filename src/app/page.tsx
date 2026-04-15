@@ -724,9 +724,14 @@ export default function Home() {
       }
 
       const item: UploadedFile = { name: f.name, type: f.type, size: f.size };
-      if (f.type === 'text/plain' || /\.(md|txt|csv)$/.test(f.name)) {
+      const ext = f.name.toLowerCase();
+
+      // 纯文本文件：直接读取
+      if (f.type === 'text/plain' || /\.(md|txt|csv)$/.test(ext)) {
         item.content = await f.text();
-      } else if (f.type.startsWith('image/')) {
+      }
+      // 图片：通过 understand-image API 解析
+      else if (f.type.startsWith('image/')) {
         try {
           const arrayBuffer = await f.arrayBuffer();
           const bytes = new Uint8Array(arrayBuffer);
@@ -743,6 +748,25 @@ export default function Home() {
         } catch {
           item.content = `[图片: ${f.name}]`;
         }
+      }
+      // PDF/Excel/Word/PPT：通过 parse-file API 服务端解析
+      else if (/\.(pdf|xlsx?|docx?|pptx?)$/.test(ext)) {
+        try {
+          const formData = new FormData();
+          formData.append('file', f);
+          const res = await fetch('/api/parse-file', {
+            method: 'POST',
+            body: formData,
+          });
+          const data = await res.json();
+          item.content = data.text || `[文件: ${f.name}]`;
+        } catch (e) {
+          console.warn('[FileProcess] 解析失败:', e);
+          item.content = `[文件: ${f.name}]`;
+        }
+      }
+      else {
+        item.content = `[文件: ${f.name}]`;
       }
       r.push(item);
     }
