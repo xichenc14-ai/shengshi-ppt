@@ -22,6 +22,7 @@ import SkeletonCard from '@/components/SkeletonCard';
 import ThemeSelector from '@/components/ThemeSelector';
 import ScrollingBanner from '@/components/ScrollingBanner';
 import { buildMdV2, buildAdditionalInstructions } from '@/lib/build-md-v2';
+import { validateInput, LIMITS } from '@/lib/input-validation';
 import { getThemeById } from '@/lib/theme-database';
 import { checkPermission, mapImgModeToSource, getPlan, PLAN_LIST } from '@/lib/membership';
 
@@ -47,7 +48,7 @@ export default function Home() {
   const [directTextMode, setDirectTextMode] = useState<'generate' | 'condense' | 'preserve'>('generate');
 
   // Landing page vs generate flow
-  const [phase, setPhase] = useState<'landing' | 'input' | 'streaming' | 'outline' | 'generating' | 'direct-generating' | 'result'>('input');
+  const [phase, setPhase] = useState<'landing' | 'input' | 'streaming' | 'outline' | 'generating' | 'direct-generating' | 'result'>('landing');
 
   // Input state
   const [topic, setTopic] = useState('');
@@ -83,7 +84,7 @@ export default function Home() {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Result
-  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; dlUrl: string; actualPages?: number } | null>(null);
+  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; dlUrl: string; gammaUrl?: string; actualPages?: number } | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -262,11 +263,17 @@ export default function Home() {
       setGenProgress(25);
       setStepText('AI 正在渲染 PPT 页面...');
 
+      // 🚨 V9修复：preserve 模式需要确保有分页符
+      let finalInputText = inputText;
+      if (directTextMode === 'preserve' && !inputText.includes('---')) {
+        finalInputText = buildPreserveMarkdown(inputText, pages);
+      }
+
       const gRes = await fetch('/api/gamma-direct', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          inputText,
+          inputText: finalInputText,
           themeId: directTheme,
           numCards: pages,
           imageSource: directImgMode,
@@ -290,8 +297,8 @@ export default function Home() {
         const startTime = Date.now();
         const pollInterval = 3000; // 🚨 优化：缩短轮询间隔，快速响应
         let finalExportUrl = '';
-
         let finalGammaUrl = '';
+        let lastStatusData: any = null;
 
         while (Date.now() - startTime < 180000) { // 🚨 优化：延长超时到3分钟（复杂PPT需要更多时间）
           await new Promise(r => setTimeout(r, pollInterval));
@@ -303,6 +310,7 @@ export default function Home() {
 
           if (statusData.status === 'completed') {
             finalExportUrl = statusData.exportUrl || '';
+            lastStatusData = statusData;
             setGenProgress(90);
             setStepText('PPT 生成完成，准备下载...');
             break;
@@ -322,7 +330,7 @@ export default function Home() {
 
         await new Promise(r => setTimeout(r, 500));
         const topicText = inputText.split('\n')[0].replace(/^#\s*/, '').trim();
-        setResult({ title: topicText || 'PPT', slides: [], dlUrl: finalExportUrl, actualPages: pages });
+        setResult({ title: topicText || 'PPT', slides: [], dlUrl: finalExportUrl, gammaUrl: lastStatusData?.gammaUrl || '', actualPages: pages });
         setGenProgress(100);
         setPhase('result');
       }
@@ -340,6 +348,13 @@ export default function Home() {
     const inputText = collectText();
     if (!inputText.trim()) return;
 
+    // V7 输入校验
+    const validation = validateInput(topic, files);
+    if (!validation.valid) {
+      setError(validation.errors[0]);
+      return;
+    }
+
     setLoading(true);
     setError('');
     setPhase('streaming');
@@ -348,21 +363,17 @@ export default function Home() {
     setStepText('AI 正在分析你的需求...');
 
     try {
-      // ====== V6 标准化：所有模式统一走 outline API ======
-      // · 保持文本原样 (genMode='preserve') → outline API textMode='preserve'
-      // · 省心模式 (mode='smart')           → outline API textMode='preserve' + auto=true
-      // · 专业模式 (mode='direct')           → outline API textMode=genMode + auto=false
-      let textMode: string = 'generate';
-      let auto = false;
+      // ====== V7 统一流程：所有模式走 outline → 编辑 → 生成 ======
+      // · 专业模式扩充 (genMode='generate') → textMode='generate'
+      // · 专业模式缩减 (genMode='condense') → textMode='condense'
+      // · 专业模式保持 (genMode='preserve') → textMode='preserve'
+      // · 省心定制 (mode='smart')           → textMode='preserve' + auto=true
+      // 专业模式使用 directTextMode，省心模式固定 preserve
+      const effectiveTextMode = mode === 'direct' ? directTextMode : 'preserve';
+      let textMode: string = effectiveTextMode;
+      let auto = mode === 'smart';   // 省心模式自动确定
       if (mode === 'smart') {
-        textMode = 'preserve'; // 省心模式：AI最佳实践，自动确定
-        auto = true;
-      } else if (genMode === 'preserve') {
-        textMode = 'preserve'; // 保持文本原样：零改动分页
-      } else if (genMode === 'condense') {
-        textMode = 'condense'; // 缩减：压缩冗余
-      } else {
-        textMode = 'generate'; // 扩充：从零生成
+        textMode = 'preserve';
       }
 
       // Step 1: 调用 outline API（所有模式统一入口）
@@ -401,7 +412,7 @@ export default function Home() {
       setPhase('input');
     }
     setLoading(false);
-  }, [user, files, topic, showPro, genMode, pages, collectText, mode]);
+  }, [user, files, topic, showPro, genMode, pages, collectText, mode, directTextMode]);
 
   // 🚨 V6 简化：省心模式入口（权限检查 + 调用统一流程）
   const generateSmartOutline = useCallback(async () => {
@@ -537,6 +548,7 @@ export default function Home() {
         const startTime = Date.now();
         const pollInterval = 3000; // 🚨 优化：缩短轮询间隔，快速响应
         let finalExportUrl = '';
+        let lastStatusData: any = null;
 
         while (Date.now() - startTime < 180000) { // 🚨 优化：延长超时到3分钟
           await new Promise(r => setTimeout(r, pollInterval));
@@ -548,6 +560,7 @@ export default function Home() {
 
           if (statusData.status === 'completed') {
             finalExportUrl = statusData.exportUrl || '';
+            lastStatusData = statusData;
             setGenProgress(90);
             setStepText('PPT 生成完成，准备下载...');
             break;
@@ -567,7 +580,7 @@ export default function Home() {
         }
 
         await new Promise(r => setTimeout(r, 500));
-        setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalExportUrl, actualPages: editedSlides.length });
+        setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalExportUrl, gammaUrl: lastStatusData?.gammaUrl || '', actualPages: editedSlides.length });
         setGenProgress(100);
         setPhase('result');
       }
@@ -660,6 +673,12 @@ export default function Home() {
   const fileProcess = async (fl: FileList | File[]) => {
     const r: UploadedFile[] = [];
     for (const f of Array.from(fl)) {
+      // V7 前端校验
+      if (f.size > LIMITS.MAX_FILE_SIZE) {
+        setError(`文件 "${f.name}" 超过50MB限制`);
+        continue;
+      }
+
       const item: UploadedFile = { name: f.name, type: f.type, size: f.size };
       if (f.type === 'text/plain' || /\.(md|txt|csv)$/.test(f.name)) {
         item.content = await f.text();
@@ -700,7 +719,7 @@ export default function Home() {
       {/* ===== LANDING PAGE ===== */}
       {phase === 'landing' && (
         <>
-          <HeroSection onSelectMode={(m) => { setMode(m); setPhase('input'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
+          <HeroSection onSelectMode={(m, prefillText) => { setMode(m); if (prefillText) setTopic(prefillText); setPhase('input'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
 
           <SceneCards />
           <ProcessSection />
@@ -760,7 +779,7 @@ export default function Home() {
                     </div>
                     {/* Generate button - height aligned with textarea, more attractive */}
                     <button
-                      onClick={() => { if (!user) { openLogin(); return; } if (mode === 'direct') generateDirect(); else generateOutline(); }}
+                      onClick={() => { if (!user) { openLogin(); return; } generateOutline(); }}
                       disabled={!hasInput}
                       className={`relative flex-shrink-0 min-h-[120px] px-5 flex flex-col items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-all overflow-hidden ${
                         hasInput
@@ -781,7 +800,18 @@ export default function Home() {
                       )}
                     </button>
                   </div>
-                  <input ref={fileRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={async e => { if (e.target.files?.length) { const processed = await fileProcess(e.target.files); setFiles(prev => [...prev, ...processed]); } e.target.value = ''; }} className="hidden" />
+                  <input ref={fileRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={async e => {
+                    const raw = e.target.files;
+                    if (!raw) return;
+                    const newFiles = Array.from(raw);
+                    if (files.length + newFiles.length > LIMITS.MAX_FILE_COUNT) {
+                      setError(`最多上传${LIMITS.MAX_FILE_COUNT}个文件`);
+                      e.target.value = '';
+                      return;
+                    }
+                    if (newFiles.length) { const processed = await fileProcess(newFiles); setFiles(prev => [...prev, ...processed]); }
+                    e.target.value = '';
+                  }} className="hidden" />
 
                   {files.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
@@ -972,9 +1002,8 @@ export default function Home() {
               </>
             )}
 
-            {/* 2026-04-13: 省心模式暂时跳过 outline 编辑，直接生成 */}
-            {/* {phase === 'outline' && outlineResult && ( */}
-            {false && outlineResult && (
+            {/* V9修复：恢复大纲编辑页（省心模式+专业模式共用） */}
+            {phase === 'outline' && outlineResult && (
               <>
                 <div className="flex items-center justify-between mb-4">
                   <div>
@@ -1203,75 +1232,92 @@ export default function Home() {
         <GenerationProgress currentStep={genStep} progress={genProgress} subtext={stepText} />
       )}
 
-      {/* ===== RESULT ===== */}
+      {/* ===== RESULT — 在线预览 ===== */}
       {phase === 'result' && result && !loading && (
         <div className="flex-1">
-          <div className="max-w-2xl mx-auto px-4 md:px-6 pt-16 text-center animate-fade-in-up">
-            <div className="text-5xl mb-4">🎉</div>
-            <h2 className="text-xl font-bold text-gray-900 mb-1">PPT 已生成！</h2>
-            <p className="text-xs text-gray-400 mb-8">{result.title} · {result.actualPages || result.slides.length || pages} 页</p>
-
-            <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                <div className="text-center">
-                  <div className="text-2xl mb-1">📄</div>
-                  <p className="text-xs text-gray-500">{result.actualPages || result.slides.length || pages} 页</p>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl mb-1">🎨</div>
-                  <p className="text-xs text-gray-500">AI 排版</p>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl mb-1">⬇️</div>
-                  <p className="text-xs text-gray-500">即下即用</p>
-                </div>
+          <div className="max-w-5xl mx-auto px-4 md:px-6 pt-4 pb-24">
+            {/* 结果头部 */}
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  🎉 PPT 已生成！
+                  <span className="text-xs font-normal text-gray-400">{result.title} · {result.actualPages || pages} 页</span>
+                </h2>
               </div>
-
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                {result.dlUrl && (
-                  <button onClick={async () => {
-                    const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
-                    if (result.dlUrl.startsWith('data:')) {
-                      const link = document.createElement('a');
-                      link.href = result.dlUrl;
-                      link.download = filename;
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      return;
-                    }
-                    // 统一走代理下载
-                    const proxyUrl = `/api/export?url=${encodeURIComponent(result.dlUrl)}&name=${encodeURIComponent(filename)}`;
-                    try {
-                      const res = await fetch(proxyUrl);
-                      if (!res.ok) {
-                        alert('下载暂时失败，请稍后重试');
-                        return;
-                      }
-                      const blob = await res.blob();
-                      if (blob.size < 1000) {
-                        alert('下载暂时失败，请稍后重试');
-                        return;
-                      }
-                      const blobUrl = URL.createObjectURL(blob);
-                      const link = document.createElement('a');
-                      link.href = blobUrl;
-                      link.download = filename;
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-                    } catch {
-                      alert('下载失败，请稍后重试');
-                    }
-                  }} className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 transition-all">
-                    📥 下载 PPTX
-                  </button>
+              <div className="flex items-center gap-2">
+                {result.gammaUrl && (
+                  <a
+                    href={result.gammaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 text-xs font-medium text-[#5B4FE9] bg-[#F5F3FF] rounded-lg hover:bg-[#EDE9FE] transition-colors"
+                  >
+                    🔗 在Gamma打开
+                  </a>
                 )}
-                <button onClick={reset} className="w-full sm:w-auto px-8 py-3.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">
-                  继续创建
+                <button
+                  onClick={backToOutline}
+                  className="px-3 py-1.5 text-xs font-medium text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  ✏️ 修改大纲重做
                 </button>
               </div>
+            </div>
+
+            {/* iframe 预览 */}
+            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+              {result.gammaUrl ? (
+                <iframe
+                  src={`/api/preview?url=${encodeURIComponent(result.gammaUrl)}`}
+                  className="w-full border-0"
+                  style={{ height: '70vh' }}
+                  title="PPT 预览"
+                  sandbox="allow-scripts allow-same-origin allow-popups"
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20">
+                  <div className="text-5xl mb-4">📄</div>
+                  <p className="text-sm text-gray-500 mb-4">预览加载中...</p>
+                </div>
+              )}
+            </div>
+
+            {/* 操作按钮 */}
+            <div className="flex items-center justify-center gap-3 mt-4">
+              {result.dlUrl && (
+                <button onClick={async () => {
+                  const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                  if (result.dlUrl.startsWith('data:')) {
+                    const link = document.createElement('a');
+                    link.href = result.dlUrl;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    return;
+                  }
+                  const proxyUrl = `/api/export?url=${encodeURIComponent(result.dlUrl)}&name=${encodeURIComponent(filename)}`;
+                  try {
+                    const res = await fetch(proxyUrl);
+                    if (!res.ok) { alert('下载暂时失败，请稍后重试'); return; }
+                    const blob = await res.blob();
+                    if (blob.size < 1000) { alert('下载暂时失败，请稍后重试'); return; }
+                    const blobUrl = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = blobUrl;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+                  } catch { alert('下载失败，请稍后重试'); }
+                }} className="px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 transition-all">
+                  📥 下载 PPTX
+                </button>
+              )}
+              <button onClick={reset} className="px-8 py-3.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">
+                继续创建
+              </button>
             </div>
           </div>
         </div>

@@ -18,6 +18,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '缺少 url 参数' }, { status: 400 });
     }
 
+    // 安全检查：只允许代理 gamma.app 域名
+    try {
+      const parsedUrl = new URL(gammaUrl);
+      if (!parsedUrl.hostname.endsWith('gamma.app') && !parsedUrl.hostname.endsWith('api.gamma.app')) {
+        return NextResponse.json({ error: '只支持代理 Gamma 预览链接' }, { status: 400 });
+      }
+    } catch {
+      return NextResponse.json({ error: '无效的 URL' }, { status: 400 });
+    }
+
     // 代理获取 Gamma 页面内容
     const response = await fetch(gammaUrl, {
       headers: {
@@ -39,7 +49,8 @@ export async function GET(request: NextRequest) {
     return new NextResponse(proxiedHtml, {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'no-cache',
+        'Cache-Control': 'public, max-age=300', // 缓存5分钟
+        // 不设置 X-Frame-Options，允许 iframe 嵌入
       },
     });
   } catch (error: any) {

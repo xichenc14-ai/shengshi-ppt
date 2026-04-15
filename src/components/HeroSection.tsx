@@ -13,7 +13,7 @@ const HOT_SCENES = [
 ];
 
 interface HeroSectionProps {
-  onSelectMode: (mode: 'direct' | 'smart') => void;
+  onSelectMode: (mode: 'direct' | 'smart', prefillText?: string) => void;
 }
 
 export default function HeroSection({ onSelectMode }: HeroSectionProps) {
@@ -34,7 +34,7 @@ export default function HeroSection({ onSelectMode }: HeroSectionProps) {
       return;
     }
     setSelectedScene(text);
-    onSelectMode('direct');
+    onSelectMode('direct', text);
   };
 
   return (
