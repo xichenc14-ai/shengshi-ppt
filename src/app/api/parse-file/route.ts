@@ -107,7 +107,26 @@ export async function POST(request: NextRequest) {
     }
     // ===== Word/PPT 基本信息（暂不支持内容提取） =====
     else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
-      text = `[Word: ${file.name}, ${Math.round(buffer.length / 1024)}KB, 请复制文字后直接粘贴]`;
+      // 🚨 V9.3: 用 JSZip 提取 docx 真实文本内容
+      try {
+        const JSZip = await import('jszip');
+        const zip = await JSZip.loadAsync(buffer);
+        const docXml = await zip.file('word/document.xml')?.async('text');
+        if (docXml) {
+          // 提取所有 <w:t> 标签内的文本
+          const texts = docXml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [];
+          const plainText = texts.map(t => t.replace(/<[^>]+>/g, '')).filter(Boolean).join('\n').trim();
+          if (plainText.length > 10) {
+            text = plainText;
+          } else {
+            text = `[Word: ${file.name}, 解析内容为空，请复制文字后直接粘贴]`;
+          }
+        } else {
+          text = `[Word: ${file.name}, 解析失败，请复制文字后直接粘贴]`;
+        }
+      } catch {
+        text = `[Word: ${file.name}, 解析失败，请复制文字后直接粘贴]`;
+      }
     }
     else if (fileName.endsWith('.pptx') || fileName.endsWith('.ppt')) {
       try {
