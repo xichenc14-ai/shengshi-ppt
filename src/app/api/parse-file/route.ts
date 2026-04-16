@@ -62,7 +62,37 @@ export async function POST(request: NextRequest) {
       text = `[Word: ${file.name}, ${Math.round(buffer.length / 1024)}KB, upload to extract content]`;
     }
     else if (fileName.endsWith('.pptx') || fileName.endsWith('.ppt')) {
-      text = `[PPT: ${file.name}, ${Math.round(buffer.length / 1024)}KB]`;
+      try {
+        // PPTX 是 ZIP 文件，解析 XML 提取文本
+        const JSZip = await import('jszip');
+        const zip = await JSZip.loadAsync(buffer);
+        const slides: string[] = [];
+        
+        // 遍历所有 slide XML
+        const slideFiles = Object.keys(zip.files).filter(f => f.startsWith('ppt/slides/slide') && f.endsWith('.xml'));
+        slideFiles.sort((a, b) => {
+          const numA = parseInt(a.match(/slide(\d+)/)?.[1] || '0');
+          const numB = parseInt(b.match(/slide(\d+)/)?.[1] || '0');
+          return numA - numB;
+        });
+        
+        for (const slideFile of slideFiles) {
+          const content = await zip.file(slideFile)?.async('text');
+          if (content) {
+            // 提取 <a:t> 标签中的文本
+            const texts = content.match(/<a:t>([^<]*)<\/a:t>/g) || [];
+            const slideText = texts.map(t => t.replace(/<a:t>|<\/a:t>/g, '').trim()).filter(Boolean).join('\n');
+            if (slideText) {
+              slides.push(slideText);
+            }
+          }
+        }
+        
+        text = slides.length > 0 ? slides.join('\n\n---\n\n') : `[PPT: ${file.name}, 无文本内容]`;
+      } catch (e: any) {
+        console.error('[Parse] PPT解析失败:', e.message);
+        text = `[PPT: ${file.name}, 解析失败]`;
+      }
     }
     else {
       text = `[File: ${file.name}]`;
