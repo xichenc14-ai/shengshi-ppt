@@ -1498,18 +1498,19 @@ export default function Home() {
                 </div>
               )}
 
-              {/* PDF 在线预览 */}
+              {/* PDF 在线预览 - 移动端优化 */}
               {result.dlUrl && (
-                <div className="mb-6">
+                <div className="mb-4 sm:mb-6">
                   <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-gray-50">
                     <iframe
                       src={result.dlUrl}
-                      style={{ width: '100%', height: '500px', border: 'none' }}
+                      className="w-full h-[280px] sm:h-[350px] md:h-[450px] lg:h-[500px]"
+                      style={{ border: 'none' }}
                       title="PPT预览"
                       loading="lazy"
                     />
                   </div>
-                  <p className="text-xs text-gray-400 text-center mt-1.5">👆 PDF 预览 · 滚动可翻页</p>
+                  <p className="text-xs text-gray-400 text-center mt-1.5">👆 PDF预览 · 滚动翻页</p>
                 </div>
               )}
 
@@ -1571,12 +1572,12 @@ export default function Home() {
                 )}
               </div>
 
-              <div className="flex items-center justify-center gap-3 mt-4">
-                <button onClick={backToOutline} className="px-6 py-2.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 mt-4">
+                <button onClick={backToOutline} className="w-full sm:w-auto px-6 py-2.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">
                   ✏️ 修改大纲重做
                 </button>
-                <button onClick={reset} className="px-6 py-2.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">
-                  继续创建
+                <button onClick={reset} className="w-full sm:w-auto px-6 py-2.5 text-gray-500 hover:text-gray-700 text-sm font-medium hover:bg-gray-50 rounded-xl transition-all">
+                  ➕ 继续创建
                 </button>
               </div>
             </div>
