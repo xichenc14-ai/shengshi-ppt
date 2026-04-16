@@ -8,7 +8,11 @@ export const runtime = 'nodejs';
 async function parsePdfWithPdfJs(buffer: Buffer): Promise<string> {
   // pdfjs-dist legacy (pure JS, Node.js 兼容)
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const doc = await getDocument({ data: new Uint8Array(buffer) }).promise;
+  // 标准字体数据 URL（用于纯 JS 模式）
+  const doc = await getDocument({
+    data: new Uint8Array(buffer),
+    standardFontDataUrl: '/standard_fonts/',
+  }).promise;
   const parts: string[] = [];
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
@@ -23,10 +27,16 @@ async function parsePdfWithPdfJs(buffer: Buffer): Promise<string> {
 }
 
 async function parsePdfWithPdfParse(buffer: Buffer): Promise<string> {
-  // @ts-ignore - pdf-parse
-  const pdfParse = require('pdf-parse');
-  const pdfData = await pdfParse(buffer);
-  return pdfData.text || '';
+  // 使用 pdf2json 作为备用引擎
+  const PdfParser = (await import('pdf2json')).default;
+  const parser = new PdfParser();
+  const pdfData = await parser.parseBuffer(buffer);
+  const pages = pdfData.pages || [];
+  const texts = pages.map((page: any) => {
+    const texts = page.texts || [];
+    return texts.map((t: any) => t.text).join(' ');
+  });
+  return texts.join('\n\n');
 }
 
 // ===== 主处理函数 =====
@@ -156,6 +166,18 @@ export async function POST(request: NextRequest) {
       } catch (e: any) {
         console.error('[Parse] PPT解析失败:', e.message);
         text = `[PPT: ${file.name}，解析失败]`;
+      }
+    }
+    // ===== 纯文本文件解析（txt/md） =====
+    else if (fileName.endsWith('.txt') || fileName.endsWith('.md') || fileName.endsWith('.markdown')) {
+      try {
+        text = buffer.toString('utf-8');
+        if (!text.trim()) {
+          text = `[文件: ${file.name}，内容为空]`;
+        }
+      } catch (e: any) {
+        console.error('[Parse] 文本解析失败:', e.message);
+        text = `[文件: ${file.name}，解析失败]`;
       }
     }
     else {
