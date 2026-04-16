@@ -174,13 +174,13 @@ export default function AccountPage() {
             <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center text-sm">ℹ️</div>
             <div>
               <p className="text-sm font-semibold text-gray-700">关于省心PPT</p>
-              <p className="text-[11px] text-gray-400">v9.1 · 2026-04-16</p>
+              <p className="text-[11px] text-gray-400">v9.4 · 2026-04-16</p>
             </div>
           </div>
           <div className="space-y-2 text-[12px] text-gray-500">
             <div className="flex items-start gap-2">
               <span className="text-purple-400 mt-0.5">●</span>
-              <p>省心PPT v9.1：免费PDF下载 · 会员PPTX导出 · AI单页预览</p>
+              <p>省心PPT v9.4：免费PDF下载 · 会员PPTX导出 · AI单页预览</p>
             </div>
             <div className="flex items-start gap-2">
               <span className="text-purple-400 mt-0.5">●</span>

@@ -83,7 +83,7 @@ export default function Footer() {
           </div>
           
           <div className="mt-4 text-center">
-            <p className="text-[11px] text-gray-300">© 2026 省心PPT · AI演示生成平台 · v9.1 · All rights reserved</p>
+            <p className="text-[11px] text-gray-300">© 2026 省心PPT · AI演示生成平台 · v9.4 · All rights reserved</p>
           </div>
         </div>
       </div>
