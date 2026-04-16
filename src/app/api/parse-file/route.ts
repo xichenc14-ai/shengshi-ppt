@@ -106,27 +106,28 @@ export async function POST(request: NextRequest) {
         text = `[Excel文件: ${file.name}，解析失败]`;
       }
     }
-    // ===== Word/PPT 基本信息（暂不支持内容提取） =====
+    // ===== Word 解析（mammoth 工业级方案） =====
     else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
-      // 🚨 V9.3: 用 JSZip 提取 docx 真实文本内容
       try {
-        const JSZip = await import('jszip');
-        const zip = await JSZip.loadAsync(buffer);
-        const docXml = await zip.file('word/document.xml')?.async('text');
-        if (docXml) {
-          // 提取所有 <w:t> 标签内的文本
-          const texts = docXml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [];
-          const plainText = texts.map(t => t.replace(/<[^>]+>/g, '')).filter(Boolean).join('\n').trim();
-          if (plainText.length > 10) {
-            text = plainText;
-          } else {
-            text = `[Word: ${file.name}, 解析内容为空，请复制文字后直接粘贴]`;
-          }
+        const mammoth = await import('mammoth');
+        // mammoth.extractRawText 高保真提取纯文本，忽略复杂样式和 XML 嵌套
+        const result = await mammoth.extractRawText({ buffer });
+        const plainText = result.value.trim();
+
+        if (plainText.length > 10) {
+          text = plainText;
         } else {
-          text = `[Word: ${file.name}, 解析失败，请复制文字后直接粘贴]`;
+          text = `[Word: ${file.name}, 解析内容为空，可能是全图片文档，请手动复制文字]`;
         }
-      } catch {
-        text = `[Word: ${file.name}, 解析失败，请复制文字后直接粘贴]`;
+      } catch (e: any) {
+        // 必须打印真实错误，否则永远不知道线上为什么挂了
+        console.error(`[Parse] Word 解析发生致命错误 (${file.name}):`, e.message);
+
+        // 不要静默返回 200，明确抛出异常让前端感知并提示用户重试或换格式
+        return NextResponse.json(
+          { error: `Word 文件解析失败，文档可能已损坏或格式不支持。请尝试保存为 PDF 或直接复制文字粘贴。(${e.message})` },
+          { status: 422 } // 422 Unprocessable Entity 是更语义化的状态码
+        );
       }
     }
     else if (fileName.endsWith('.pptx') || fileName.endsWith('.ppt')) {
@@ -175,10 +176,10 @@ export async function POST(request: NextRequest) {
       text = `[文件: ${file.name}]`;
     }
 
-    // 截断超长文本（防止token过多）
-    const MAX_CHARS = 10000;
+    // 截断超长文本（提升至 80000 字，充分利用大模型长上下文能力）
+    const MAX_CHARS = 80000;
     if (text.length > MAX_CHARS) {
-      text = text.substring(0, MAX_CHARS) + '\n\n[...内容过长，已截断...]';
+      text = text.substring(0, MAX_CHARS) + '\n\n[...为保证生成质量，内容已截断...]';
     }
 
     return NextResponse.json({

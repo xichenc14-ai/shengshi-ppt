@@ -263,32 +263,50 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdfPage, pdfTotalPages]);
 
-  // 🚨 V9.1: 结果页出来后自动打开预览弹窗（无需手动点）
+  // 🚨 V9.1 (架构师修复版): 彻底抛弃 setTimeout，采用状态驱动与防竞态设计
   useEffect(() => {
-    if (!result?.gammaUrl || !result?.generationId) return;
-    // 延迟一下让页面渲染完成再打开弹窗
-    const timer = setTimeout(() => {
-      setShowPreview(true);
-      setPreviewLoading(true);
-      setPreviewPdfUrl(null);
-      fetch(`/api/preview-pdf?generationId=${result.generationId}`)
-        .then(r => r.json())
-        .then(data => {
-          if (data.pdfUrl) {
-            // 通过export代理获取PDF blob → pdf.js渲染
-            fetch(`/api/export?url=${encodeURIComponent(data.pdfUrl)}&name=preview.pdf`)
-              .then(r => r.blob())
-              .then(blob => {
-                setPreviewPdfUrl(URL.createObjectURL(blob));
-                setPreviewLoading(false);
-              });
+    // 只有当生成完成且进入 result 页面时，才触发自动预览
+    if (phase !== 'result' || !result?.gammaUrl || !result?.generationId) return;
+
+    let isMounted = true; // 防竞态标志
+
+    // 1. 立即响应状态变化，打开弹窗并显示 Loading，不依赖不可靠的时间猜测
+    setShowPreview(true);
+    setPreviewLoading(true);
+    setPreviewPdfUrl(null);
+
+    // 2. 异步获取 PDF 渲染流
+    const fetchPreview = async () => {
+      try {
+        const r = await fetch(`/api/preview-pdf?generationId=${result.generationId}`);
+        if (!r.ok) throw new Error('获取预览链接失败');
+        const data = await r.json();
+
+        if (data.pdfUrl && isMounted) {
+          const pdfRes = await fetch(`/api/export?url=${encodeURIComponent(data.pdfUrl)}&name=preview.pdf`);
+          if (!pdfRes.ok) throw new Error('PDF 数据流代理失败');
+          const blob = await pdfRes.blob();
+
+          if (isMounted) {
+            setPreviewPdfUrl(URL.createObjectURL(blob));
+            setPreviewLoading(false);
           }
-        })
-        .catch(() => setPreviewLoading(false));
-    }, 300);
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result?.generationId]);
+        } else if (isMounted) {
+          setPreviewLoading(false);
+        }
+      } catch (e) {
+        console.warn('[Preview] 自动加载预览异常:', e);
+        if (isMounted) {
+          setPreviewLoading(false);
+          // 这里可以静默失败，因为弹窗已经打开，用户仍然可以点击下载按钮
+        }
+      }
+    };fetchPreview();
+
+    // 3. 卸载清理：如果用户关闭弹窗或重新生成，立即切断旧的网络请求状态更新
+    return () => {
+      isMounted = false;};
+  }, [phase, result?.generationId, result?.gammaUrl]); // 补全依赖项
 
   // Enter generate flow
   const startGenerate = useCallback(() => {

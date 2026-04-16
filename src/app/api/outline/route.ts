@@ -5,6 +5,9 @@ import { callMiniMax, callMiniMaxWithRetry } from '@/lib/minimax-client';
 import { callGLM } from '@/lib/glm-client';
 import { THEME_DATABASE } from '@/lib/theme-database';
 
+// 强制覆盖 Vercel 默认的 15s 超时限制，延长至 60 秒
+export const maxDuration = 60;
+
 // 有效主题ID集合（用于验证AI返回值）
 const THEME_DATABASE_IDS = new Set(THEME_DATABASE.map(t => t.id));
 
@@ -33,6 +36,67 @@ const SCENE_THEME_MAP: Record<string, { themeId: string; tone: string; imageMode
   '通用': { themeId: 'consultant', tone: 'professional', imageMode: 'theme-img' },
 };
 
+// ===== JSON 解析函数（带多层修复） =====
+function tryParseJson(rawContent: string): any | null {
+  if (!rawContent || typeof rawContent !== 'string') return null;
+
+  let cleaned = rawContent.trim();
+
+  // 移除 markdown 代码块标记（可能有多层）
+  while (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+  }
+
+  // 移除可能的前后缀文字
+  const jsonStart = cleaned.indexOf('{');
+  const jsonEnd = cleaned.lastIndexOf('}');
+  if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+    cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
+  }
+
+  // 尝试多层修复
+  const attempts = [
+    cleaned, // 原始
+    cleaned.replace(/[\x00-\x1F\x7F]/g, ''), // 移除控制字符
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      return JSON.parse(attempt);
+    } catch {
+      // 尝试截断修复：找到最后一个完整对象并闭合
+      const last = attempt.lastIndexOf('}');
+      if (last > 0) {
+        let fixed = attempt.substring(0, last + 1);
+        if (!fixed.endsWith(']')) fixed += ']';
+        // 计算缺少的闭合花括号
+        let openCount = 0;
+        let closeCount = 0;
+        for (const ch of fixed) {
+          if (ch === '{') openCount++;
+          if (ch === '}') closeCount++;
+        }
+        const missing = openCount - closeCount;
+        if (missing > 0 && missing < 10) {
+          fixed += '}'.repeat(missing);
+        }
+        try {
+          const parsed = JSON.parse(fixed);
+          console.log('[Outline] Truncated JSON repaired successfully');
+          return parsed;
+        } catch {
+          // 继续下一个 attempt
+        }
+      }
+    }
+  }
+
+  // 所有修复尝试都失败
+  console.error('[Outline] JSON parse error. Raw (first 500):', cleaned.substring(0, 500));
+  console.error('[Outline] Raw (last 200):', cleaned.substring(cleaned.length - 200));
+  return null;
+}
+
 // ===== 联网搜索（降级：直接返回空，让AI依靠知识库） =====
 
 export async function POST(request: NextRequest) {
@@ -60,7 +124,7 @@ export async function POST(request: NextRequest) {
     // ===== 省心模式智能判断：分析输入类型 =====
     const smartModeAnalysis = analyzeInputType(inputText);
     let finalTextMode = textMode;
-    
+
     // 如果是 auto 模式（省心模式），根据分析结果自动选择 textMode
     if (auto) {
       finalTextMode = smartModeAnalysis.recommendedMode;
@@ -194,19 +258,26 @@ ${inputText}`
     // ===== 联网搜索（暂不需要，AI 知识库足够） =====
     const searchContext = '';
 
-    // ===== 调用 AI（带 fallback 链 + 重试机制） =====
-    // 优化：减小 temperature，缩短超时，精简 prompt
-    let rawContent = '';
+    // ===== 调用 AI（带 fallback 链 + 重试机制 + JSON 验证） =====
+    // 核心：每个 AI 调用后立即验证 JSON，失败则继续下一个模型
+    let parsed: any = null;
     let aiError = '';
 
     // 1. Kimi K2.5 (Primary) - 快速模式
-    if (!rawContent) {
+    if (!parsed) {
       try {
         const kimiResult = await callKimi(
           [{ role: 'user', content: baseUserPrompt }],
           { system: systemPrompt, maxTokens: 4096, temperature: 0.5, timeoutMs: 45000 }
         );
-        rawContent = typeof kimiResult === 'string' ? kimiResult : kimiResult?.content || '';
+        const rawContent = typeof kimiResult === 'string' ? kimiResult : kimiResult?.content || '';
+        if (rawContent) {
+          parsed = tryParseJson(rawContent);
+          if (!parsed) {
+            aiError = 'Kimi: JSON 解析失败';
+            console.warn('[Outline] Kimi JSON parse failed');
+          }
+        }
       } catch (e: any) {
         aiError = `Kimi: ${e.message}`;
         console.warn('[Outline] Kimi failed:', aiError);
@@ -214,12 +285,19 @@ ${inputText}`
     }
 
     // 2. MiniMax M2.7 (Fallback) - 30s 超时
-    if (!rawContent) {
+    if (!parsed) {
       try {
-        rawContent = await callMiniMaxWithRetry(
+        const rawContent = await callMiniMaxWithRetry(
           [{ role: 'user', content: baseUserPrompt }],
           { system: systemPrompt, maxTokens: 4096, temperature: 0.5, maxRetries: 2, timeoutMs: 30000 }
         );
+        if (rawContent) {
+          parsed = tryParseJson(rawContent);
+          if (!parsed) {
+            aiError += ' | MiniMax: JSON 解析失败';
+            console.warn('[Outline] MiniMax JSON parse failed');
+          }
+        }
       } catch (e2: any) {
         aiError += ` | MiniMax: ${e2.message}`;
         console.warn('[Outline] MiniMax failed:', e2.message);
@@ -227,76 +305,25 @@ ${inputText}`
     }
 
     // 3. GLM-5 (Last resort) - 30s 超时
-    if (!rawContent) {
+    if (!parsed) {
       try {
-        rawContent = await callGLM(systemPrompt, baseUserPrompt, 'outline');
-      } catch (e3: any) {
-        throw new Error(`All AI failed: ${aiError} | GLM: ${e3.message}`);
-      }
-    }
-
-    // 清理 AI 返回内容
-    let cleaned = rawContent.trim();
-    
-    // 移除 markdown 代码块标记（可能有多层）
-    while (cleaned.startsWith('```')) {
-      cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
-    }
-    
-    // 移除可能的前后缀文字
-    const jsonStart = cleaned.indexOf('{');
-    const jsonEnd = cleaned.lastIndexOf('}');
-    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
-      cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
-    }
-
-    let parsed: any;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch (e) {
-      console.error('[Outline] JSON parse error. Raw (first 500):', cleaned.substring(0, 500));
-      console.error('[Outline] Raw (last 200):', cleaned.substring(cleaned.length - 200));
-      // 尝试多层修复
-      const attempts = [
-        cleaned, // 原始
-        cleaned.replace(/[\x00-\x1F\x7F]/g, ''), // 移除控制字符
-      ];
-      let repaired = false;
-      for (const attempt of attempts) {
-        if (repaired) break;
-        try {
-          parsed = JSON.parse(attempt);
-          repaired = true;
-        } catch {
-          // 尝试截断修复：找到最后一个完整对象并闭合
-          const last = attempt.lastIndexOf('}');
-          if (last > 0) {
-            let fixed = attempt.substring(0, last + 1);
-            if (!fixed.endsWith(']')) fixed += ']';
-            // 计算缺少的闭合花括号
-            let openCount = 0;
-            let closeCount = 0;
-            for (const ch of fixed) {
-              if (ch === '{') openCount++;
-              if (ch === '}') closeCount++;
-            }
-            const missing = openCount - closeCount;
-            if (missing > 0 && missing < 10) {
-              fixed += '}'.repeat(missing);
-            }
-            try {
-              parsed = JSON.parse(fixed);
-              repaired = true;
-              console.log('[Outline] Truncated JSON repaired successfully');
-            } catch {
-              // 继续下一个 attempt
-            }
+        const rawContent = await callGLM(systemPrompt, baseUserPrompt, 'outline');
+        if (rawContent) {
+          parsed = tryParseJson(rawContent);
+          if (!parsed) {
+            aiError += ' | GLM: JSON 解析失败';
+            console.warn('[Outline] GLM JSON parse failed');
           }
         }
+      } catch (e3: any) {
+        aiError += ` | GLM: ${e3.message}`;
+        console.warn('[Outline] GLM failed:', e3.message);
       }
-      if (!repaired) {
-        throw new Error('大纲格式解析失败，请重试或简化输入内容');
-      }
+    }
+
+    // 所有模型都失败了
+    if (!parsed) {
+      throw new Error(`大纲生成失败: ${aiError || '所有 AI 返回内容无法解析'}`);
     }
 
     // ===== 构建返回结果 =====
@@ -361,7 +388,7 @@ function analyzeInputType(input: string): {
 } {
   const text = input.trim();
   const length = text.length;
-  
+
   // 检测是否有结构化内容（标题、列表、分段等）
   const hasMarkdownHeaders = /^#+\s/.test(text) || /\n#+\s/.test(text);
   const hasBulletPoints = /^[\-\*]\s/.test(text) || /\n[\-\*]\s/.test(text);
@@ -369,37 +396,29 @@ function analyzeInputType(input: string): {
   const hasMultipleParagraphs = (text.split('\n\n').length >= 3);
   const hasFileMarkers = text.includes('[文件') || text.includes('[文档') || text.includes('[图片');
   const hasStructure = hasMarkdownHeaders || hasBulletPoints || hasNumberedLists || hasMultipleParagraphs || hasFileMarkers;
-  
+
   // 检测是否是完整文档（长文本 + 结构化）
   const isFullDocument = length > 800 && hasStructure;
-  
-  // 检测是否是长文档需要精简（超长 + 有结构）
-  const isLongDocumentNeedsCondense = length > 2000 && hasStructure;
-  
+
   // 检测是否是简单描述（短文本 + 无结构）
   const isSimpleDescription = length < 200 && !hasStructure;
-  
+
   // 检测是否需要联网搜索补充信息
   const needsSearch = length < 500 && !hasFileMarkers;
-  
+
   // 判断处理模式
   let recommendedMode: 'preserve' | 'condense' | 'generate';
   let type: string;
   let reason: string;
   let processInstruction: string;
-  
-  if (isFullDocument && length < 1500) {
-    // 中等长度完整文档 → 保留原文
+
+  if (isFullDocument) {
+    // 结构化长文档，无论多长，优先执行无损排版 (preserve)
+    // 现代大模型足以消化长文本，切忌擅自精简导致原意篡改
     recommendedMode = 'preserve';
-    type = '完整文档（中等长度）';
+    type = '完整文档（长文本结构化）';
     reason = '用户提供了结构完整的文档，应当忠实保留原文内容和结构';
-    processInstruction = '保留用户原文的结构和核心内容，整理为PPT页面，不要大幅修改或删减';
-  } else if (isLongDocumentNeedsCondense) {
-    // 超长文档 → 精简总结
-    recommendedMode = 'condense';
-    type = '长文档需要精简';
-    reason = '文档过长（>' + Math.floor(length/10) + '页），需要提炼核心要点';
-    processInstruction = '提取文档的核心要点和关键信息，精简为PPT大纲，每页不超过3-4个要点';
+    processInstruction = '逐字保留用户原文的核心内容，仅做结构化分页，不要擅自删减或扩写';
   } else if (isSimpleDescription) {
     // 简单描述 → AI扩充
     recommendedMode = 'generate';
@@ -426,7 +445,7 @@ function analyzeInputType(input: string): {
     reason = '用户提供了有一定结构的内容，优先保留';
     processInstruction = '整理用户内容为PPT格式，保持原文核心结构';
   }
-  
+
   return {
     type,
     length,
