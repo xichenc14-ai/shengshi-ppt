@@ -167,6 +167,31 @@ export default function AccountPage() {
         >
           退出登录
         </button>
+
+        {/* 版本与关于 */}
+        <div className="mt-6 p-5 bg-gradient-to-br from-gray-50 to-purple-50/30 rounded-2xl border border-gray-100">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center text-sm">ℹ️</div>
+            <div>
+              <p className="text-sm font-semibold text-gray-700">关于省心PPT</p>
+              <p className="text-[11px] text-gray-400">v9.1 · 2026-04-16</p>
+            </div>
+          </div>
+          <div className="space-y-2 text-[12px] text-gray-500">
+            <div className="flex items-start gap-2">
+              <span className="text-purple-400 mt-0.5">●</span>
+              <p>省心PPT v9.1：免费PDF下载 · 会员PPTX导出 · AI单页预览</p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-purple-400 mt-0.5">●</span>
+              <p>PPT生成基于 <span className="font-medium text-purple-600">Gamma</span> AI 引擎，图片托管自 <span className="font-medium text-purple-600">Pexels</span></p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-purple-400 mt-0.5">●</span>
+              <p>免费用户：每月3次PDF下载 · 单次付费¥0.2/页 · 订阅会员无限畅用</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
