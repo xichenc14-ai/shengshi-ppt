@@ -97,6 +97,8 @@ export default function Home() {
   const [showPreview, setShowPreview] = useState(false); // 预览弹窗状态
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null); // PDF预览URL（从Gamma导出）
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [pdfPage, setPdfPage] = useState(1); // PDF当前页
+  const [pdfTotalPages, setPdfTotalPages] = useState(1); // PDF总页数
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -192,6 +194,10 @@ export default function Home() {
 
   // Track hasInput
   useEffect(() => { setHasInput(files.length > 0 || topic.trim().length > 0); }, [files, topic]);
+
+  // ===== PDF 预览渲染（Google Docs Viewer，天然 CORS + 翻页 + 自适应宽度） =====
+  // previewPdfUrl 接收的是经过 /api/export 代理后的真实 PDF URL
+  // 通过 Google Docs Viewer 嵌入，自动处理 CORS，支持滚动翻页
 
   // Enter generate flow
   const startGenerate = useCallback(() => {
@@ -1647,94 +1653,94 @@ export default function Home() {
         onClose={() => setShowThemePicker(false)}
       />
 
-      {/* ===== 预览弹窗（禁止跳转 Gamma，水印预览+确认下载） ===== */}
+      {/* ===== 预览弹窗（Google Docs Viewer PDF 预览，自适应宽度+滚动翻页） ===== */}
       {showPreview && result?.gammaUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+        <div className="fixed inset-0 z-50 flex flex-col bg-black/80 backdrop-blur-sm"
           onClick={(e) => { if (e.target === e.currentTarget) setShowPreview(false); }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden">
-            {/* 弹窗头部 */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
-              <div>
-                <h3 className="text-base font-bold text-gray-900">📄 预览效果</h3>
-                <p className="text-xs text-gray-400 mt-0.5">水印预览版 · 确认后下载完整 PPTX</p>
+          {/* 顶部工具栏 */}
+          <div className="flex items-center justify-between px-6 py-3 bg-gray-900 text-white flex-shrink-0">
+            <div>
+              <p className="text-sm font-medium">📄 {result.title || 'PPT预览'}</p>
+              <p className="text-xs text-gray-400">水印预览版 · 滚动鼠标翻页 · 确认后下载完整 PPTX</p>
+            </div>
+            <button onClick={() => setShowPreview(false)}
+              className="px-4 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 rounded-lg transition-all">
+              ✕ 关闭预览
+            </button>
+          </div>
+
+          {/* PDF 预览区（Google Docs Viewer，天然 CORS + 滚动翻页 + 自适应宽度） */}
+          <div className="flex-1 overflow-hidden bg-gray-800">
+            {previewLoading && (
+              <div className="absolute inset-0 flex items-center justify-center z-10">
+                <div className="text-center text-white">
+                  <div className="animate-spin w-10 h-10 border-3 border-purple-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                  <p className="text-sm text-gray-300">正在加载预览...</p>
+                </div>
               </div>
+            )}
+            {previewPdfUrl ? (
+              <iframe
+                src={`https://docs.google.com/gview?url=${encodeURIComponent(previewPdfUrl)}&embedded=true`}
+                className="w-full h-full border-0"
+                onLoad={() => setPreviewLoading(false)}
+                onError={() => setPreviewLoading(false)}
+                title="PPT预览"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <div className="text-center text-gray-400">
+                  <p className="text-sm">预览加载中...</p>
+                  <p className="text-xs mt-1">如长时间无响应，请确认网络后重试</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 底部操作栏 */}
+          <div className="flex items-center justify-between px-6 py-4 bg-gray-900 flex-shrink-0">
+            <p className="text-xs text-gray-400">预览效果以实际为准 · 下载后可在 PowerPoint / WPS 中编辑</p>
+            <div className="flex items-center gap-3">
               <button onClick={() => setShowPreview(false)}
-                className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all">
-                ✕ 关闭
+                className="px-5 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-all">
+                再想想
               </button>
-            </div>
-            {/* 水印提示条 */}
-            <div className="bg-amber-50 border-b border-amber-100 px-6 py-2 flex items-center gap-2 flex-shrink-0">
-              <span className="text-amber-600 text-xs">⚠️ 当前为水印预览版，完整高清版需确认下载</span>
-            </div>
-            {/* iframe 预览区（显示 Gamma PDF 导出，无 Gamma 原生 UI） */}
-            <div className="flex-1 overflow-hidden relative bg-gray-100">
-              {previewLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-white z-10">
-                  <div className="text-center">
-                    <div className="animate-spin w-8 h-8 border-3 border-purple-500 border-t-transparent rounded-full mx-auto mb-3"></div>
-                    <p className="text-sm text-gray-500">正在生成预览...</p>
-                  </div>
-                </div>
-              )}
-              {previewPdfUrl ? (
-                <iframe
-                  src={previewPdfUrl}
-                  className="w-full h-full border-0"
-                  title="PPT预览"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <p className="text-sm text-gray-400">预览加载中...</p>
-                </div>
-              )}
-            </div>
-            {/* 底部操作栏 */}
-            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-white flex-shrink-0">
-              <p className="text-xs text-gray-400">预览效果以实际为准 · 下载后可在 PowerPoint/WPS 中编辑</p>
-              <div className="flex items-center gap-3">
-                <button onClick={() => setShowPreview(false)}
-                  className="px-5 py-2.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-all">
-                  再想想
+              {result.pptxUrl && (
+                <button
+                  onClick={async () => {
+                    setShowPreview(false);
+                    const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                    if (result.pptxUrl.startsWith('data:')) {
+                      const link = document.createElement('a');
+                      link.href = result.pptxUrl;
+                      link.download = filename;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      return;
+                    }
+                    try {
+                      const res = await fetch(`/api/export?url=${encodeURIComponent(result.pptxUrl)}&name=${encodeURIComponent(filename)}`);
+                      if (!res.ok) throw new Error('download failed');
+                      const blob = await res.blob();
+                      if (blob.size < 100) throw new Error('empty file');
+                      const blobUrl = URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = blobUrl;
+                      link.download = filename;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+                    } catch {
+                      alert('下载暂时失败，请稍后重试');
+                    }
+                  }}
+                  className="px-6 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-semibold rounded-xl hover:shadow-lg hover:shadow-green-200/50 transition-all"
+                >
+                  ✅ 确认下载 PPTX
                 </button>
-                {result.pptxUrl && (
-                  <button
-                    onClick={async () => {
-                      setShowPreview(false);
-                      // 📥 真实下载 PPTX 文件，禁止跳转 Gamma
-                      const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
-                      if (result.pptxUrl.startsWith('data:')) {
-                        const link = document.createElement('a');
-                        link.href = result.pptxUrl;
-                        link.download = filename;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        return;
-                      }
-                      try {
-                        const res = await fetch(`/api/export?url=${encodeURIComponent(result.pptxUrl)}&name=${encodeURIComponent(filename)}`);
-                        if (!res.ok) throw new Error('download failed');
-                        const blob = await res.blob();
-                        if (blob.size < 100) throw new Error('empty file');
-                        const blobUrl = URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = blobUrl;
-                        link.download = filename;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-                      } catch {
-                        alert('下载暂时失败，请稍后重试');
-                      }
-                    }}
-                    className="px-6 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-semibold rounded-xl hover:shadow-lg hover:shadow-green-200/50 transition-all"
-                  >
-                    ✅ 确认下载 PPTX
-                  </button>
-                )}
-              </div>
+              )}
             </div>
           </div>
         </div>
