@@ -72,8 +72,23 @@ export async function POST(request: NextRequest) {
         parsed = true;
       }
     }
-    // ===== Excel 解析（xlsx/xls/csv） =====
-    else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.csv')) {
+    // ===== CSV 纯文本（单独处理，避免 xlsx 库编码问题） =====
+    else if (fileName.endsWith('.csv')) {
+      try {
+        // 直接作为 UTF-8 文本读取，不走 xlsx 库
+        const csvText = buffer.toString('utf-8');
+        if (csvText.trim()) {
+          text = csvText;
+        } else {
+          text = `[CSV: ${file.name}，内容为空]`;
+        }
+      } catch (e: any) {
+        console.error('[Parse] CSV 解析失败:', e.message);
+        text = `[CSV: ${file.name}，解析失败]`;
+      }
+    }
+    // ===== Excel 解析（xlsx/xls） =====
+    else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
       try {
         const XLSX = await import('xlsx');
         const workbook = XLSX.read(buffer, { type: 'buffer' });
