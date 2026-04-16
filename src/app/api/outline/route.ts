@@ -11,15 +11,25 @@ const THEME_DATABASE_IDS = new Set(THEME_DATABASE.map(t => t.id));
 const SCENE_THEME_MAP: Record<string, { themeId: string; tone: string; imageMode: string }> = {
   '商务汇报': { themeId: 'consultant', tone: 'professional', imageMode: 'theme-img' },
   '路演融资': { themeId: 'founder', tone: 'professional', imageMode: 'theme-img' },
-  '培训课件': { themeId: 'icebreaker', tone: 'casual', imageMode: 'theme-img' },
-  '创意方案': { themeId: 'electric', tone: 'creative', imageMode: 'theme-img' },
-  '美妆时尚': { themeId: 'ashrose', tone: 'casual', imageMode: 'theme-img' },
   '数据分析': { themeId: 'gleam', tone: 'professional', imageMode: 'theme-img' },
   '年度总结': { themeId: 'blues', tone: 'professional', imageMode: 'theme-img' },
-  '产品发布': { themeId: 'aurora', tone: 'bold', imageMode: 'theme-img' },
-  '教育课件': { themeId: 'chisel', tone: 'casual', imageMode: 'theme-img' },
-  '生活方式': { themeId: 'finesse', tone: 'casual', imageMode: 'theme-img' },
+  '学术研究': { themeId: 'ash', tone: 'professional', imageMode: 'theme-img' },
+  '医疗健康': { themeId: 'commons', tone: 'professional', imageMode: 'theme-img' },
+  '房地产': { themeId: 'luxe', tone: 'professional', imageMode: 'theme-img' },
   '科技AI': { themeId: 'aurora', tone: 'bold', imageMode: 'theme-img' },
+  '产品发布': { themeId: 'aurora', tone: 'bold', imageMode: 'theme-img' },
+  '创意方案': { themeId: 'electric', tone: 'creative', imageMode: 'theme-img' },
+  '广告营销': { themeId: 'atmosphere', tone: 'creative', imageMode: 'theme-img' },
+  '美妆时尚': { themeId: 'ashrose', tone: 'casual', imageMode: 'theme-img' },
+  '生活方式': { themeId: 'finesse', tone: 'casual', imageMode: 'theme-img' },
+  '婚礼庆典': { themeId: 'coral-glow', tone: 'casual', imageMode: 'theme-img' },
+  '培训课件': { themeId: 'icebreaker', tone: 'casual', imageMode: 'theme-img' },
+  '教育课件': { themeId: 'chisel', tone: 'casual', imageMode: 'theme-img' },
+  '高端精致': { themeId: 'aurum', tone: 'professional', imageMode: 'theme-img' },
+  '中国风': { themeId: 'festival', tone: 'traditional', imageMode: 'theme-img' },
+  '清新简约': { themeId: 'howlite', tone: 'casual', imageMode: 'theme-img' },
+  '餐饮美食': { themeId: 'clementa', tone: 'casual', imageMode: 'theme-img' },
+  '旅游出行': { themeId: 'dune', tone: 'casual', imageMode: 'theme-img' },
   '通用': { themeId: 'consultant', tone: 'professional', imageMode: 'theme-img' },
 };
 
@@ -92,18 +102,36 @@ export async function POST(request: NextRequest) {
 - 禁止编造数据（百分比/金额必须来自原文）
 - 封面和结尾各一句金句(写在notes)
 
-## 场景匹配规则
-- 美妆/穿搭/潮流 → ashrose + casual
-- 科技/AI/创新 → aurora + bold
-- 教育/培训/课程 → chisel + casual
-- 商务/汇报/数据/金融 → consultant + professional
-- 年度总结/复盘 → blues + professional
-- 路演/融资/创业 → founder + professional
-- 不确定 → consultant + professional
+## 🎨 智能风格匹配（核心！根据内容自动选最合适的风格）
+- 商务/汇报/数据/金融 → consultant(商务蓝) + professional
+- 年度总结/复盘/年报 → blues(高端深蓝) + professional
+- 路演/融资/创业/BP → founder(路演深蓝) + professional
+- 科技/AI/互联网/软件 → aurora(极光紫) + bold
+- 产品发布/新品/功能 → aurora(极光紫) + bold
+- 教育/培训/课程 → chisel(文艺棕) + casual
+- 美妆/穿搭/时尚/护肤 → ashrose(玫瑰灰) + casual
+- 创意/广告/营销/策划 → electric(电光紫) + creative
+- 高端/奢华/精品/定制 → aurum(金色奢华) + professional
+- 中国风/传统/节日/年味 → festival(节日红金) + traditional
+- 简约/极简/清新 → howlite(极简白) + casual
+- 学术/论文/研究/报告 → ash(几何灰) + professional
+- 生活方式/旅行/美食 → finesse(优雅米绿) + casual
+- 婚礼/庆典/浪漫 → coral-glow(珊瑚粉) + casual
+- 餐饮/食品/烘焙 → clementa(温暖复古) + casual
+- 医疗/健康/养生 → commons(灰白绿) + professional
+- 房地产/建筑/家居 → luxe(奢侈深棕) + professional
+- 数据/分析/统计/报表 → gleam(冷银科技) + professional
+- 不确定 → consultant(商务蓝) + professional
+
+## 🖼️ 智能图片模式（根据用户需求关键词）
+- 用户提到"搜索图/网图/真实图片" → imageMode: "web"
+- 用户提到"AI图/生成图/定制图" → imageMode: "ai"
+- 用户提到"无图/纯文字/不需要图" → imageMode: "none"
+- 默认（无特殊要求） → imageMode: "theme-img"
 
 ## 输出格式
 严格输出JSON，不用markdown代码块：
-{"title":"PPT主标题","scene":"场景","storyline":"故事线名","themeId":"主题ID","tone":"professional/casual/creative/bold","imageMode":"theme-img","slides":[{"title":"页面标题≤15字","content":["要点1≤25字","要点2","要点3"],"notes":"备注"}]}
+{"title":"PPT主标题","scene":"场景类型","storyline":"故事线名","themeId":"主题ID","tone":"professional/casual/creative/bold/traditional","imageMode":"theme-img/web/ai/none","slides":[{"title":"页面标题≤15字","content":["要点1≤25字","要点2","要点3"],"notes":"备注"}]}
 
 总共${numCards}页`,
 
@@ -117,9 +145,15 @@ export async function POST(request: NextRequest) {
 - 每要点≤20字，每页3-4要点
 - 禁止编造原文没有的数据/案例
 
+## 🎨 智能风格匹配
+根据内容自动选最佳风格：商务→consultant | 科技→aurora | 教育→chisel | 美妆→ashrose | 创意→electric | 高端→aurum | 中国风→festival | 简约→howlite | 学术→ash | 年度→blues | 路演→founder | 数据→gleam | 生活→finesse
+
+## 🖼️ 智能图片模式
+用户提"搜索图/网图"→web | "AI图/生成图"→ai | "无图/纯文字"→none | 默认→theme-img
+
 ## 输出格式
 严格JSON，不用markdown代码块：
-{"title":"PPT主标题","scene":"场景","storyline":"故事线","themeId":"主题ID","tone":"professional/casual/creative/bold","imageMode":"theme-img","slides":[{"title":"标题≤15字","content":["要点1≤20字","要点2","要点3"],"notes":"备注"}]}
+{"title":"PPT主标题","scene":"场景","storyline":"故事线","themeId":"主题ID","tone":"professional/casual/creative/bold/traditional","imageMode":"theme-img/web/ai/none","slides":[{"title":"标题≤15字","content":["要点1≤20字","要点2","要点3"],"notes":"备注"}]}
 
 总共${numCards}页`,
 
@@ -131,9 +165,15 @@ export async function POST(request: NextRequest) {
 - 保留专有名词/数字/日期完整
 - 在notes标注故事线走向和数据图表(📈📊🥧➡️)
 
+## 🎨 智能风格匹配
+根据内容自动选最佳风格：商务→consultant | 科技→aurora | 教育→chisel | 美妆→ashrose | 创意→electric | 高端→aurum | 中国风→festival | 简约→howlite | 学术→ash | 年度→blues | 路演→founder | 数据→gleam | 生活→finesse
+
+## 🖼️ 智能图片模式
+用户提"搜索图/网图"→web | "AI图/生成图"→ai | "无图/纯文字"→none | 默认→theme-img
+
 ## 输出格式
 严格JSON，不用markdown代码块：
-{"title":"从原文提取的主标题","scene":"场景","themeId":"主题ID","tone":"professional/casual/creative/bold","imageMode":"theme-img","slides":[{"title":"从原文提取的标题","content":["原文逐句复制"],"notes":"备注"}]}
+{"title":"从原文提取的主标题","scene":"场景","themeId":"主题ID","tone":"professional/casual/creative/bold/traditional","imageMode":"theme-img/web/ai/none","slides":[{"title":"从原文提取的标题","content":["原文逐句复制"],"notes":"备注"}]}
 
 总共${numCards}页`,
     };

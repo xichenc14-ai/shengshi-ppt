@@ -1499,11 +1499,25 @@ export default function Home() {
                 </div>
               )}
 
+              {/* PDF 在线预览 */}
+              {result.dlUrl && (
+                <div className="mb-6">
+                  <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-gray-50">
+                    <iframe
+                      src={result.dlUrl}
+                      style={{ width: '100%', height: '500px', border: 'none' }}
+                      title="PPT预览"
+                      loading="lazy"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400 text-center mt-1.5">👆 PDF 预览 · 滚动可翻页</p>
+                </div>
+              )}
+
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                {/* 下载 PPTX 按钮 */}
+                {/* 下载 PDF 按钮 */}
                 {result.dlUrl && (
                   <button onClick={async () => {
-                    // 🆕 记录下载计数
                     if (user) {
                       try {
                         await fetch("/api/download", {
@@ -1513,12 +1527,12 @@ export default function Home() {
                             action: "record",
                             userId: user.id,
                             pageCount: result.actualPages || result.slides?.length || pages,
-                            format: "pptx",
+                            format: "pdf",
                           }),
                         });
                       } catch (err) { console.warn("[Download] 记录失败:", err); }
                     }
-                    const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                    const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pdf` : '省心PPT.pdf';
                     if (result.dlUrl.startsWith('data:')) {
                       const link = document.createElement('a');
                       link.href = result.dlUrl;
@@ -1528,7 +1542,6 @@ export default function Home() {
                       document.body.removeChild(link);
                       return;
                     }
-                    // 直接用 exportUrl 下载（Gamma CDN）
                     try {
                       const res = await fetch(`/api/export?url=${encodeURIComponent(result.dlUrl)}&name=${encodeURIComponent(filename)}`);
                       if (!res.ok) throw new Error('download failed');
@@ -1543,16 +1556,21 @@ export default function Home() {
                       document.body.removeChild(link);
                       setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
                     } catch {
-                      // 降级：直接打开 Gamma URL
-                      if (result.gammaUrl) {
-                        window.open(result.gammaUrl, '_blank');
-                      } else {
-                        alert('下载暂时失败，请稍后重试');
-                      }
+                      alert('下载暂时失败，请稍后重试');
                     }
                   }} className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 active:scale-95 active:shadow-md transition-all cursor-pointer">
-                    📥 下载 PPTX
+                    📥 下载 PDF
                   </button>
+                )}
+                {/* 导出 PPTX（Gamma 在线导出） */}
+                {result.gammaUrl && (
+                  <a
+                    href={result.gammaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full sm:w-auto px-6 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:text-purple-600 hover:border-purple-200 active:scale-95 transition-all cursor-pointer text-center"
+                  >📄 导出 PPTX
+                  </a>
                 )}
               </div>
 

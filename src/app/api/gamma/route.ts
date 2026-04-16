@@ -264,7 +264,7 @@ export async function POST(request: NextRequest) {
       // 用户选的扩充/缩减/保持，只影响 outline API，不影响 Gamma
       format = 'presentation',
       numCards = 8,
-      exportAs = 'pptx',
+      exportAs = 'pdf',
       themeId,
       scene = 'biz',
       tone,
