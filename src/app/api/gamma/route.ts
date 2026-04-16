@@ -349,8 +349,14 @@ export async function POST(request: NextRequest) {
     } else if (imageMode === 'none') {
       finalImageOptions = { source: 'noImages' };
     } else if (imageMode === 'theme-img' || imageMode === 'theme') {
-      // 主题套图：使用Gamma主题内置的主题强调图（themeAccent，主题编辑器中配置）
-      finalImageOptions = { source: 'themeAccent' };
+      // 主题套图：根据主题深浅选择最佳图片源
+      // 深色主题(founder/aurora/electric)下themeAccent常显示占位符，改用网图
+      const darkThemes = new Set(['founder', 'aurora', 'electric', 'blues', 'gamma', 'luxe', 'aurum']);
+      if (darkThemes.has(finalThemeId)) {
+        finalImageOptions = { source: 'webFreeToUseCommercially' };
+      } else {
+        finalImageOptions = { source: 'themeAccent' };
+      }
     } else if (imageMode === 'web') {
       finalImageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageMode === 'ai') {
