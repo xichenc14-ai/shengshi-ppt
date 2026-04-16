@@ -93,8 +93,10 @@ export default function Home() {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Result
-  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; dlUrl: string; gammaUrl?: string; actualPages?: number } | null>(null);
+  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; pptxUrl: string; gammaUrl?: string; actualPages?: number; generationId?: string } | null>(null);
   const [showPreview, setShowPreview] = useState(false); // 预览弹窗状态
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null); // PDF预览URL（从Gamma导出）
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -357,7 +359,7 @@ export default function Home() {
 
         await new Promise(r => setTimeout(r, 500));
         const topicText = inputText.split('\n')[0].replace(/^#\s*/, '').trim();
-        setResult({ title: topicText || 'PPT', slides: [], dlUrl: finalExportUrl, gammaUrl: lastStatusData?.gammaUrl || '', actualPages: pages });
+        setResult({ title: topicText || 'PPT', slides: [], pptxUrl: finalExportUrl, gammaUrl: lastStatusData?.gammaUrl || '', actualPages: pages, generationId: gd.generationId });
         setGenProgress(100);
         setPhase('result');
 
@@ -616,7 +618,7 @@ export default function Home() {
         }
 
         await new Promise(r => setTimeout(r, 500));
-        setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalExportUrl, gammaUrl: lastStatusData?.gammaUrl || '', actualPages: editedSlides.length });
+        setResult({ title: outlineResult.title, slides: editedSlides, pptxUrl: finalExportUrl, gammaUrl: lastStatusData?.gammaUrl || '', actualPages: editedSlides.length, generationId: gd.generationId });
         setGenProgress(100);
         setPhase('result');
 
@@ -1488,7 +1490,25 @@ export default function Home() {
                       </div>
                     </div>
                     <button
-                      onClick={() => setShowPreview(true)}
+                      onClick={async () => {
+                        setShowPreview(true);
+                        setPreviewLoading(true);
+                        setPreviewPdfUrl(null);
+                        // 🚨 V8.6: 调用 PDF 导出 API 获取预览 PDF（禁止 Gamma 原生 UI）
+                        if (result.generationId) {
+                          try {
+                            const res = await fetch(`/api/preview-pdf?generationId=${result.generationId}`);
+                            const data = await res.json();
+                            if (data.pdfUrl) {
+                              setPreviewPdfUrl(data.pdfUrl);
+                            } else if (data.gammaUrl) {
+                              // Fallback: 使用 Gamma 在线预览（带水印代理）
+                              setPreviewPdfUrl(`/api/preview/watermarked?gammaUrl=${encodeURIComponent(data.gammaUrl)}`);
+                            }
+                          } catch (e) { console.warn('[Preview] PDF 获取失败:', e); }
+                        }
+                        setPreviewLoading(false);
+                      }}
                       className="inline-flex items-center gap-2 px-5 py-2.5 bg-white rounded-xl border border-purple-200 text-sm font-medium text-purple-700 hover:bg-purple-50 hover:border-purple-300 active:scale-[0.97] transition-all shadow-sm"
                     >
                       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
@@ -1498,25 +1518,9 @@ export default function Home() {
                 </div>
               )}
 
-              {/* PDF 在线预览 - 移动端优化 */}
-              {result.dlUrl && (
-                <div className="mb-4 sm:mb-6">
-                  <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-gray-50">
-                    <iframe
-                      src={result.dlUrl}
-                      className="w-full h-[280px] sm:h-[350px] md:h-[450px] lg:h-[500px]"
-                      style={{ border: 'none' }}
-                      title="PPT预览"
-                      loading="lazy"
-                    />
-                  </div>
-                  <p className="text-xs text-gray-400 text-center mt-1.5">👆 PDF预览 · 滚动翻页</p>
-                </div>
-              )}
-
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                {/* 下载 PDF 按钮 */}
-                {result.dlUrl && (
+                {/* 📥 下载 PPTX（真实文件，禁止跳转 Gamma） */}
+                {result.pptxUrl && (
                   <button onClick={async () => {
                     if (user) {
                       try {
@@ -1527,15 +1531,15 @@ export default function Home() {
                             action: "record",
                             userId: user.id,
                             pageCount: result.actualPages || result.slides?.length || pages,
-                            format: "pdf",
+                            format: "pptx",
                           }),
                         });
                       } catch (err) { console.warn("[Download] 记录失败:", err); }
                     }
-                    const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pdf` : '省心PPT.pdf';
-                    if (result.dlUrl.startsWith('data:')) {
+                    const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                    if (result.pptxUrl.startsWith('data:')) {
                       const link = document.createElement('a');
-                      link.href = result.dlUrl;
+                      link.href = result.pptxUrl;
                       link.download = filename;
                       document.body.appendChild(link);
                       link.click();
@@ -1543,7 +1547,7 @@ export default function Home() {
                       return;
                     }
                     try {
-                      const res = await fetch(`/api/export?url=${encodeURIComponent(result.dlUrl)}&name=${encodeURIComponent(filename)}`);
+                      const res = await fetch(`/api/export?url=${encodeURIComponent(result.pptxUrl)}&name=${encodeURIComponent(filename)}`);
                       if (!res.ok) throw new Error('download failed');
                       const blob = await res.blob();
                       if (blob.size < 100) throw new Error('empty file');
@@ -1559,15 +1563,31 @@ export default function Home() {
                       alert('下载暂时失败，请稍后重试');
                     }
                   }} className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 active:scale-95 active:shadow-md transition-all cursor-pointer">
-                    📥 下载 PDF
+                    📥 下载 PPTX
                   </button>
                 )}
-                {/* 导出 PPTX（禁止跳转 Gamma，统一预览后下载） */}
+                {/* 👁️ 在线预览（调用 PDF 导出，无 Gamma 原生 UI） */}
                 {result.gammaUrl && (
                   <button
-                    onClick={() => setShowPreview(true)}
+                    onClick={async () => {
+                      setShowPreview(true);
+                      setPreviewLoading(true);
+                      setPreviewPdfUrl(null);
+                      if (result.generationId) {
+                        try {
+                          const res = await fetch(`/api/preview-pdf?generationId=${result.generationId}`);
+                          const data = await res.json();
+                          if (data.pdfUrl) {
+                            setPreviewPdfUrl(data.pdfUrl);
+                          } else if (data.gammaUrl) {
+                            setPreviewPdfUrl(`/api/preview/watermarked?gammaUrl=${encodeURIComponent(data.gammaUrl)}`);
+                          }
+                        } catch (e) { console.warn('[Preview] PDF 获取失败:', e); }
+                      }
+                      setPreviewLoading(false);
+                    }}
                     className="w-full sm:w-auto px-6 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:text-purple-600 hover:border-purple-200 active:scale-95 transition-all cursor-pointer text-center"
-                  >📄 导出 PPTX
+                  >👁️ 在线预览
                   </button>
                 )}
               </div>
@@ -1648,15 +1668,27 @@ export default function Home() {
             <div className="bg-amber-50 border-b border-amber-100 px-6 py-2 flex items-center gap-2 flex-shrink-0">
               <span className="text-amber-600 text-xs">⚠️ 当前为水印预览版，完整高清版需确认下载</span>
             </div>
-            {/* iframe 预览区 */}
-            <div className="flex-1 overflow-hidden relative">
-              <iframe
-                src={`/api/preview/watermarked?gammaUrl=${encodeURIComponent(result.gammaUrl)}`}
-                className="w-full h-full border-0"
-                title="PPT预览"
-                allow="fullscreen"
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-              />
+            {/* iframe 预览区（显示 Gamma PDF 导出，无 Gamma 原生 UI） */}
+            <div className="flex-1 overflow-hidden relative bg-gray-100">
+              {previewLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-white z-10">
+                  <div className="text-center">
+                    <div className="animate-spin w-8 h-8 border-3 border-purple-500 border-t-transparent rounded-full mx-auto mb-3"></div>
+                    <p className="text-sm text-gray-500">正在生成预览...</p>
+                  </div>
+                </div>
+              )}
+              {previewPdfUrl ? (
+                <iframe
+                  src={previewPdfUrl}
+                  className="w-full h-full border-0"
+                  title="PPT预览"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <p className="text-sm text-gray-400">预览加载中...</p>
+                </div>
+              )}
             </div>
             {/* 底部操作栏 */}
             <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-white flex-shrink-0">
@@ -1666,19 +1698,36 @@ export default function Home() {
                   className="px-5 py-2.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-all">
                   再想想
                 </button>
-                {result.dlUrl && (
+                {result.pptxUrl && (
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       setShowPreview(false);
-                      if (result.dlUrl.startsWith('data:')) {
+                      // 📥 真实下载 PPTX 文件，禁止跳转 Gamma
+                      const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                      if (result.pptxUrl.startsWith('data:')) {
                         const link = document.createElement('a');
-                        link.href = result.dlUrl;
-                        link.download = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                        link.href = result.pptxUrl;
+                        link.download = filename;
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
-                      } else {
-                        window.open(result.dlUrl, '_blank');
+                        return;
+                      }
+                      try {
+                        const res = await fetch(`/api/export?url=${encodeURIComponent(result.pptxUrl)}&name=${encodeURIComponent(filename)}`);
+                        if (!res.ok) throw new Error('download failed');
+                        const blob = await res.blob();
+                        if (blob.size < 100) throw new Error('empty file');
+                        const blobUrl = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = blobUrl;
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+                      } catch {
+                        alert('下载暂时失败，请稍后重试');
                       }
                     }}
                     className="px-6 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-semibold rounded-xl hover:shadow-lg hover:shadow-green-200/50 transition-all"

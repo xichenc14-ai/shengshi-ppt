@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { selectBestKey } from '@/lib/gamma-key-pool';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 
 /**
- * 预览API：服务端预下载Gamma导出的PDF，返回给前端展示
- * 流程：用户点击"在线预览" → 此API获取Gamma PDF → 新窗口打开PDF
+ * 预览PDF导出API：调用Gamma Export API获取PDF文件URL
+ * 流程：用户点击"在线预览" → 前端调用此API → 获取PDF URL → iframe预览
+ * 注意：只返回PDF URL，不做代理（PDF文件大，适合直连）
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -15,10 +17,14 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // 1. 获取Gamma生成状态
+    // 🚨 V8.6: 使用Key池选择
+    const selectedKey = selectBestKey();
+    const apiKey = selectedKey.key;
+
+    // 1. 检查Gamma生成状态
     const statusRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/status`, {
       headers: {
-        'Authorization': `Bearer ${process.env.GAMMA_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
       },
     });
@@ -41,17 +47,14 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: statusData.error || '生成失败' }, { status: 500 });
     }
 
-    // 3. 获取PDF导出链接（Gamma支持PDF导出）
-    const gammaUrl = statusData.gammaUrl || statusData.deck?.url;
-    if (!gammaUrl) {
-      return NextResponse.json({ error: '未找到Gamma链接' }, { status: 500 });
-    }
+    // 3. 获取Gamma在线链接（fallback用）
+    const gammaUrl = statusData.gammaUrl || statusData.deck?.url || '';
 
-    // 4. 请求Gamma导出PDF（使用Gamma的导出API）
+    // 4. 调用Gamma PDF导出API
     const exportRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/export`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.GAMMA_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'User-Agent': 'Mozilla/5.0',
       },
@@ -59,11 +62,11 @@ export async function GET(req: NextRequest) {
     });
 
     if (!exportRes.ok) {
-      // 如果导出API失败，直接返回Gamma在线链接让用户去看
+      // 导出API失败，返回Gamma在线链接作为fallback
       return NextResponse.json({ 
         status: 'fallback',
         gammaUrl: gammaUrl,
-        message: 'PDF导出失败，请直接查看Gamma在线版本'
+        message: 'PDF导出失败，请稍后重试'
       });
     }
 
@@ -74,7 +77,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ 
         status: 'fallback',
         gammaUrl: gammaUrl,
-        message: '未获取到PDF链接，请查看Gamma在线版本'
+        message: '未获取到PDF链接'
       });
     }
 
@@ -83,11 +86,10 @@ export async function GET(req: NextRequest) {
       status: 'ready',
       pdfUrl: pdfUrl,
       gammaUrl: gammaUrl,
-      message: 'PDF已准备好，新窗口打开预览'
     });
 
   } catch (e: any) {
-    console.error('[Preview] Error:', e.message);
+    console.error('[PreviewPDF] Error:', e.message);
     return NextResponse.json({ error: e.message || '预览失败' }, { status: 500 });
   }
 }
