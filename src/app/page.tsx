@@ -564,7 +564,6 @@ export default function Home() {
         themeId: finalThemeId,
         tone: finalTone,
         imageMode: imgSrc,
-        slides: editedSlides,
         visualMetaphor,
       };
 
