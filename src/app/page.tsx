@@ -1491,7 +1491,7 @@ export default function Home() {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-gray-800">在线预览</p>
-                        <p className="text-xs text-gray-400">在 Gamma 中查看完整演示效果</p>
+                        <p className="text-xs text-gray-400">PDF高清预览 · 滚动翻页 · 确认后下载PPTX</p>
                       </div>
                     </div>
                     <button
@@ -1516,8 +1516,8 @@ export default function Home() {
                       }}
                       className="inline-flex items-center gap-2 px-5 py-2.5 bg-white rounded-xl border border-purple-200 text-sm font-medium text-purple-700 hover:bg-purple-50 hover:border-purple-300 active:scale-[0.97] transition-all shadow-sm"
                     >
-                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                      打开在线预览
+                      📖
+                      立即预览
                     </button>
                   </div>
                 </div>
