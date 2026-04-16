@@ -426,11 +426,14 @@ export default function Home() {
           exportAs: 'pptx',
         }),
       });
+      // 先读取响应文本，再尝试解析 JSON
+      const gText = await gRes.text();
       if (!gRes.ok) {
-        const d = await gRes.json();
-        throw new Error(d.error || 'PPT 生成失败');
+        let errMsg = 'PPT 生成失败';try { const d = JSON.parse(gText); errMsg = d.error || errMsg; } catch {}
+        throw new Error(errMsg);
       }
-      const gd = await gRes.json();
+      let gd;
+      try { gd = JSON.parse(gText); } catch { throw new Error('Gamma响应格式错误，请重试'); }
 
       if (gd.generationId) {
         // API 是异步的，需要前端轮询状态
@@ -540,8 +543,15 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ inputText, slideCount: pages, textMode, auto }),
       });
-      if (!oRes.ok) { const d = await oRes.json(); throw new Error(d.error || '大纲生成失败'); }
-      const od = await oRes.json();
+      // 先读取响应文本，再尝试解析 JSON（避免非 JSON 响应导致的解析错误）
+      const oText = await oRes.text();
+      if (!oRes.ok) {
+        let errMsg = '大纲生成失败';
+        try { const d = JSON.parse(oText); errMsg = d.error || errMsg; } catch {}
+        throw new Error(errMsg);
+      }
+      let od;
+      try { od = JSON.parse(oText); } catch { throw new Error('大纲响应格式错误，请重试'); }
 
       // Step 2: 流式显示大纲 → 进入大纲编辑页（所有模式都确认）
       setGenProgress(60);
@@ -687,8 +697,14 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(gammaRequestBody),
       });
-      if (!gRes.ok) { const d = await gRes.json(); throw new Error(d.error || `生成失败(${gRes.status})`); }
-      const gd = await gRes.json();
+      // 先读取响应文本，再尝试解析 JSON
+      const gText = await gRes.text();
+      if (!gRes.ok) {
+        let errMsg = `生成失败(${gRes.status})`;try { const d = JSON.parse(gText); errMsg = d.error || errMsg; } catch {}
+        throw new Error(errMsg);
+      }
+      let gd;
+      try { gd = JSON.parse(gText); } catch { throw new Error('Gamma响应格式错误，请重试'); }
 
       if (gd.generationId) {
         // API 是异步的，需要轮询状态
