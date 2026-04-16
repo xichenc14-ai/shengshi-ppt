@@ -195,9 +195,73 @@ export default function Home() {
   // Track hasInput
   useEffect(() => { setHasInput(files.length > 0 || topic.trim().length > 0); }, [files, topic]);
 
-  // ===== PDF 预览渲染（Google Docs Viewer，天然 CORS + 翻页 + 自适应宽度） =====
-  // previewPdfUrl 接收的是经过 /api/export 代理后的真实 PDF URL
-  // 通过 Google Docs Viewer 嵌入，自动处理 CORS，支持滚动翻页
+  // ===== PDF 预览渲染（pdf.js，16:9 强制单页 + 翻页控制） =====
+  const pdfDocRef = useRef<any>(null);
+
+  // previewPdfUrl 变化 → 加载 PDF 文档
+  useEffect(() => {
+    if (!previewPdfUrl) return;
+    setPreviewLoading(true);
+    import('pdfjs-dist/legacy/build/pdf.mjs').then(async ({ getDocument }) => {
+      try {
+        const loadingTask = previewPdfUrl.startsWith('blob:') || previewPdfUrl.startsWith('data:')
+          ? getDocument({ url: previewPdfUrl })
+          : getDocument({ url: previewPdfUrl });
+        const doc = await loadingTask.promise;
+        pdfDocRef.current = doc;
+        setPdfTotalPages(doc.numPages);
+        setPdfPage(1);
+      } catch (e) { console.warn('[PDF] 加载失败:', e); }
+      setPreviewLoading(false);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewPdfUrl]);
+
+  // pdfPage 变化 → 渲染当前页（16:9 强制适配）
+  useEffect(() => {
+    if (!pdfDocRef.current) return;
+    const doc = pdfDocRef.current;
+    const pageNum = Math.min(Math.max(1, pdfPage), pdfTotalPages);
+    doc.getPage(pageNum).then((page: any) => {
+      const canvas = document.getElementById('pdf-canvas') as HTMLCanvasElement;
+      if (!canvas) return;
+      // 16:9 强制适配：宽度撑满容器，高度按比例计算
+      const containerW = canvas.parentElement?.clientWidth || window.innerWidth * 0.9;
+      const targetRatio = 16 / 9;
+      let scale = containerW / page.getViewport({ scale: 1 }).width;
+      // 限制在合理范围
+      scale = Math.min(scale, 2.5);
+      const viewport = page.getViewport({ scale });
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      page.render({ canvasContext: ctx, viewport }).promise;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pdfPage, pdfTotalPages]);
+
+  // 窗口变化时重新渲染当前页（保持 16:9 适配）
+  useEffect(() => {
+    if (!pdfDocRef.current) return;
+    const handler = () => {
+      if (!pdfDocRef.current) return;
+      const pageNum = Math.min(Math.max(1, pdfPage), pdfTotalPages);
+      pdfDocRef.current.getPage(pageNum).then((page: any) => {
+        const canvas = document.getElementById('pdf-canvas') as HTMLCanvasElement;
+        if (!canvas) return;
+        const containerW = canvas.parentElement?.clientWidth || window.innerWidth * 0.9;
+        const scale = Math.min(containerW / page.getViewport({ scale: 1 }).width, 2.5);
+        const viewport = page.getViewport({ scale });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+        page.render({ canvasContext: ctx, viewport }).promise;
+      });
+    };
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pdfPage, pdfTotalPages]);
 
   // Enter generate flow
   const startGenerate = useCallback(() => {
@@ -1524,54 +1588,7 @@ export default function Home() {
               )}
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                {/* 📥 下载 PPTX（真实文件，禁止跳转 Gamma） */}
-                {result.pptxUrl && (
-                  <button onClick={async () => {
-                    if (user) {
-                      try {
-                        await fetch("/api/download", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            action: "record",
-                            userId: user.id,
-                            pageCount: result.actualPages || result.slides?.length || pages,
-                            format: "pptx",
-                          }),
-                        });
-                      } catch (err) { console.warn("[Download] 记录失败:", err); }
-                    }
-                    const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
-                    if (result.pptxUrl.startsWith('data:')) {
-                      const link = document.createElement('a');
-                      link.href = result.pptxUrl;
-                      link.download = filename;
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      return;
-                    }
-                    try {
-                      const res = await fetch(`/api/export?url=${encodeURIComponent(result.pptxUrl)}&name=${encodeURIComponent(filename)}`);
-                      if (!res.ok) throw new Error('download failed');
-                      const blob = await res.blob();
-                      if (blob.size < 100) throw new Error('empty file');
-                      const blobUrl = URL.createObjectURL(blob);
-                      const link = document.createElement('a');
-                      link.href = blobUrl;
-                      link.download = filename;
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-                    } catch {
-                      alert('下载暂时失败，请稍后重试');
-                    }
-                  }} className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-green-200/50 active:scale-95 active:shadow-md transition-all cursor-pointer">
-                    📥 下载 PPTX
-                  </button>
-                )}
-                {/* 👁️ 在线预览（调用 PDF 导出，无 Gamma 原生 UI） */}
+                {/* 📥 免费PDF下载（所有用户可用） */}
                 {result.gammaUrl && (
                   <button
                     onClick={async () => {
@@ -1583,16 +1600,66 @@ export default function Home() {
                           const res = await fetch(`/api/preview-pdf?generationId=${result.generationId}`);
                           const data = await res.json();
                           if (data.pdfUrl) {
-                            setPreviewPdfUrl(data.pdfUrl);
-                          } else if (data.gammaUrl) {
-                            setPreviewPdfUrl(`/api/preview/watermarked?gammaUrl=${encodeURIComponent(data.gammaUrl)}`);
+                            // 先下载PDF到服务端，再转blob URL给前端
+                            const pdfRes = await fetch(`/api/export?url=${encodeURIComponent(data.pdfUrl)}&name=preview.pdf`);
+                            const blob = await pdfRes.blob();
+                            const blobUrl = URL.createObjectURL(blob);
+                            setPreviewPdfUrl(blobUrl);
                           }
                         } catch (e) { console.warn('[Preview] PDF 获取失败:', e); }
                       }
                       setPreviewLoading(false);
                     }}
-                    className="w-full sm:w-auto px-6 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:text-purple-600 hover:border-purple-200 active:scale-95 transition-all cursor-pointer text-center"
-                  >👁️ 在线预览
+                    className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-blue-200/50 active:scale-95 transition-all cursor-pointer"
+                  >
+                    📥 免费PDF下载
+                  </button>
+                )}
+                {/* 🔒 导出PPTX（会员专属，非会员弹出付费） */}
+                {result.pptxUrl && (
+                  <button
+                    onClick={async () => {
+                      if (!user) { openLogin(); return; }
+                      // 检查会员权限（简化：检查是否有credits或isVip）
+                      const creditsRes = await fetch(`/api/credits?userId=${user.id}`);
+                      const creditsData = await creditsRes.json();
+                      const hasCredits = (creditsData.credits || 0) > 0 || creditsData.isVip;
+                      if (!hasCredits) {
+                        openPayment({ id: 'basic', name: '基础版', price: '¥19', billing: 'monthly', reason: '导出PPTX需要会员权限', neededCredits: (result.actualPages || pages) });
+                        return;
+                      }
+                      // 有权限：下载 PPTX
+                      try {
+                        await fetch("/api/download", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ action: "record", userId: user.id, pageCount: result.actualPages || pages, format: "pptx" }),
+                        });
+                      } catch (err) { console.warn("[Download] 记录失败:", err); }
+                      const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                      if (result.pptxUrl.startsWith('data:')) {
+                        const link = document.createElement('a');
+                        link.href = result.pptxUrl;
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        return;
+                      }
+                      const res = await fetch(`/api/export?url=${encodeURIComponent(result.pptxUrl)}&name=${encodeURIComponent(filename)}`);
+                      const blob = await res.blob();
+                      const blobUrl = URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = blobUrl;
+                      link.download = filename;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+                    }}
+                    className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-purple-600 to-violet-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-purple-200/50 active:scale-95 transition-all cursor-pointer"
+                  >
+                    🔒 导出PPTX
                   </button>
                 )}
               </div>
@@ -1653,92 +1720,101 @@ export default function Home() {
         onClose={() => setShowThemePicker(false)}
       />
 
-      {/* ===== 预览弹窗（Google Docs Viewer PDF 预览，自适应宽度+滚动翻页） ===== */}
+      {/* ===== 预览弹窗（pdf.js 渲染，16:9 强制单页 + 翻页控制） ===== */}
       {showPreview && result?.gammaUrl && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-black/80 backdrop-blur-sm"
+        <div className="fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-sm"
           onClick={(e) => { if (e.target === e.currentTarget) setShowPreview(false); }}>
           {/* 顶部工具栏 */}
           <div className="flex items-center justify-between px-6 py-3 bg-gray-900 text-white flex-shrink-0">
             <div>
               <p className="text-sm font-medium">📄 {result.title || 'PPT预览'}</p>
-              <p className="text-xs text-gray-400">水印预览版 · 滚动鼠标翻页 · 确认后下载完整 PPTX</p>
+              <p className="text-xs text-gray-400">第 {pdfPage} / {pdfTotalPages} 页 · 水印预览版</p>
+            </div>
+            {/* 翻页控制 */}
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPdfPage(p => Math.max(1, p - 1))}
+                disabled={pdfPage <= 1}
+                className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 disabled:opacity-30 rounded-lg transition-all">←</button>
+              <span className="text-xs text-gray-400 min-w-[60px] text-center">{pdfPage}/{pdfTotalPages}</span>
+              <button onClick={() => setPdfPage(p => Math.min(pdfTotalPages, p + 1))}
+                disabled={pdfPage >= pdfTotalPages}
+                className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 disabled:opacity-30 rounded-lg transition-all">→</button>
             </div>
             <button onClick={() => setShowPreview(false)}
               className="px-4 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 rounded-lg transition-all">
-              ✕ 关闭预览
+              ✕ 关闭
             </button>
           </div>
 
-          {/* PDF 预览区（Google Docs Viewer，天然 CORS + 滚动翻页 + 自适应宽度） */}
-          <div className="flex-1 overflow-hidden bg-gray-800">
-            {previewLoading && (
-              <div className="absolute inset-0 flex items-center justify-center z-10">
-                <div className="text-center text-white">
-                  <div className="animate-spin w-10 h-10 border-3 border-purple-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-                  <p className="text-sm text-gray-300">正在加载预览...</p>
+          {/* PDF 预览区（16:9 强制单页，pdf.js 渲染） */}
+          <div className="flex-1 flex items-center justify-center bg-gray-900 overflow-hidden">
+            {previewLoading ? (
+              <div className="text-center text-white">
+                <div className="animate-spin w-10 h-10 border-3 border-purple-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                <p className="text-sm text-gray-300">正在加载预览...</p>
+              </div>
+            ) : previewPdfUrl ? (
+              <div className="relative" style={{ aspectRatio: '16/9', maxWidth: '90vw', maxHeight: '75vh' }}>
+                <canvas id="pdf-canvas" className="block w-full h-full shadow-2xl rounded" />
+                {/* 水印 */}
+                <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden rounded">
+                  <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%) rotate(-20deg)', fontSize: 'clamp(20px,4vw,48px)', color: 'rgba(180,180,180,0.07)', whiteSpace: 'nowrap', fontWeight: 700, letterSpacing: '4px' }}>
+                    省心PPT · 仅供预览
+                  </div>
                 </div>
               </div>
-            )}
-            {previewPdfUrl ? (
-              <iframe
-                src={`https://docs.google.com/gview?url=${encodeURIComponent(previewPdfUrl)}&embedded=true`}
-                className="w-full h-full border-0"
-                onLoad={() => setPreviewLoading(false)}
-                onError={() => setPreviewLoading(false)}
-                title="PPT预览"
-              />
             ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <div className="text-center text-gray-400">
-                  <p className="text-sm">预览加载中...</p>
-                  <p className="text-xs mt-1">如长时间无响应，请确认网络后重试</p>
-                </div>
+              <div className="text-center text-gray-400">
+                <p className="text-sm">预览加载中...</p>
               </div>
             )}
           </div>
 
           {/* 底部操作栏 */}
           <div className="flex items-center justify-between px-6 py-4 bg-gray-900 flex-shrink-0">
-            <p className="text-xs text-gray-400">预览效果以实际为准 · 下载后可在 PowerPoint / WPS 中编辑</p>
+            <p className="text-xs text-gray-500">点击 ← → 翻页 · 完整效果请下载查看</p>
             <div className="flex items-center gap-3">
               <button onClick={() => setShowPreview(false)}
-                className="px-5 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-all">
-                再想想
+                className="px-5 py-2 text-sm text-gray-400 hover:text-white rounded-lg transition-all">
+                返回
               </button>
+              {/* 📥 免费PDF下载（弹窗内重定向到PDF下载） */}
+              {result.gammaUrl && (
+                <a
+                  href={previewPdfUrl ? previewPdfUrl : '#'}
+                  download={result.title ? `${result.title}.pdf` : '省心PPT.pdf'}
+                  onClick={(e) => { if (!previewPdfUrl) { e.preventDefault(); alert('请等待预览加载完成'); } }}
+                  className="px-5 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all"
+                >
+                  📥 下载PDF
+                </a>
+              )}
+              {/* 🔒 会员导出PPTX */}
               {result.pptxUrl && (
                 <button
                   onClick={async () => {
-                    setShowPreview(false);
-                    const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
-                    if (result.pptxUrl.startsWith('data:')) {
-                      const link = document.createElement('a');
-                      link.href = result.pptxUrl;
-                      link.download = filename;
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
+                    if (!user) { openLogin(); return; }
+                    const creditsRes = await fetch(`/api/credits?userId=${user.id}`);
+                    const cd = await creditsRes.json();
+                    if (!((cd.credits || 0) > 0 || cd.isVip)) {
+                      openPayment({ id: 'basic', name: '基础版', price: '¥19', billing: 'monthly', reason: '导出PPTX需要会员权限', neededCredits: (result.actualPages || pages) });
                       return;
                     }
-                    try {
-                      const res = await fetch(`/api/export?url=${encodeURIComponent(result.pptxUrl)}&name=${encodeURIComponent(filename)}`);
-                      if (!res.ok) throw new Error('download failed');
-                      const blob = await res.blob();
-                      if (blob.size < 100) throw new Error('empty file');
-                      const blobUrl = URL.createObjectURL(blob);
-                      const link = document.createElement('a');
-                      link.href = blobUrl;
-                      link.download = filename;
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-                    } catch {
-                      alert('下载暂时失败，请稍后重试');
-                    }
+                    const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                    const res = await fetch(`/api/export?url=${encodeURIComponent(result.pptxUrl)}&name=${encodeURIComponent(filename)}`);
+                    const blob = await res.blob();
+                    const blobUrl = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = blobUrl;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
                   }}
-                  className="px-6 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-semibold rounded-xl hover:shadow-lg hover:shadow-green-200/50 transition-all"
+                  className="px-5 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-all"
                 >
-                  ✅ 确认下载 PPTX
+                  🔒 导出PPTX
                 </button>
               )}
             </div>
@@ -1748,4 +1824,3 @@ export default function Home() {
     </div>
   );
 }
-// Build: 20260411-120402
