@@ -94,6 +94,7 @@ export default function Home() {
 
   // Result
   const [result, setResult] = useState<{ title: string; slides: SlideItem[]; dlUrl: string; gammaUrl?: string; actualPages?: number } | null>(null);
+  const [showPreview, setShowPreview] = useState(false); // 预览弹窗状态
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -1486,15 +1487,13 @@ export default function Home() {
                         <p className="text-xs text-gray-400">在 Gamma 中查看完整演示效果</p>
                       </div>
                     </div>
-                    <a
-                      href={result.gammaUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      onClick={() => setShowPreview(true)}
                       className="inline-flex items-center gap-2 px-5 py-2.5 bg-white rounded-xl border border-purple-200 text-sm font-medium text-purple-700 hover:bg-purple-50 hover:border-purple-300 active:scale-[0.97] transition-all shadow-sm"
                     >
                       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                       打开在线预览
-                    </a>
+                    </button>
                   </div>
                 </div>
               )}
@@ -1562,15 +1561,13 @@ export default function Home() {
                     📥 下载 PDF
                   </button>
                 )}
-                {/* 导出 PPTX（Gamma 在线导出） */}
+                {/* 导出 PPTX（禁止跳转 Gamma，统一预览后下载） */}
                 {result.gammaUrl && (
-                  <a
-                    href={result.gammaUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={() => setShowPreview(true)}
                     className="w-full sm:w-auto px-6 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:text-purple-600 hover:border-purple-200 active:scale-95 transition-all cursor-pointer text-center"
                   >📄 导出 PPTX
-                  </a>
+                  </button>
                 )}
               </div>
 
@@ -1629,6 +1626,70 @@ export default function Home() {
         }}
         onClose={() => setShowThemePicker(false)}
       />
+
+      {/* ===== 预览弹窗（禁止跳转 Gamma，水印预览+确认下载） ===== */}
+      {showPreview && result?.gammaUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowPreview(false); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden">
+            {/* 弹窗头部 */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+              <div>
+                <h3 className="text-base font-bold text-gray-900">📄 预览效果</h3>
+                <p className="text-xs text-gray-400 mt-0.5">水印预览版 · 确认后下载完整 PPTX</p>
+              </div>
+              <button onClick={() => setShowPreview(false)}
+                className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all">
+                ✕ 关闭
+              </button>
+            </div>
+            {/* 水印提示条 */}
+            <div className="bg-amber-50 border-b border-amber-100 px-6 py-2 flex items-center gap-2 flex-shrink-0">
+              <span className="text-amber-600 text-xs">⚠️ 当前为水印预览版，完整高清版需确认下载</span>
+            </div>
+            {/* iframe 预览区 */}
+            <div className="flex-1 overflow-hidden relative">
+              <iframe
+                src={`/api/preview/watermarked?gammaUrl=${encodeURIComponent(result.gammaUrl)}`}
+                className="w-full h-full border-0"
+                title="PPT预览"
+                allow="fullscreen"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              />
+            </div>
+            {/* 底部操作栏 */}
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-white flex-shrink-0">
+              <p className="text-xs text-gray-400">预览效果以实际为准 · 下载后可在 PowerPoint/WPS 中编辑</p>
+              <div className="flex items-center gap-3">
+                <button onClick={() => setShowPreview(false)}
+                  className="px-5 py-2.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-all">
+                  再想想
+                </button>
+                {result.dlUrl && (
+                  <button
+                    onClick={() => {
+                      setShowPreview(false);
+                      if (result.dlUrl.startsWith('data:')) {
+                        const link = document.createElement('a');
+                        link.href = result.dlUrl;
+                        link.download = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      } else {
+                        window.open(result.dlUrl, '_blank');
+                      }
+                    }}
+                    className="px-6 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-semibold rounded-xl hover:shadow-lg hover:shadow-green-200/50 transition-all"
+                  >
+                    ✅ 确认下载 PPTX
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
