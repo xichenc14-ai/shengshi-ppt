@@ -155,6 +155,9 @@ export async function POST(request: NextRequest) {
     const apiKey = selectedKey.key;
     console.log('[Gamma Direct] 使用Key:', selectedKey.label, '| 余额:', selectedKey.remaining);
 
+    // 🚨 V8.6: finalThemeId 需要提前定义（深色主题判断在 imageOptions 构造时就需要）
+    const finalThemeId = themeId || SCENE_CONFIGS.biz.themeId;
+
     // 构建最终文本
     let finalInputText = inputText.trim();
     if (finalInputText.length < 100) {
@@ -163,23 +166,30 @@ export async function POST(request: NextRequest) {
       finalInputText = finalInputText.split(/\n\n+/).filter((p: string) => p.trim()).join('\n\n---\n\n');
     }
 
-    // 图片选项(按照技术部验证)
+    // 图片选项(与gamma/route.ts保持一致，深色主题处理)
+    const darkThemes = new Set(['founder', 'aurora', 'electric', 'blues', 'gamma', 'luxe', 'aurum']);
     let imageOptions: Record<string, any> = {};
     if (imageSource === 'none' || imageSource === 'noImages') {
       imageOptions = { source: 'noImages' }; // 纯文字
     } else if (imageSource === 'theme' || imageSource === 'theme-img') {
-      // 主题套图:使用Gamma主题内置的主题强调图（themeAccent）
-      imageOptions = { source: 'themeAccent' };
+      // 🚨 V8.5.2: 深色主题下themeAccent显示占位符，改用网图
+      if (darkThemes.has(finalThemeId)) {
+        imageOptions = { source: 'webFreeToUseCommercially' };
+      } else {
+        imageOptions = { source: 'themeAccent' };
+      }
     } else if (imageSource === 'pictographic') {
-      // 插图模式:使用pictographic图标/插图库
-      imageOptions = { source: 'themeAccent' };
+      // 插图模式:深色主题用网图，浅色主题用themeAccent
+      if (darkThemes.has(finalThemeId)) {
+        imageOptions = { source: 'webFreeToUseCommercially' };
+      } else {
+        imageOptions = { source: 'themeAccent' };
+      }
     } else if (imageSource === 'web') {
       imageOptions = { source: 'webFreeToUseCommercially' };
     } else if (imageSource === 'ai' || imageSource === 'aiGenerated') {
-      // AI定制图:普通AI模型
       imageOptions = { source: 'aiGenerated', model: 'imagen-3-flash', style: 'flat illustration, minimalist, clean background, negative space' };
     } else if (imageSource === 'ai-pro') {
-      // AI尊享图:高质量模型(8 credits/图)
       imageOptions = { source: 'aiGenerated', model: 'imagen-3-pro', style: 'professional, high quality, cinematic, detailed' };
     } else {
       imageOptions = { source: 'themeAccent' };
@@ -195,7 +205,6 @@ export async function POST(request: NextRequest) {
       ? `\n\n【主题套图-Pexels高质量照片】\n请为每一页配Pexels高质量照片,照片风格:professional, clean, minimalist, business context。每页使用不同的照片和Gamma内置的Emphasize强调布局,保持视觉丰富度。`
       : '';
     const finalInstructions = instructions + metaphorAppend + themeAppend;
-    const finalThemeId = themeId || SCENE_CONFIGS.biz.themeId;
 
     // 🚨 V8.2：Gamma 固定使用 preserve 模式
     // gamma-direct 的 inputText 已经是前端处理好的 markdown

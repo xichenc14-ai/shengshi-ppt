@@ -3,7 +3,34 @@ import { getClientIP, rateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 
-// POST: 解析上传的文件内容（PDF/Excel/Word等）
+// ===== PDF 解析：优先使用 pdfjs-dist（Vercel serverless 兼容），fallback 到 pdf-parse =====
+
+async function parsePdfWithPdfJs(buffer: Buffer): Promise<string> {
+  // pdfjs-dist legacy (pure JS, Node.js 兼容)
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const doc = await getDocument({ data: new Uint8Array(buffer) }).promise;
+  const parts: string[] = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items
+      .map((item: any) => item.str)
+      .join(' ')
+      .trim();
+    if (pageText) parts.push(pageText);
+  }
+  return parts.join('\n\n');
+}
+
+async function parsePdfWithPdfParse(buffer: Buffer): Promise<string> {
+  // @ts-ignore - pdf-parse
+  const pdfParse = require('pdf-parse');
+  const pdfData = await pdfParse(buffer);
+  return pdfData.text || '';
+}
+
+// ===== 主处理函数 =====
+
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request);
   const { allowed } = rateLimit(`parse:${ip}`, { windowMs: 60000, maxRequests: 20 });
@@ -23,22 +50,43 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     let text = '';
 
-    // PDF parsing
+    // ===== PDF parsing（双引擎：pdfjs-dist 优先，pdf-parse fallback） =====
     if (fileName.endsWith('.pdf')) {
+      let parsed = false;
+      let errorMsg = '';
+
+      // 引擎1：pdfjs-dist（推荐，纯 JS，serverless 友好）
       try {
-        // @ts-ignore - pdf-parse types
-        const pdfParse = require('pdf-parse');
-        const pdfData = await pdfParse(buffer);
-        text = pdfData.text || '';
-        if (!text.trim()) {
-          text = `[PDF: ${file.name}, ${pdfData.numpages || 0} pages, scanned image]`;
+        text = await parsePdfWithPdfJs(buffer);
+        if (text.trim()) {
+          parsed = true;
+        } else {
+          // 空内容，可能是扫描件
+          text = `[PDF: ${file.name}, ${buffer.length} bytes, 扫描件/无文字内容，建议手动复制文字粘贴]`;
+          parsed = true;
         }
-      } catch (e: any) {
-        console.error('[Parse] PDF failed:', e.message);
-        text = `[PDF: ${file.name}, parse failed]`;
+      } catch (e1: any) {
+        errorMsg = `pdfjs-dist: ${e1.message}`;
+        console.warn('[Parse] pdfjs-dist failed, trying pdf-parse:', errorMsg);
+
+        // 引擎2：pdf-parse（Node.js 原生）
+        try {
+          text = await parsePdfWithPdfParse(buffer);
+          if (text.trim()) {
+            parsed = true;
+          } else {
+            text = `[PDF: ${file.name}, ${buffer.length} bytes, 扫描件/无文字内容]`;
+            parsed = true;
+          }
+        } catch (e2: any) {
+          errorMsg += ` | pdf-parse: ${e2.message}`;
+          console.error('[Parse] All PDF engines failed:', errorMsg);
+          text = `[PDF: ${file.name}, 解析失败，请复制文字后直接粘贴]`;
+          parsed = true; // 仍然返回文本（fallback），不让流程中断
+        }
       }
     }
-    // Excel 解析
+    // ===== Excel 解析（xlsx/xls/csv） =====
     else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.csv')) {
       try {
         const XLSX = await import('xlsx');
@@ -57,29 +105,26 @@ export async function POST(request: NextRequest) {
         text = `[Excel文件: ${file.name}，解析失败]`;
       }
     }
-    // Word/PPT - basic info only (no jszip dep)
+    // ===== Word/PPT 基本信息（暂不支持内容提取） =====
     else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
-      text = `[Word: ${file.name}, ${Math.round(buffer.length / 1024)}KB, upload to extract content]`;
+      text = `[Word: ${file.name}, ${Math.round(buffer.length / 1024)}KB, 请复制文字后直接粘贴]`;
     }
     else if (fileName.endsWith('.pptx') || fileName.endsWith('.ppt')) {
       try {
-        // PPTX 是 ZIP 文件，解析 XML 提取文本
         const JSZip = await import('jszip');
         const zip = await JSZip.loadAsync(buffer);
         const slides: string[] = [];
-        
-        // 遍历所有 slide XML
+
         const slideFiles = Object.keys(zip.files).filter(f => f.startsWith('ppt/slides/slide') && f.endsWith('.xml'));
         slideFiles.sort((a, b) => {
           const numA = parseInt(a.match(/slide(\d+)/)?.[1] || '0');
           const numB = parseInt(b.match(/slide(\d+)/)?.[1] || '0');
           return numA - numB;
         });
-        
+
         for (const slideFile of slideFiles) {
           const content = await zip.file(slideFile)?.async('text');
           if (content) {
-            // 提取 <a:t> 标签中的文本
             const texts = content.match(/<a:t>([^<]*)<\/a:t>/g) || [];
             const slideText = texts.map(t => t.replace(/<a:t>|<\/a:t>/g, '').trim()).filter(Boolean).join('\n');
             if (slideText) {
@@ -87,15 +132,15 @@ export async function POST(request: NextRequest) {
             }
           }
         }
-        
+
         text = slides.length > 0 ? slides.join('\n\n---\n\n') : `[PPT: ${file.name}, 无文本内容]`;
       } catch (e: any) {
         console.error('[Parse] PPT解析失败:', e.message);
-        text = `[PPT: ${file.name}, 解析失败]`;
+        text = `[PPT: ${file.name}，解析失败]`;
       }
     }
     else {
-      text = `[File: ${file.name}]`;
+      text = `[文件: ${file.name}]`;
     }
 
     // 截断超长文本（防止token过多）

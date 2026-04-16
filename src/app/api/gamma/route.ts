@@ -412,6 +412,7 @@ export async function POST(request: NextRequest) {
       cardOptions: cardOptions || {
         dimensions: '16x9',
       },
+      // 🚨 V8.6: 不传 slides 参数（Gamma API 不接受此参数，可能导致 400）
     };
 
     // 🔍 DEBUG: log key fields
