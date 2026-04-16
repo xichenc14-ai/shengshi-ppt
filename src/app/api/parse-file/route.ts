@@ -26,19 +26,6 @@ async function parsePdfWithPdfJs(buffer: Buffer): Promise<string> {
   return parts.join('\n\n');
 }
 
-async function parsePdfWithPdfParse(buffer: Buffer): Promise<string> {
-  // 使用 pdf2json 作为备用引擎
-  const PdfParser = (await import('pdf2json')).default;
-  const parser = new PdfParser();
-  const pdfData = await parser.parseBuffer(buffer);
-  const pages = pdfData.pages || [];
-  const texts = pages.map((page: any) => {
-    const texts = page.texts || [];
-    return texts.map((t: any) => t.text).join(' ');
-  });
-  return texts.join('\n\n');
-}
-
 // ===== 主处理函数 =====
 
 export async function POST(request: NextRequest) {
@@ -79,21 +66,10 @@ export async function POST(request: NextRequest) {
         errorMsg = `pdfjs-dist: ${e1.message}`;
         console.warn('[Parse] pdfjs-dist failed, trying pdf-parse:', errorMsg);
 
-        // 引擎2：pdf-parse（Node.js 原生）
-        try {
-          text = await parsePdfWithPdfParse(buffer);
-          if (text.trim()) {
-            parsed = true;
-          } else {
-            text = `[PDF: ${file.name}, ${buffer.length} bytes, 扫描件/无文字内容]`;
-            parsed = true;
-          }
-        } catch (e2: any) {
-          errorMsg += ` | pdf-parse: ${e2.message}`;
-          console.error('[Parse] All PDF engines failed:', errorMsg);
-          text = `[PDF: ${file.name}, 解析失败，请复制文字后直接粘贴]`;
-          parsed = true; // 仍然返回文本（fallback），不让流程中断
-        }
+          // pdfjs-dist 失败时直接返回解析失败提示，不做额外 fallback
+        console.error('[Parse] pdfjs-dist failed:', errorMsg);
+        text = `[PDF: ${file.name}, 解析失败，请复制文字后直接粘贴]`;
+        parsed = true;
       }
     }
     // ===== Excel 解析（xlsx/xls/csv） =====
