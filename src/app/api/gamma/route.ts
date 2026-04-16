@@ -372,15 +372,15 @@ export async function POST(request: NextRequest) {
     const finalInstructions = additionalInstructions || (instructions + metaphorAppend);
 
     // 构建最终的 additionalInstructions（根据模式追加不同指令）
-    let finalAdditionalInstructions = finalInstructions + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji(如✅❌📊📈💡🎯⭐🔑🚀💼📧📞📍📌🔍✨⚡🔥💎🏆🔧📋📌)代替web SVG图标。不要使用任何需要在线加载的图标或外部图片URL，确保PPTX下载后所有视觉元素完整显示。';
+    let finalAdditionalInstructions = finalInstructions + '\n\n【图标规范-统一风格】\n使用Gamma内置的图标系统(Icons),保持风格统一:简洁、线性、单色、与主题色一致。禁止混用不同风格的图标(不要同时使用emoji和线性图标)。每页2-4个图标,用于要点标记和视觉装饰。禁止出现无图标的页面。';
     if (textMode === 'preserve') {
       // 🚨 V6修复：追加CRITICAL强制指令，封锁Gamma的发散权限
       finalAdditionalInstructions += '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作、扩写或修改任何事实信息。严格按照提供的Markdown层级和\'---\'分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。保持所有 \'>\' 作为演讲者备注不做展示。';
       if (imageMode === 'theme-img' || imageMode === 'theme') {
-        finalAdditionalInstructions += '\n\n【主题套图-强调布局】\n请为每一页使用Gamma内置的Emphasize卡片布局(主题强调布局图),这些是模板自带的装饰性元素,不需要额外credits。每页使用不同的强调布局和图标,保持视觉丰富度。';
+        finalAdditionalInstructions += '\n\n【视觉丰富度-强制规则】\n1. 每页必须使用Gamma内置的Emphasize卡片布局(主题强调布局图),每页不同的布局变体\n2. 每页必须有视觉元素(图片/插图/图标/装饰),禁止出现纯文字页\n3. 使用主题套图(themeAccent)作为配图来源,确保图片与内容主题匹配\n4. 封面页和结尾页必须使用大幅背景图/强调图\n5. 数据页使用卡片式布局展示指标,配合图标和色彩区分';
       }
     } else if (imageMode === 'theme-img' || imageMode === 'theme') {
-      finalAdditionalInstructions += '\n\n【主题套图-Pexels高质量照片】\n请为每一页配Pexels高质量照片(Pexels图库),照片风格:professional, clean, minimalist, business context。每页使用不同的照片和Gamma内置的Emphasize强调布局,保持视觉丰富度。';
+      finalAdditionalInstructions += '\n\n【视觉丰富度-强制规则】\n1. 每页必须配图:使用Pexels高质量照片,风格professional/clean/minimalist\n2. 每页使用Gamma内置的Emphasize强调布局,每页不同的布局变体\n3. 封面页和结尾页必须使用大幅背景图\n4. 禁止出现纯文字页,每页必须有视觉元素';
     }
 
     // 🚨 V8.2：Gamma 固定使用 preserve 模式（大纲已由 outline API 预处理）
