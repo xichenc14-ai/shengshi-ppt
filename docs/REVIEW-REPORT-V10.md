@@ -1,4 +1,5 @@
 # 省心PPT 代码审查报告 V10
+> 版本：v10.0.0（发布于 2026-04-21）
 > 审查时间：2026-04-21 02:50 GMT+8
 > 审查范围：17 个 API routes + 关键库文件
 > 审查人：管家（自动审查 + 子 agent 协助）
@@ -58,25 +59,33 @@
 
 ---
 
-## 📁 文件变更汇总
+## 📁 文件变更汇总（v10.0.0）
 
 ```
 src/
 ├── lib/
-│   └── gamma-config.ts          ← 新增（共享配置模块）
-├── app/api/
-│   ├── export/route.ts          ← SSRF 修复
-│   ├── user/route.ts            ← debug token + 验证码明文修复
-│   ├── credits/route.ts         ← 身份验证修复
-│   ├── gamma/route.ts           ← 使用共享配置
-│   ├── gamma-direct/route.ts    ← 共享配置 + 429 重试
-│   ├── gamma-balance/route.ts   ← 使用 key 池状态
-│   └── outline/route.ts         ← tryParseJson bug 修复
+│   ├── gamma-config.ts          ← 新增（共享配置模块）
+│   └── version.ts               ← 新增（版本管理模块）
+├── components/
+│   └── AnnouncementBar.tsx      ← 新增（公告栏组件）
+├── app/
+│   ├── api/
+│   │   ├── export/route.ts          ← SSRF 修复
+│   │   ├── user/route.ts            ← debug token + 验证码明文修复
+│   │   ├── credits/route.ts         ← 身份验证修复
+│   │   ├── gamma/route.ts           ← 使用共享配置
+│   │   ├── gamma-direct/route.ts    ← 共享配置 + 429 重试
+│   │   ├── gamma-balance/route.ts   ← 使用 key 池状态
+│   │   └── outline/route.ts         ← tryParseJson bug 修复
+│   ├── account/page.tsx          ← 引用 VERSION 常量
+│   └── page.tsx                  ← 添加公告栏组件
+└── components/
+    └── Footer.tsx                ← 引用 VERSION 常量
 ```
 
 ---
 
-## ✅ V10 修复完成清单
+## ✅ v10.0.0 修复完成清单
 
 - [x] SSRF 漏洞（export/route.ts）
 - [x] 硬编码 debug token（user/route.ts）
@@ -87,7 +96,18 @@ src/
 - [x] 代码重复（提取 gamma-config.ts）
 - [x] gamma-direct 无 429 重试
 - [x] TypeScript 零错误验证
-- [x] 已 push 到 GitHub（commit 69bcab3）
+- [x] 版本号更新：v9.5.1 → v10.0.0（lib/version.ts）
+- [x] 公告栏组件（AnnouncementBar）
+- [x] 已 push 到 GitHub（commits: 69bcab3, 8a59fc9, 8773697）
+
+---
+
+## 📌 后续发版流程
+
+1. 修改 `src/lib/version.ts` 的 `VERSION` + `VERSION_NOTES`
+2. 添加 `VERSION_HISTORY` 记录（severity: major/minor/patch）
+3. `git push` → Vercel 自动部署
+4. 网站版本号 + 公告栏自动更新
 
 ---
 
