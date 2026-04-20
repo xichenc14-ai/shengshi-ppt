@@ -65,7 +65,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: '无权限' }, { status: 403 });
     }
     const phone = searchParams.get('phone') || '13800138001';
-    const password = searchParams.get('password') || '123456';
+    const password = searchParams.get('password');
+    if (!password) {
+      return NextResponse.json({ error: 'password 参数必填' }, { status: 400 });
+    }
     const planType = searchParams.get('plan') || 'vip';
     const nickname = searchParams.get('nickname') || (phone === '13800138001' ? 'xichen' : '测试用户');
     const pwdHash = createHash('sha256').update(password).digest('hex');
@@ -386,17 +389,9 @@ export async function POST(req: NextRequest) {
       }
 
       if (pwdHashFromDB === null) {
-        // 没有password_hash：仅开发模式允许测试密码123456登录
-        // 特例：测试账户 13800138001 允许在生产环境用测试密码
-        const isTestAccount = u.phone === '13800138001' || u.phone === '15767979625';
-        const testPasswordOk = isTestAccount && password === '123456';
-        if (process.env.NODE_ENV !== 'production' && password === '123456') {
-          // 开发模式：允许测试密码登录
-        } else if (testPasswordOk) {
-          // 测试账户：允许123456登录
-        } else {
-          return NextResponse.json({ error: 'NEED_SET_PASSWORD', needSetPassword: true, phone: u.phone }, { status: 400 });
-        }
+        // 没有password_hash：用户需要先设置密码
+        // 安全修复：移除了所有测试密码（123456）登录逻辑
+        return NextResponse.json({ error: 'NEED_SET_PASSWORD', needSetPassword: true, phone: u.phone }, { status: 400 });
       } else if (pwdHashFromDB !== pwdHash) {
         return NextResponse.json({ error: '密码错误' }, { status: 401 });
       }
