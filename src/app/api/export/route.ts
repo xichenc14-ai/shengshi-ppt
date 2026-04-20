@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// 🚨 安全：只允许从这些域名代理下载（防止 SSRF 攻击）
+const ALLOWED_PROXY_DOMAINS = new Set([
+  'assets.api.gamma.app',
+  'gamma.app',
+  'www.gamma.app',
+]);
+
 // 简易内存缓存（Vercel Serverless 单实例内有效）
 const pptCache = new Map<string, { buffer: Buffer; createdAt: number }>();
 const CACHE_TTL = 5 * 60 * 1000;
@@ -27,6 +34,21 @@ export async function GET(request: NextRequest) {
 
     // 模式2：代理外部 URL（解决 assets.api.gamma.app 在国内被墙的问题）
     if (externalUrl) {
+      // 🚨 SSRF 防盾：校验 URL 域名
+      try {
+        const parsedUrl = new URL(externalUrl);
+        if (!ALLOWED_PROXY_DOMAINS.has(parsedUrl.hostname)) {
+          console.warn(`[Export] SSRF attempt blocked: ${externalUrl}`);
+          return NextResponse.json({ error: '不受支持的下载来源' }, { status: 403 });
+        }
+        // 🚨 只允许 HTTPS
+        if (parsedUrl.protocol !== 'https:') {
+          return NextResponse.json({ error: '只支持 HTTPS 下载' }, { status: 403 });
+        }
+      } catch {
+        return NextResponse.json({ error: '无效的下载链接' }, { status: 400 });
+      }
+
       try {
         const gammaRes = await fetch(externalUrl, {
           headers: {

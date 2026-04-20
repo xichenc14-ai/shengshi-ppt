@@ -74,3 +74,20 @@
 2. exportUrl从status返回，无需export API
 3. X-API-KEY header（不是Bearer）
 4. pdf-lib degrees类型 + Buffer转换
+---
+
+## 中文字体水印（未完成，待后续）
+
+### 问题
+- STHeiti Light.ttc（55MB）/ Songti.ttc（67MB）太大
+- `@pdf-lib/fontkit` 注册后 `embedFont({ subset: true })` 报错：`_this.font.createSubset is not a function`
+- 原因：Songti.ttc 是 TTC（TrueType Collection），需特殊处理
+
+### 解决方案选项
+1. 使用 tiny cn 字体（如 `npm i chinese-fonts`）
+2. 用 Canvas API 前端加水印（绕过服务器）
+3. 接受英文水印 "ShengxinPPT"（当前方案）
+4. 用户确认后跳过预览直接看 Gamma 在线链接（fallback）
+
+### 当前实现
+英文水印 "ShengxinPPT"（Helvetica Bold）已可用，功能正常。

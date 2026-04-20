@@ -23,6 +23,17 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const sb = getSupabase();
   if (!sb) return NextResponse.json({ error: '服务未配置' }, { status: 503 });
+
+  // 🚨 安全：解析 Authorization header 获取用户身份（临时方案，后续迁移到 proper session）
+  const authHeader = req.headers.get('authorization');
+  const userId = authHeader?.replace(/^Bearer\s+/i, '').trim();
+
+  // TODO @xichen: 接入真实支付前，需替换为 proper session verification
+  // 临时：禁止在无 userId 的情况下创建订单（防止滥用）
+  if (!userId || userId === '00000000-0000-0000-000000000000') {
+    return NextResponse.json({ error: '请先登录' }, { status: 401 });
+  }
+
   try {
     const { packageId } = await req.json();
     if (!packageId) return NextResponse.json({ error: '请选择充值包' }, { status: 400 });

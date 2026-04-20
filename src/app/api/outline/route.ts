@@ -69,6 +69,13 @@ function tryParseJson(rawContent: string): any | null {
       if (last > 0) {
         let fixed = attempt.substring(0, last + 1);
         if (!fixed.endsWith(']')) fixed += ']';
+        // 🚨 V10 修复：先判断是数组还是对象，避免混淆
+        const isArray = fixed.trim().startsWith('[');
+        if (isArray) {
+          if (!fixed.endsWith(']')) fixed += ']';
+        } else {
+          // 对象不需要加 ]，直接计算缺失的 }
+        }
         // 计算缺少的闭合花括号
         let openCount = 0;
         let closeCount = 0;
@@ -80,6 +87,8 @@ function tryParseJson(rawContent: string): any | null {
         if (missing > 0 && missing < 10) {
           fixed += '}'.repeat(missing);
         }
+        // 🚨 V10 额外修复：如果是数组，确保以 ] 结尾
+        if (isArray && !fixed.endsWith(']')) fixed += ']';
         try {
           const parsed = JSON.parse(fixed);
           console.log('[Outline] Truncated JSON repaired successfully');

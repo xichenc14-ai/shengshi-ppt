@@ -60,7 +60,11 @@ export async function GET(req: NextRequest) {
   // ===== 创建/重置测试账户 =====
   if (action === 'create_test_user') {
     const token = searchParams.get('token');
-    const devToken = process.env.DEBUG_TOKEN || 'xichen-debug-2026';
+    const devToken = process.env.DEBUG_TOKEN;
+    // 🚨 安全修复：禁止默认 token，必须显式设置环境变量
+    if (!devToken) {
+      return NextResponse.json({ error: '该接口仅限开发环境使用' }, { status: 403 });
+    }
     if (token !== devToken && !isDevCleanupAllowed(req)) {
       return NextResponse.json({ error: '无权限' }, { status: 403 });
     }
@@ -177,7 +181,12 @@ export async function POST(req: NextRequest) {
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
       await sb.from('verification_codes').insert({ phone, code: finalCode, expires_at: expiresAt });
 
-      return NextResponse.json({ success: true, code: finalCode, message: '验证码已发送' });
+      // 🚨 安全修复：仅在开发环境返回明文验证码
+      const response: Record<string, any> = { success: true, message: '验证码已发送' };
+      if (process.env.NODE_ENV !== 'production') {
+        response.code = finalCode; // 开发环境方便调试
+      }
+      return NextResponse.json(response);
     }
 
     // ===== 验证验证码（内部复用） =====
