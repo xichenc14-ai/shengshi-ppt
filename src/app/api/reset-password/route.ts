@@ -103,7 +103,8 @@ export async function POST(request: NextRequest) {
 
       // 更新密码
       const hashedPwd = hashPassword(newPassword);
-      await sb.from('users').update({ password: hashedPwd }).eq('phone', phone);
+      // 🚨 修复：更新 password_hash 而非 password
+      await sb.from('users').update({ password_hash: hashedPwd }).eq('phone', phone);
 
       // 删除验证码
       await sb.from('verification_codes').delete().eq('phone', phone).eq('type', 'reset_password');

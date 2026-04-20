@@ -19,21 +19,30 @@ export async function POST(req: NextRequest) {
 
     // 创建订单
     if (action === 'create_order' || !action) {
-      const { planId, payMethod, userId, billing = 'monthly' } = body;
+      const { planId, payMethod, billing = 'monthly' } = body;
+
+      // 🚨 安全修复：从 Authorization header 获取用户身份，禁止从 body 传入 userId
+      const authHeader = req.headers.get('authorization');
+      const userId = authHeader?.replace(/^Bearer\s+/i, '').trim();
+      if (!userId || userId === '00000000-0000-0000-000000000000') {
+        return NextResponse.json({ error: '请先登录' }, { status: 401 });
+      }
 
       if (!planId) return NextResponse.json({ error: '请选择套餐' }, { status: 400 });
 
-      const PLAN_PRICES: Record<string, { name: string; monthly: number; annual: number; credits: number }> = {
-        basic: { name: '普通会员', monthly: 29.9, annual: 299, credits: 500 },
-        pro: { name: '高级会员', monthly: 49.9, annual: 499, credits: 1000 },
-        vip: { name: '尊享会员', monthly: 99.9, annual: 999, credits: 2000 },
-      };
-
-      const plan = PLAN_PRICES[planId];
-      if (!plan) return NextResponse.json({ error: '套餐不存在' }, { status: 400 });
+      // 🚨 套餐定价从数据库读取（而非硬编码），防止价格篡改
+      const { data: planData } = await sb
+        .from('credit_packages')
+        .select('*')
+        .eq('id', planId)
+        .eq('is_active', true)
+        .single();
+      if (!planData) return NextResponse.json({ error: '套餐不存在' }, { status: 400 });
 
       const isAnnual = billing === 'annual';
-      const amount = isAnnual ? plan.annual : plan.monthly;
+      const amount = isAnnual
+        ? Number(planData.price_annual || planData.price * 12)
+        : Number(planData.price);
       const billingLabel = isAnnual ? '年付' : '月付';
 
       const orderNo = Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
@@ -41,11 +50,11 @@ export async function POST(req: NextRequest) {
       const { data: order, error } = await sb
         .from('orders')
         .insert({
-          user_id: userId || '00000000-0000-0000-000000000000',
+          user_id: userId,
           order_no: orderNo,
           product_type: 'subscription',
-          product_name: `${plan.name}（${billingLabel}）`,
-          amount: Math.round(amount * 100), // 分为单位
+          product_name: `${planData.name}（${billingLabel}）`,
+          amount: Math.round(amount * 100),
           status: 'pending',
           pay_method: payMethod || 'wechat',
           metadata: { planId, payMethod, billing },
@@ -59,7 +68,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         order_no: orderNo,
         amount,
-        product_name: `${plan.name}（${billingLabel}）`,
+        product_name: `${planData.name}（${billingLabel}）`,
         billing,
         status: 'pending',
         message: '支付功能即将上线',
