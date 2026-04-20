@@ -6,7 +6,10 @@ const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 /**
  * 预览PDF导出API
  * 流程：用户点击"在线预览" → 前端调用此API → 获取PDF URL → 前端渲染预览
- * V9: 修复 status endpoint + apiKey 定义
+ * V9修复：
+ * 1. status endpoint 正确（/generations/{id}，不是 /status）
+ * 2. exportUrl 直接从状态返回，不需要单独调用 export API
+ * 3. apiKey 正确获取
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -17,11 +20,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // V9: 获取 API Key
     const selectedKey = selectBestKey();
     const apiKey = selectedKey.key;
 
-    // 1. 查询 Gamma 生成状态（正确的 endpoint）
+    // 1. 查询 Gamma 生成状态
     const statusRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
       headers: {
         'X-API-KEY': apiKey,
@@ -30,12 +32,12 @@ export async function GET(req: NextRequest) {
     });
 
     if (!statusRes.ok) {
-      console.error('[PreviewPDF] Gamma status error:', statusRes.status, await statusRes.text());
+      console.error('[PreviewPDF] Gamma status error:', statusRes.status);
       return NextResponse.json({ error: `获取Gamma状态失败: ${statusRes.status}` }, { status: 502 });
     }
 
     const statusData = await statusRes.json();
-    console.log('[PreviewPDF] Gamma status:', statusData.status, '| gammaUrl:', statusData.gammaUrl);
+    console.log('[PreviewPDF] status:', statusData.status, '| exportUrl:', !!statusData.exportUrl);
 
     // 2. 检查生成状态
     if (statusData.status === 'pending' || statusData.status === 'in_progress') {
@@ -49,49 +51,27 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: statusData.error || '生成失败' }, { status: 500 });
     }
 
-    // 3. 获取 Gamma 在线链接
-    const gammaUrl = statusData.gammaUrl || statusData.deck?.url || '';
+    // 3. 直接从状态获取 exportUrl（无需再调 export API）
+    const gammaUrl = statusData.gammaUrl || '';
+    const exportUrl = statusData.exportUrl || '';
 
-    // 4. 调用 Gamma PDF 导出 API
-    const exportRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/export`, {
-      method: 'POST',
-      headers: {
-        'X-API-KEY': apiKey,
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0',
-      },
-      body: JSON.stringify({ format: 'pdf' }),
-    });
-
-    if (!exportRes.ok) {
-      console.error('[PreviewPDF] Export API error:', exportRes.status, await exportRes.text());
+    if (!exportUrl) {
       return NextResponse.json({
         status: 'fallback',
         gammaUrl: gammaUrl,
-        message: 'PDF导出失败，请稍后重试'
+        message: 'PDF导出链接暂不可用，请稍后重试'
       });
     }
 
-    const exportData = await exportRes.json();
-    const pdfUrl = exportData.exportUrl || exportData.url;
-
-    if (!pdfUrl) {
-      return NextResponse.json({
-        status: 'fallback',
-        gammaUrl: gammaUrl,
-        message: '未获取到PDF链接'
-      });
-    }
-
-    // 5. 返回 PDF 预览 URL
+    // 4. 返回 PDF 预览 URL
     return NextResponse.json({
       status: 'ready',
-      pdfUrl: pdfUrl,
+      pdfUrl: exportUrl,
       gammaUrl: gammaUrl,
     });
 
   } catch (e: any) {
-    console.error('[PreviewPDF] Error:', e.message, e.stack);
+    console.error('[PreviewPDF] Error:', e.message);
     return NextResponse.json({ error: e.message || '预览失败' }, { status: 500 });
   }
 }
