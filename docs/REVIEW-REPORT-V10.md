@@ -1,5 +1,5 @@
 # 省心PPT 代码审查报告 V10
-> 版本：v10.0.0（发布于 2026-04-21）
+> 版本：v10.0.2（发布于 2026-04-21）
 > 审查时间：2026-04-21 02:50 GMT+8
 > 审查范围：17 个 API routes + 关键库文件
 > 审查人：管家（自动审查 + 子 agent 协助）
@@ -93,6 +93,11 @@ src/
 - [x] credits 无认证（credits/route.ts）
 - [x] gamma-balance 单 key（gamma-balance/route.ts）
 - [x] tryParseJson bug（outline/route.ts）
+- [x] 支付订单无认证（payment/route.ts）
+- [x] 支付回调签名验证（payment-notify/route.ts）
+- [x] 微信OAuth CSRF（wechat/callback/route.ts）
+- [x] 历史记录越权（history/route.ts）
+- [x] 密码重置字段错误（reset-password/route.ts）
 - [x] 代码重复（提取 gamma-config.ts）
 - [x] gamma-direct 无 429 重试
 - [x] TypeScript 零错误验证
@@ -118,3 +123,23 @@ src/
 3. **PDF 水印中文支持**：嵌入中文字体（需字体文件或切换方案）
 4. **会员体系**：省心 19.9 / 尊享 49.9（需支付渠道）
 5. **AI 重试机制**：smart-outline 的 callAI 每个模型加 1 次重试
+
+### 7. 支付订单无用户身份验证 — `payment/route.ts`
+**风险**：`userId` 从 body 传入，可为任意用户创建订单
+**修复**：从 Authorization header 获取用户身份，套餐定价从数据库读取
+
+### 8. 支付回调无签名验证 — `payment-notify/route.ts`
+**风险**：任何人可调用 webhook 发送伪造 TG 通知，可注入恶意内容
+**修复**：添加 HMAC 签名验证 + HTML 注入防护
+
+### 9. 微信 OAuth 无 CSRF 保护 — `wechat/callback/route.ts`
+**风险**：`state` 参数未验证，用户数据暴露在重定向 URL 中
+**修复**：验证 state 参数，移除 URL 中的用户数据
+
+### 10. 历史记录无身份验证 — `history/route.ts`
+**风险**：`userId` 从 query/body 传入，可查看/删除任意用户历史
+**修复**：Authorization header 身份验证，禁止操作他人记录
+
+### 11. 密码重置更新错误字段 — `reset-password/route.ts`
+**风险**：更新 `password` 而非 `password_hash`
+**修复**：更新 `password_hash` 字段
