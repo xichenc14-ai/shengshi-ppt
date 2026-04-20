@@ -1607,22 +1607,31 @@ export default function Home() {
               </div>
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                {/* 📥 免费PDF下载（所有用户可用，无需等待预览） */}
+                {/* 📥 PDF下载 */}
                 {result.gammaUrl && (
                   <button
                     onClick={async () => {
                       if (!result.generationId) return;
                       try {
-                        // 🚨 V9.1: 直接调API导出PDF并触发下载，不经过预览状态
-                        const res = await fetch(`/api/preview-pdf?generationId=${result.generationId}`);
-                        const data = await res.json();
-                        if (!data.pdfUrl) { alert('PDF导出失败，请稍后重试'); return; }
-                        // 通过export代理下载PDF
                         const filename = result.title ? `${result.title}.pdf` : '省心PPT.pdf';
-                        const pdfRes = await fetch(`/api/export?url=${encodeURIComponent(data.pdfUrl)}&name=${encodeURIComponent(filename)}`);
-                        const blob = await pdfRes.blob();
-                        if (blob.size < 100) { alert('PDF下载失败'); return; }
-                        const blobUrl = URL.createObjectURL(blob);
+                        let pdfBlob: Blob;
+
+                        if (user && user.plan_type && user.plan_type !== 'free') {
+                          // 付费用户：直接下载原始PDF
+                          const res = await fetch(`/api/preview-pdf?generationId=${result.generationId}`);
+                          const data = await res.json();
+                          if (!data.pdfUrl) { alert('PDF导出失败，请稍后重试'); return; }
+                          const pdfRes = await fetch(`/api/export?url=${encodeURIComponent(data.pdfUrl)}&name=${encodeURIComponent(filename)}`);
+                          pdfBlob = await pdfRes.blob();
+                        } else {
+                          // 免费用户：下载带水印的PDF
+                          const pdfRes = await fetch(`/api/export-watermarked?generationId=${result.generationId}&name=${encodeURIComponent(filename)}`);
+                          if (!pdfRes.ok) { alert('PDF下载失败，请稍后重试'); return; }
+                          pdfBlob = await pdfRes.blob();
+                        }
+
+                        if (pdfBlob.size < 100) { alert('PDF下载失败'); return; }
+                        const blobUrl = URL.createObjectURL(pdfBlob);
                         const link = document.createElement('a');
                         link.href = blobUrl;
                         link.download = filename;
@@ -1634,7 +1643,7 @@ export default function Home() {
                     }}
                     className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-blue-200/50 active:scale-95 transition-all cursor-pointer"
                   >
-                    📥 免费PDF下载
+                    📥 {user && user.plan_type && user.plan_type !== 'free' ? 'PDF下载' : '免费PDF下载'}
                   </button>
                 )}
                 {/* 🔒 导出PPTX（会员专属，非会员弹出单次/订阅选择） */}
