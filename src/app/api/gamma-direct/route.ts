@@ -138,9 +138,11 @@ export async function POST(request: NextRequest) {
       themeId,
       numCards = 8,
       tone = 'professional',
-      // 🚨 V8.2：textMode 不再从请求读取，Gamma 固定使用 preserve
-      // 原因：gamma-direct 的 inputText 已经是前端处理好的 markdown
-      // （可能来自 buildPreserveMarkdown 或用户手动输入的结构化内容）
+      // V9: textMode 从前端读取，支持三种模式
+      // generate（扩充）：保留要点，AI扩写
+      // condense（缩减）：保留要点，精简内容
+      // preserve（保持）：一字不改
+      textMode = 'preserve',
       imageSource = 'webFreeToUseCommercially',
       exportAs = 'pdf',
       visualMetaphor,
@@ -206,18 +208,55 @@ export async function POST(request: NextRequest) {
       : '';
     const finalInstructions = instructions + metaphorAppend + themeAppend;
 
-    // 🚨 V8.2：Gamma 固定使用 preserve 模式
-    // gamma-direct 的 inputText 已经是前端处理好的 markdown
-    // （可能来自 buildPreserveMarkdown 或用户手动输入的结构化内容）
-    // Gamma 只负责排版渲染，不做内容扩充/缩减
-    const textMode = 'preserve'; // 固定值！
+    // V9: 根据用户选择的文本模式决定 Gamma textMode
+    // - generate: 让 Gamma AI 扩充内容
+    // - preserve: 严格保持原文（Gamma 只负责排版）
+    // - condense: 需要特殊处理（见下方）
+    // 注意：Gamma API 只支持 generate/preserve，不支持 condense
+    // 对于 condense，我们用 generate + 强制精简指令来实现
+    const gammaTextMode = textMode === 'generate' ? 'generate' : 'preserve';
 
-    const criticalInstruction = '\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作或修改任何事实信息。严格按照提供的Markdown层级和---分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。';
+    // V9: 根据 textMode 构建不同的 CRITICAL 指令
+    let criticalInstruction = '';
+    if (textMode === 'preserve') {
+      // 严格保持原样：Gamma 只能排版，不能改内容
+      criticalInstruction = `\n\n【CRITICAL - 严格保持原文模式】
+你是一个纯排版渲染引擎（layout engine ONLY）。
+- 禁止创作、扩写、修改、删减任何用户提供的文字内容
+- 禁止改变用户提供的标题/要点/结构的任何字句
+- 严格按照提供的 Markdown 层级和 --- 分割线生成卡片
+- 禁止自动合并或拆分 --- 指定的页面边界
+- 全局正文强制使用大文本（### 或 **粗体**），禁止普通小字正文
+- 所有 '>' 引用块严格作为演讲者备注，不做正文展示
+- 如需填充视觉空白，只使用图标/色块/布局，不添加任何文字内容`;
+    } else if (textMode === 'condense') {
+      // 缩减模式：保留核心要点，只精简表述，不删要点
+      criticalInstruction = `\n\n【CRITICAL - 精简模式】
+你是一个内容精简引擎。
+- 保留用户提供的所有核心要点（标题/关键句），不得删除任何要点
+- 只精简冗余表述（如同义重复、过渡句、修饰词）
+- 保持原有的 Markdown 层级和 --- 分割线不变
+- 每页只放3-4个核心要点，禁止增加新要点
+- 全局正文强制使用大文本（### 或 **粗体**），禁止普通小字正文
+- 禁止合并或拆分 --- 指定的页面边界
+- 所有 '>' 引用块严格作为演讲者备注，不做正文展示`;
+    } else {
+      // 扩充模式：保留要点，适度扩充说明
+      criticalInstruction = `\n\n【CRITICAL - 扩充模式】
+你是一个内容扩充引擎。
+- 保留用户提供的所有核心要点（标题/关键句），不得删除或替换要点
+- 可以在每个要点下添加简短说明（每条1-2句话），丰富内容
+- 保持原有的 Markdown 层级和 --- 分割线不变
+- 每页只放3-4个核心要点，禁止无限制扩充
+- 全局正文强制使用大文本（### 或 **粗体**），禁止普通小字正文
+- 禁止合并或拆分 --- 指定的页面边界
+- 所有 '>' 引用块严格作为演讲者备注，不做正文展示`;
+    }
 
     // 步骤1:创建 Gamma 生成任务(恢复技术部验证的完整参数)
     const gammaPayload = {
       inputText: finalInputText,
-      textMode: 'preserve', // 🚨 V8.2：固定使用 preserve
+      textMode: gammaTextMode, // V9: 根据用户选择传递 generate 或 preserve
       format: 'presentation',
       numCards,
       exportAs,
