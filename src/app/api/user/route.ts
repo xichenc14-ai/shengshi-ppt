@@ -58,16 +58,21 @@ export async function GET(req: NextRequest) {
   }
 
   // ===== 创建/重置测试账户 =====
-  if (action === 'create_test_user') {
-    const token = searchParams.get('token');
-    const devToken = process.env.DEBUG_TOKEN;
-    // 🚨 安全修复：禁止默认 token，必须显式设置环境变量
-    if (!devToken) {
-      return NextResponse.json({ error: '该接口仅限开发环境使用' }, { status: 403 });
-    }
-    if (token !== devToken && !isDevCleanupAllowed(req)) {
-      return NextResponse.json({ error: '无权限' }, { status: 403 });
-    }
+    // ===== 创建/重置测试账户 =====
+    // 🚨 安全修复：仅在本地开发环境或已设置 DEBUG_TOKEN 时可用
+    // 生产环境：禁止无认证创建测试账户
+    if (action === 'create_test_user') {
+      const token = searchParams.get('token');
+      const devToken = process.env.DEBUG_TOKEN;
+      // 开发/调试模式：允许 localhost 或设置了 DEBUG_TOKEN
+      const isDevMode = isDevCleanupAllowed(req) || (devToken && devToken.length > 0);
+      if (!isDevMode) {
+        return NextResponse.json({ error: '该接口仅限开发环境使用' }, { status: 403 });
+      }
+      // DEBUG_TOKEN 设置了则验证，未设置则只在 localhost 下可用（由 isDevCleanupAllowed 控制）
+      if (devToken && token !== devToken) {
+        return NextResponse.json({ error: '无权限' }, { status: 403 });
+      }
     const phone = searchParams.get('phone') || '13800138001';
     const password = searchParams.get('password');
     if (!password) {

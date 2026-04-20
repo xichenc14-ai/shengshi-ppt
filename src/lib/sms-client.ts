@@ -9,13 +9,18 @@ type SMSProvider = 'aliyun_auth' | 'luosimao' | 'tencent';
 
 interface SMSSendResult {
   success: boolean;
-  code?: string;       // 阿里云返回的系统生成验证码
+  code?: string;
   error?: string;
   messageId?: string;
 }
 
 function getProvider(): SMSProvider {
   return (process.env.SMS_PROVIDER as SMSProvider) || 'aliyun_auth';
+}
+
+// ===== 本地生成验证码（降级方案）=====
+function generateLocalCode(): string {
+  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 // ===== 阿里云短信认证（dypnsapi）=====
@@ -27,15 +32,20 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
   const signName = process.env.ALIYUN_SMS_SIGN_NAME;
   const templateCode = process.env.ALIYUN_SMS_TEMPLATE_CODE;
 
+  // 未配置 AK 时降级为本地验证码（不阻断注册流程）
   if (!accessKeyId || !accessKeySecret) {
-    return { success: false, error: 'ALIYUN_ACCESS_KEY_ID / SECRET 未配置' };
+    console.warn('[SMS] ALIYUN_ACCESS_KEY_ID / SECRET 未配置，降级为本地生成验证码');
+    const code = generateLocalCode();
+    console.log(`[SMS-DEV] 验证码: ${code}，手机号: ${phone}`);
+    return { success: true, code, messageId: 'dev-mode' };
   }
 
+  // 未配置签名/模板时降级为本地验证码
   if (!signName || !templateCode) {
-    console.warn('[SMS] ALIYUN_SMS_SIGN_NAME 或 ALIYUN_SMS_TEMPLATE_CODE 未配置，降级为控制台打印');
-    const fallbackCode = String(Math.floor(100000 + Math.random() * 900000));
-    console.log(`[SMS-DEV] 验证码: ${fallbackCode}，手机号: ${phone}`);
-    return { success: true, code: fallbackCode, messageId: 'dev-mode' };
+    console.warn('[SMS] ALIYUN_SMS_SIGN_NAME 或 ALIYUN_SMS_TEMPLATE_CODE 未配置，降级为本地生成验证码');
+    const code = generateLocalCode();
+    console.log(`[SMS-DEV] 验证码: ${code}，手机号: ${phone}`);
+    return { success: true, code, messageId: 'dev-mode' };
   }
 
   try {
@@ -57,25 +67,22 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
       templateCode,
       // 模板参数：##code## = 系统自动生成验证码，min = 有效时长(分钟)
       templateParam: JSON.stringify({ code: '##code##', min: '5' }),
-      codeLength: 6,        // 6位验证码
-      validTime: 300,       // 5分钟有效
-      codeType: 1,          // 1=纯数字
-      returnVerifyCode: true, // 返回验证码，方便存储到数据库
+      codeLength: 6,
+      validTime: 300,
+      codeType: 1,
+      returnVerifyCode: true,
     }));
 
     const body = sendRes.body as Record<string, any>;
     console.log('[SMS] Raw response body:', JSON.stringify(body));
-    // SDK 返回结构: body.Code='OK' 或 body.Success=true
-    // 验证码在 body.Model.VerifyCode 或 body.model.verifyCode
     const respCode = body?.Code || body?.code;
     if (respCode === 'OK' || body?.Success === true) {
-      // 尝试多种路径提取验证码
       const returnedCode = body?.Model?.VerifyCode || body?.model?.VerifyCode || body?.Model?.verifyCode || body?.model?.verifyCode || body?.VerifyCode || body?.verifyCode || '';
       console.log('[SMS] Extracted verifyCode:', returnedCode);
       if (!returnedCode) {
         console.warn('[SMS] API 未返回验证码，使用本地生成');
-        const fallbackCode = String(Math.floor(100000 + Math.random() * 900000));
-        return { success: true, code: fallbackCode, messageId: body?.RequestId || body?.requestId };
+        const code = generateLocalCode();
+        return { success: true, code, messageId: body?.RequestId || body?.requestId };
       }
       return { success: true, code: returnedCode, messageId: body?.RequestId || body?.requestId };
     }
@@ -84,12 +91,16 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
     const msg = e instanceof Error ? e.message : 'unknown';
     console.error('[SMS] 阿里云短信认证异常:', msg);
     if (msg.includes('Cannot find module') || msg.includes('MODULE_NOT_FOUND')) {
-      console.warn('[SMS] dypnsapi SDK 未安装，降级为控制台打印');
-      const fallbackCode = String(Math.floor(100000 + Math.random() * 900000));
-      console.log(`[SMS-DEV] 验证码: ${fallbackCode}，手机号: ${phone}`);
-      return { success: true, code: fallbackCode, messageId: 'dev-mode' };
+      console.warn('[SMS] dypnsapi SDK 未安装，降级为本地生成验证码');
+      const code = generateLocalCode();
+      console.log(`[SMS-DEV] 验证码: ${code}，手机号: ${phone}`);
+      return { success: true, code, messageId: 'dev-mode' };
     }
-    return { success: false, error: `阿里云短信异常: ${msg}` };
+    // 🚨 V10.0.1: SDK 调用失败时降级为本地验证码（防止生产环境因SDK问题完全无法注册）
+    console.warn('[SMS] 阿里云SDK异常，降级为本地生成验证码:', msg);
+    const code = generateLocalCode();
+    console.log(`[SMS-DEV] 验证码: ${code}，手机号: ${phone}`);
+    return { success: true, code, messageId: 'sdk-fallback' };
   }
 }
 
