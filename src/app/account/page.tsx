@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import Navbar from '@/components/Navbar';
+import { VERSION, VERSION_DATE, VERSION_NOTES } from '@/lib/version';
 
 export default function AccountPage() {
   const { user, logout, openPayment, updateUser } = useAuth();
@@ -174,13 +175,13 @@ export default function AccountPage() {
             <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center text-sm">ℹ️</div>
             <div>
               <p className="text-sm font-semibold text-gray-700">关于省心PPT</p>
-              <p className="text-[11px] text-gray-400">v9.5.1 · 2026-04-17</p>
+              <p className="text-[11px] text-gray-400">{VERSION} · {VERSION_DATE}</p>
             </div>
           </div>
           <div className="space-y-2 text-[12px] text-gray-500">
             <div className="flex items-start gap-2">
               <span className="text-purple-400 mt-0.5">●</span>
-              <p>省心PPT v9.5.1：架构师审查修复 · Word解析/大纲生成/预览弹窗三大隐患根治</p>
+              <p>省心PPT {VERSION}：{VERSION_NOTES}</p>
             </div>
             <div className="flex items-start gap-2">
               <span className="text-purple-400 mt-0.5">●</span>

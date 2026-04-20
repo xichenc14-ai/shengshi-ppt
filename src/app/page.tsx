@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useRouter } from 'next/navigation';
 
 import Navbar from '@/components/Navbar';
+import AnnouncementBar, { getLatestAnnouncement } from '@/components/AnnouncementBar';
 import HeroSection from '@/components/HeroSection';
 import SceneCards from '@/components/SceneCards';
 import ProcessSection from '@/components/ProcessSection';
@@ -911,6 +912,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[#FAFBFE] flex flex-col">
       <Navbar onLogoClick={backToLanding} />
+      <AnnouncementBar announcement={getLatestAnnouncement()} />
 
       {/* 顶部通知条 - 仅生成中阶段隐藏 */}
       {phase !== 'generating' && phase !== 'direct-generating' && (
