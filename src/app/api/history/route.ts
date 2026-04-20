@@ -19,10 +19,15 @@ export async function GET(request: NextRequest) {
   if (!sb) return NextResponse.json({ error: '服务未配置' }, { status: 503 });
 
   const { searchParams } = new URL(request.url);
+  const authHeader = request.headers.get('authorization');
+  const authUserId = authHeader?.replace(/^Bearer\s+/i, '').trim();
   const userId = searchParams.get('userId');
   const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50);
 
-  if (!userId) return NextResponse.json({ error: '缺少用户ID' }, { status: 400 });
+  // 🚨 安全：验证用户身份（禁止查看他人历史）
+  if (!userId || userId !== authUserId) {
+    return NextResponse.json({ error: '无权访问此用户的历史记录' }, { status: 403 });
+  }
 
   try {
     const { data: history, error } = await sb
@@ -50,9 +55,14 @@ export async function POST(request: NextRequest) {
   if (!sb) return NextResponse.json({ error: '服务未配置' }, { status: 503 });
 
   try {
-    const { action, userId, title, slides, themeId, downloadUrl, pageCount, imageMode } = await request.json();
+    const { action, title, slides, themeId, downloadUrl, pageCount, imageMode } = await request.json();
 
-    if (!userId) return NextResponse.json({ error: '缺少用户ID' }, { status: 400 });
+    // 🚨 安全：从 Authorization header 获取用户身份，禁止从 body 传入 userId
+    const authHeader = request.headers.get('authorization');
+    const userId = authHeader?.replace(/^Bearer\s+/i, '').trim();
+    if (!userId || userId === '00000000-0000-0000-000000000000') {
+      return NextResponse.json({ error: '请先登录' }, { status: 401 });
+    }
 
     if (action === 'save') {
       if (!title) return NextResponse.json({ error: '缺少标题' }, { status: 400 });
