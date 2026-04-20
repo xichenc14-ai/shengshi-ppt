@@ -4,12 +4,18 @@
  */
 
 // 🚨 当前版本号（每次发版必须更新）
-export const VERSION = 'v10.0.1';
+export const VERSION = 'v10.0.2';
 export const VERSION_DATE = '2026-04-21';
-export const VERSION_NOTES = 'SMS降级机制·调试接口安全·公告栏重构·版本管理规范化';
+export const VERSION_NOTES = 'v10.0累计修复：SSRF/调试token/SMS降级/支付安全/微信OAuth/历史记录等10+安全隐患';
 
 // 版本历史（用于公告栏，按时间倒序）
 export const VERSION_HISTORY: { version: string; date: string; notes: string; severity: 'major' | 'minor' | 'patch' }[] = [
+  {
+    version: 'v10.0.2',
+    date: '2026-04-21',
+    notes: 'v10.0安全修复续：支付身份验证/Webhook签名/微信OAuth CSRF/历史记录越权/密码重置等',
+    severity: 'patch',
+  },
   {
     version: 'v10.0.1',
     date: '2026-04-21',
