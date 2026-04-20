@@ -6,7 +6,8 @@ const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 
 /**
  * 免费用户 PDF 下载（水印版）
- * 流程：前端检测到免费用户 → 调用此API → 服务器加水印 → 返回带"省心PPT"水印的PDF
+ * 水印使用英文 "ShengxinPPT"（Helvetica Bold），不支持CJK的标准PDF字体
+ * 如需中文水印，需嵌入中文字体（当前方案不支持无fontkit的TTF嵌入）
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -43,45 +44,44 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: '下载PDF失败' }, { status: 502 });
     }
 
-    const pdfBytes = await pdfRes.arrayBuffer();
+    const pdfArrayBuffer = await pdfRes.arrayBuffer();
+    const pdfBytes = new Uint8Array(pdfArrayBuffer);
 
-    // 3. 用 pdf-lib 添加水印
+    // 3. 用 pdf-lib 添加水印（英文，Helvetica Bold）
     const pdfDoc = await PDFDocument.load(pdfBytes);
     const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const pages = pdfDoc.getPages();
-    const watermarkText = '省心PPT';
+
+    // 使用英文水印（标准PDF字体不支持CJK）
+    const watermarkText = 'ShengxinPPT';
 
     for (const page of pages) {
       const { width, height } = page.getSize();
-      // 水印参数：斜向大字，半透明灰色
       const fontSize = Math.min(width, height) * 0.04;
       const textWidth = font.widthOfTextAtSize(watermarkText, fontSize);
 
-      // 在页面中心放置斜向水印
+      // 页面中心斜向水印（大字半透明）
       page.drawText(watermarkText, {
         x: (width - textWidth) / 2,
         y: height / 2 - fontSize / 2,
         size: fontSize,
         font: font,
-        color: rgb(0.82, 0.82, 0.82),
-        opacity: 0.15,
-        rotate: degrees(-45), // 斜向旋转45度
+        color: rgb(0.75, 0.75, 0.75),
+        opacity: 0.12,
+        rotate: degrees(-45),
       });
 
-      // 在页面底部添加小字水印
+      // 页面底部小字水印
       page.drawText(watermarkText, {
-        x: 10,
-        y: 10,
-        size: 10,
-        font: font,
+        x: 8, y: 8, size: 9, font: font,
         color: rgb(0.6, 0.6, 0.6),
-        opacity: 0.3,
+        opacity: 0.25,
       });
     }
 
-    // 4. 保存并返回（Uint8Array → Buffer → NextResponse）
-    const watermarkedBytes = await pdfDoc.save();
-    const buffer = Buffer.from(watermarkedBytes);
+    // 4. 保存并返回
+    const watermarkedUint8 = await pdfDoc.save();
+    const buffer = Buffer.from(watermarkedUint8);
 
     return new NextResponse(buffer, {
       headers: {
