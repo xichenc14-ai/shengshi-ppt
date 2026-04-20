@@ -419,43 +419,110 @@ export async function POST(request: NextRequest) {
     console.log('[Gamma] textMode: preserve (fixed) | imageOptions:', JSON.stringify(finalImageOptions), '| imageMode:', imageMode);
     console.log('[Gamma] FULL PAYLOAD:', JSON.stringify(gammaPayload).substring(0, 2000));
 
-    // 创建 Gamma 生成任务
-    const gammaResponse = await fetch(`${GAMMA_API_BASE}/generations`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-KEY': apiKey,
-        'User-Agent': GAMMA_UA,
-      },
-      body: JSON.stringify(gammaPayload),
-    });
+    // ===== 🚨 V8.7: 429 退避重试 + Rate-Limit Header 读取 =====
+    const MAX_RETRIES = 3;
+    let attempt = 0;
+    let lastError: string = '';
+    let lastStatus: number = 0;
+    let lastGammaResponse: Response | null = null;
 
-    if (!gammaResponse.ok) {
+    while (attempt < MAX_RETRIES) {
+      attempt++;
+      
+      const gammaResponse = await fetch(`${GAMMA_API_BASE}/generations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': apiKey,
+          'User-Agent': GAMMA_UA,
+        },
+        body: JSON.stringify(gammaPayload),
+      });
+
+      // 读取 rate-limit headers（无论成功失败都记录）
+      const rlRemaining = gammaResponse.headers.get('X-RateLimit-Remaining');
+      const rlReset = gammaResponse.headers.get('X-RateLimit-Reset');
+      const retryAfter = gammaResponse.headers.get('Retry-After');
+      
+      if (rlRemaining !== null || rlReset !== null) {
+        console.log(`[Gamma] RateLimit: remaining=${rlRemaining} reset=${rlReset} retryAfter=${retryAfter}`);
+        // 更新 key pool 的 rate limit 信息
+        updateKeyBalance(apiKey, 0, selectedKey.remaining, {
+          remaining: rlRemaining ? parseInt(rlRemaining) : undefined,
+          reset: rlReset ? parseInt(rlReset) : undefined,
+        });
+      }
+
+      // 🚨 V8.7: 429 需要退避重试
+      if (gammaResponse.status === 429) {
+        lastStatus = 429;
+        const retrySec = retryAfter ? parseInt(retryAfter) : Math.min(5 * Math.pow(2, attempt - 1), 60);
+        console.warn(`[Gamma] 429 Rate Limited，${retrySec}s 后重试 (${attempt}/${MAX_RETRIES})`);
+        recordKeyFailure(apiKey, retrySec);
+        
+        if (attempt < MAX_RETRIES) {
+          await new Promise(r => setTimeout(r, retrySec * 1000));
+          continue;
+        } else {
+          const errText = await gammaResponse.text();
+          console.error('[Gamma] 429 重试耗尽:', errText);
+          return NextResponse.json(
+            { error: `Gamma 请求过于频繁，请稍后再试（已重试${MAX_RETRIES}次）`, detail: errText.substring(0, 500) },
+            { status: 429 }
+          );
+        }
+      }
+
+      lastGammaResponse = gammaResponse;
+      lastStatus = gammaResponse.status;
+
+      if (gammaResponse.ok) {
+        // ✅ 成功
+        const gammaData: any = await gammaResponse.json();
+        const generationId = gammaData.generationId || gammaData.id;
+
+        // 🚨 V8: 记录积分信息（从 response body 或 headers）
+        if (gammaData.credits) {
+          updateKeyBalance(apiKey, gammaData.credits.deducted, gammaData.credits.remaining);
+          console.log('[Gamma] 积分扣除:', gammaData.credits.deducted, '| 剩余:', gammaData.credits.remaining);
+        }
+
+        return NextResponse.json({
+          generationId,
+          message: '生成任务已创建',
+          config: { themeId: finalThemeId, tone: finalTone, imageMode: finalImageOptions?.source || imageMode, numCards },
+          credits: gammaData.credits,
+        });
+      }
+
+      // 非 429 的其他错误，直接 break
       const errText = await gammaResponse.text();
-      console.error('[Gamma] API error:', gammaResponse.status, errText);
-      // 记录Key失败
+      lastError = errText;
+      console.error(`[Gamma] API error (attempt ${attempt}):`, gammaResponse.status, errText);
       recordKeyFailure(apiKey);
-      return NextResponse.json(
-        { error: `Gamma API 调用失败: ${gammaResponse.status}`, detail: errText.substring(0, 500) },
-        { status: 502 }
-      );
+
+      // 🚨 V8.7: 400 错误详细记录（用于诊断根因）
+      if (gammaResponse.status === 400) {
+        console.error('[Gamma] 400 错误详情:', {
+          status: gammaResponse.status,
+          body: errText,
+          payloadKeys: Object.keys(gammaPayload),
+          textMode: gammaPayload.textMode,
+          cardSplit: gammaPayload.cardSplit,
+          imageOptions: gammaPayload.imageOptions,
+          cardOptions: gammaPayload.cardOptions,
+          textOptions: gammaPayload.textOptions,
+        });
+      }
+
+      break; // 非 429 错误，不重试
     }
 
-    const gammaData = await gammaResponse.json();
-    const generationId = gammaData.generationId || gammaData.id;
-
-    // 🚨 V8: 记录积分信息（如果有返回）
-    if (gammaData.credits) {
-      updateKeyBalance(apiKey, gammaData.credits.deducted, gammaData.credits.remaining);
-      console.log('[Gamma] 积分扣除:', gammaData.credits.deducted, '| 剩余:', gammaData.credits.remaining);
-    }
-
-    return NextResponse.json({
-      generationId,
-      message: '生成任务已创建',
-      config: { themeId: finalThemeId, tone: finalTone, imageMode: finalImageOptions?.source || imageMode, numCards },
-      credits: gammaData.credits, // 返回积分信息供前端使用
-    });
+    // 所有重试耗尽或非 429 错误到这里
+    return NextResponse.json(
+      { error: `Gamma API 调用失败: ${lastStatus}`, detail: lastError.substring(0, 500) },
+      { status: lastStatus === 400 ? 400 : 502 }
+    );
   } catch (error: any) {
     console.error('Gamma generation error:', error);
     return NextResponse.json(

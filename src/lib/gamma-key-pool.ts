@@ -9,6 +9,11 @@ interface KeyInfo {
   lastUsed: Date;
   successCount: number;
   failCount: number;
+  // Rate limit tracking
+  rateLimitRemaining?: number;   // X-RateLimit-Remaining header
+  rateLimitReset?: number;       // X-RateLimit-Reset header (Unix timestamp)
+  retryAfter?: number;           // Retry-After seconds from 429 response
+  consecutiveFailures: number;   // 连续失败次数（触发429退避）
 }
 
 // ===== 安全检查：确保环境变量已配置 =====
@@ -40,6 +45,7 @@ function loadKeyPool(): KeyInfo[] {
     lastUsed: new Date(),
     successCount: 0,
     failCount: 0,
+    consecutiveFailures: 0, // 初始为 0
   }));
 }
 
@@ -94,15 +100,18 @@ export function selectBestKey(): KeyInfo {
 /**
  * 更新Key余额（从API返回）
  */
-export function updateKeyBalance(key: string, deducted: number, remaining: number): void {
+export function updateKeyBalance(key: string, deducted: number, remaining: number, rateLimitHeaders?: { remaining?: number; reset?: number }): void {
   const pool = getKeyPool();
   const keyInfo = pool.find(k => k.key === key);
   if (keyInfo) {
     keyInfo.remaining = remaining;
     keyInfo.lastUsed = new Date();
     keyInfo.successCount++;
-    
-    // 低余额预警
+    keyInfo.consecutiveFailures = 0;
+    if (rateLimitHeaders) {
+      if (rateLimitHeaders.remaining !== undefined) keyInfo.rateLimitRemaining = rateLimitHeaders.remaining;
+      if (rateLimitHeaders.reset !== undefined) keyInfo.rateLimitReset = rateLimitHeaders.reset;
+    }
     if (remaining < LOW_BALANCE_THRESHOLD) {
       console.warn(`[Gamma] ${keyInfo.label} 余额不足: ${remaining}`);
     }
@@ -112,12 +121,17 @@ export function updateKeyBalance(key: string, deducted: number, remaining: numbe
 /**
  * 记录Key失败
  */
-export function recordKeyFailure(key: string): void {
+export function recordKeyFailure(key: string, retryAfterSeconds?: number): void {
   const pool = getKeyPool();
   const keyInfo = pool.find(k => k.key === key);
   if (keyInfo) {
     keyInfo.failCount++;
+    keyInfo.consecutiveFailures++;
     keyInfo.lastUsed = new Date();
+    if (retryAfterSeconds) {
+      keyInfo.retryAfter = retryAfterSeconds;
+      console.warn(`[Gamma] ${keyInfo.label} 触发429，Retry-After: ${retryAfterSeconds}s`);
+    }
   }
 }
 
