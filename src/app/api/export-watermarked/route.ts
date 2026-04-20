@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { selectBestKey } from '@/lib/gamma-key-pool';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 
@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
         font: font,
         color: rgb(0.82, 0.82, 0.82),
         opacity: 0.15,
-        rotate: { type: 'degrees' as const, angle: -45 },
+        rotate: degrees(-45), // 斜向旋转45度
       });
 
       // 在页面底部添加小字水印
@@ -79,14 +79,15 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 4. 保存并返回
+    // 4. 保存并返回（Uint8Array → Buffer → NextResponse）
     const watermarkedBytes = await pdfDoc.save();
+    const buffer = Buffer.from(watermarkedBytes);
 
-    return new NextResponse(watermarkedBytes, {
+    return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"`,
-        'Content-Length': watermarkedBytes.byteLength.toString(),
+        'Content-Length': buffer.length.toString(),
         'Cache-Control': 'no-store',
       },
     });
