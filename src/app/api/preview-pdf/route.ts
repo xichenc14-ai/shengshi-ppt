@@ -17,23 +17,20 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // 🚨 V8.6: 使用Key池选择
-    const selectedKey = selectBestKey();
-    const apiKey = selectedKey.key;
-
-    // 1. 检查Gamma生成状态
-    const statusRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/status`, {
+    // 🚨 V8.7: 修复：正确的 endpoint 是 /generations/{id}，不是 /generations/{id}/status
+    const statusRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'X-API-KEY': apiKey,
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
       },
     });
 
     if (!statusRes.ok) {
-      return NextResponse.json({ error: '获取Gamma状态失败' }, { status: 500 });
+      return NextResponse.json({ error: `获取Gamma状态失败: ${statusRes.status}` }, { status: 502 });
     }
 
     const statusData = await statusRes.json();
+    console.log('[PreviewPDF] Gamma status:', statusData.status, '| gammaUrl:', statusData.gammaUrl);
     
     // 2. 检查生成状态
     if (statusData.status === 'pending' || statusData.status === 'in_progress') {
