@@ -507,6 +507,13 @@ export default function Home() {
     const inputText = collectText();
     if (!inputText.trim()) return;
 
+    // 🚨 总字数校验：超过 10000 字时提示精简
+    if (inputText.length > 10000) {
+      setLoading(false);
+      setError(`内容过长（${inputText.length}字），请精简到 10000 字以内，或分段处理。`);
+      return;
+    }
+
     // V7 输入校验
     const validation = validateInput(topic, files);
     if (!validation.valid) {
