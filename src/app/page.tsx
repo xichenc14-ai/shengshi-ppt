@@ -100,6 +100,8 @@ export default function Home() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [pdfPage, setPdfPage] = useState(1); // PDF当前页
   const [pdfTotalPages, setPdfTotalPages] = useState(1); // PDF总页数
+  const [exporting, setExporting] = useState(false); // 导出PPTX中
+  const [pdfExporting, setPdfExporting] = useState(false); // 导出PDF中
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -533,6 +535,20 @@ export default function Home() {
         textMode = 'preserve';
       }
 
+      // 省心模式：从用户输入中提取页数（如"6页"、"6 页"、"6"）
+      let effectivePages = pages;
+      if (mode === 'smart') {
+        const pageMatch = inputText.match(/(\d+)\s*页/);
+        if (pageMatch) {
+          const extractedPages = parseInt(pageMatch[1], 10);
+          if (extractedPages >= 3 && extractedPages <= 30) {
+            effectivePages = extractedPages;
+            setPages(extractedPages);
+            console.log('[SmartMode] 从输入中提取页数:', extractedPages);
+          }
+        }
+      }
+
       // Step 1: 调用 outline API（所有模式统一入口）
       await new Promise(r => setTimeout(r, 800));
       setGenStep(1);
@@ -542,7 +558,7 @@ export default function Home() {
       const oRes = await fetch('/api/outline', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputText, slideCount: pages, textMode, auto }),
+        body: JSON.stringify({ inputText, slideCount: effectivePages, textMode, auto }),
       });
       // 先读取响应文本，再尝试解析 JSON（避免非 JSON 响应导致的解析错误）
       const oText = await oRes.text();
@@ -563,11 +579,28 @@ export default function Home() {
       setEditedSlides(od.slides || []);
       // 🚨 V6：省心模式需要构造 smartGammaPayload（大纲确认页 UI 依赖它）
       if (mode === 'smart') {
+        // 将 outline API 返回的 imageMode 映射为 Gamma API 期望的 source 值
+        const imageModeMap: Record<string, string> = {
+          'theme-img': 'themeAccent',
+          'theme': 'themeAccent',
+          'web': 'webFreeToUseCommercially',
+          'ai': 'aiGenerated',
+          'none': 'noImages',
+        };
+        const gammaImageSource = imageModeMap[od.imageMode || ''] || 'themeAccent';
         setSmartGammaPayload({
           themeId: od.themeId || 'consultant',
           tone: od.tone || 'professional',
-          imageOptions: { source: od.imageMode || 'themeAccent' },
+          imageOptions: { source: gammaImageSource },
         });
+        // 同步 imgMode 状态，确保 confirmAndGenerate 使用正确的值
+        const reverseImageModeMap: Record<string, string> = {
+          'themeAccent': 'theme-img',
+          'noImages': 'none',
+          'webFreeToUseCommercially': 'web',
+          'aiGenerated': 'ai',
+        };
+        setImgMode(reverseImageModeMap[gammaImageSource] || 'theme-img');
       }
       setPhase('outline');
       setGenProgress(100);
@@ -1614,19 +1647,18 @@ export default function Home() {
                   <button
                     onClick={async () => {
                       if (!result.generationId) return;
+                      setPdfExporting(true);
                       try {
                         const filename = result.title ? `${result.title}.pdf` : '省心PPT.pdf';
                         let pdfBlob: Blob;
 
                         if (user && user.plan_type && user.plan_type !== 'free') {
-                          // 付费用户：直接下载原始PDF
                           const res = await fetch(`/api/preview-pdf?generationId=${result.generationId}`);
                           const data = await res.json();
                           if (!data.pdfUrl) { alert('PDF导出失败，请稍后重试'); return; }
                           const pdfRes = await fetch(`/api/export?url=${encodeURIComponent(data.pdfUrl)}&name=${encodeURIComponent(filename)}`);
                           pdfBlob = await pdfRes.blob();
                         } else {
-                          // 免费用户：下载带水印的PDF
                           const pdfRes = await fetch(`/api/export-watermarked?generationId=${result.generationId}&name=${encodeURIComponent(filename)}`);
                           if (!pdfRes.ok) { alert('PDF下载失败，请稍后重试'); return; }
                           pdfBlob = await pdfRes.blob();
@@ -1642,10 +1674,23 @@ export default function Home() {
                         document.body.removeChild(link);
                         setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
                       } catch (e) { console.warn('[PDF] 下载失败:', e); alert('PDF下载失败，请稍后重试'); }
+                      finally { setPdfExporting(false); }
                     }}
-                    className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-blue-200/50 active:scale-95 transition-all cursor-pointer"
+                    disabled={pdfExporting}
+                    className={`w-full sm:w-auto px-8 py-3.5 text-white rounded-xl text-sm font-semibold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      pdfExporting
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:shadow-lg hover:shadow-blue-200/50 active:scale-95'
+                    }`}
                   >
-                    📥 {user && user.plan_type && user.plan_type !== 'free' ? 'PDF下载' : '免费PDF下载'}
+                    {pdfExporting ? (
+                      <span className="flex items-center gap-2">
+                        <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                        正在导出PDF...
+                      </span>
+                    ) : (
+                      <span>📥 {user && user.plan_type && user.plan_type !== 'free' ? 'PDF下载' : '免费PDF下载'}</span>
+                    )}
                   </button>
                 )}
                 {/* 🔒 导出PPTX（会员专属，非会员弹出单次/订阅选择） */}
@@ -1653,69 +1698,75 @@ export default function Home() {
                   <button
                     onClick={async () => {
                       if (!user) { openLogin(); return; }
-                      // 🚨 V9.1: 正确检查会员权限（plan_type !== 'free' 即为付费用户）
-                      const pageCount = result.actualPages || pages;
-                      const pricePerPage = 0.2; // 每页2毛
-                      const totalPrice = Math.round(pageCount * pricePerPage * 100) / 100;
-                      if (user.plan_type && user.plan_type !== 'free') {
-                        // 🚨 订阅用户直接下载
-                        try {
-                          await fetch("/api/download", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ action: "record", userId: user.id, pageCount, format: "pptx" }),
-                          });
-                        } catch (err) { console.warn("[Download] 记录失败:", err); }
-                        const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
-                        const res = await fetch(`/api/export?url=${encodeURIComponent(result.pptxUrl)}&name=${encodeURIComponent(filename)}`);
-                        const blob = await res.blob();
-                        const blobUrl = URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = blobUrl;
-                        link.download = filename;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-                      } else {
-                        // 🚨 V9.1: 两个选项 - 单次付费（扣积分）或订阅会员
-                        const choice = window.confirm(
-                          `导出此PPT需扣除积分。\n\n📄 当前PPT共 ${pageCount} 页\n💰 单次付费：¥${totalPrice}（${Math.ceil(pageCount * 20)}积分）\n⭐ 订阅会员：免费无限次下载\n\n点「确定」= 单次付费下载\n点「取消」= 查看订阅方案`
-                        );
-                        if (choice) {
-                          // 单次付费下载
-                          const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
-                          fetch('/api/pay-once', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ userId: user.id, pptxUrl: result.pptxUrl, pageCount, filename }),
-                          }).then(r => r.json()).then(data => {
-                            if (data.error) { alert(data.message || data.error); return; }
-                            // 下载文件
-                            fetch(data.downloadUrl).then(r => r.blob()).then(blob => {
-                              const blobUrl = URL.createObjectURL(blob);
-                              const link = document.createElement('a');
-                              link.href = blobUrl;
-                              link.download = filename;
-                              document.body.appendChild(link);
-                              link.click();
-                              document.body.removeChild(link);
-                              setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-                              // 更新前端积分显示
-                              if (data.remainingCredits !== undefined) {
-                                updateCredits(data.remainingCredits);
-                              }
+                      setExporting(true);
+                      try {
+                        const pageCount = result.actualPages || pages;
+                        const pricePerPage = 0.2;
+                        const totalPrice = Math.round(pageCount * pricePerPage * 100) / 100;
+                        if (user.plan_type && user.plan_type !== 'free') {
+                          try {
+                            await fetch("/api/download", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ action: "record", userId: user.id, pageCount, format: "pptx" }),
                             });
-                          }).catch(() => alert('付费下载失败，请稍后重试'));
+                          } catch (err) { console.warn("[Download] 记录失败:", err); }
+                          const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                          const res = await fetch(`/api/export?url=${encodeURIComponent(result.pptxUrl)}&name=${encodeURIComponent(filename)}`);
+                          const blob = await res.blob();
+                          const blobUrl = URL.createObjectURL(blob);
+                          const link = document.createElement('a');
+                          link.href = blobUrl;
+                          link.download = filename;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                          setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
                         } else {
-                          // 订阅会员
-                          openPayment({ id: 'basic', name: '基础版', price: '¥19', billing: 'monthly', reason: `订阅会员 · ${pageCount}页PPT免费下` });
+                          const choice = window.confirm(
+                            `导出此PPT需扣除积分。\n\n📄 当前PPT共 ${pageCount} 页\n💰 单次付费：¥${totalPrice}（${Math.ceil(pageCount * 20)}积分）\n⭐ 订阅会员：免费无限次下载\n\n点「确定」= 单次付费下载\n点「取消」= 查看订阅方案`
+                          );
+                          if (choice) {
+                            const filename = result.title ? `省心PPT_${result.title.substring(0, 20)}.pptx` : '省心PPT.pptx';
+                            fetch('/api/pay-once', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ userId: user.id, pptxUrl: result.pptxUrl, pageCount, filename }),
+                            }).then(r => r.json()).then(data => {
+                              if (data.error) { alert(data.message || data.error); return; }
+                              fetch(data.downloadUrl).then(r => r.blob()).then(blob => {
+                                const blobUrl = URL.createObjectURL(blob);
+                                const link = document.createElement('a');
+                                link.href = blobUrl;
+                                link.download = filename;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+                                if (data.remainingCredits !== undefined) updateCredits(data.remainingCredits);
+                              });
+                            }).catch(() => alert('付费下载失败，请稍后重试'));
+                          } else {
+                            openPayment({ id: 'basic', name: '基础版', price: '¥19', billing: 'monthly', reason: `订阅会员 · ${pageCount}页PPT免费下` });
+                          }
                         }
-                      }
+                      } finally { setExporting(false); }
                     }}
-                    className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-purple-600 to-violet-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-purple-200/50 active:scale-95 transition-all cursor-pointer"
+                    disabled={exporting}
+                    className={`w-full sm:w-auto px-8 py-3.5 text-white rounded-xl text-sm font-semibold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      exporting
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-purple-600 to-violet-600 hover:shadow-lg hover:shadow-purple-200/50 active:scale-95'
+                    }`}
                   >
-                    🔒 导出PPTX
+                    {exporting ? (
+                      <>
+                        <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                        正在导出PPTX...
+                      </>
+                    ) : (
+                      <span>🔒 导出PPTX</span>
+                    )}
                   </button>
                 )}
               </div>
@@ -1772,6 +1823,14 @@ export default function Home() {
             imageOptions: { ...prev.imageOptions, source: imgSrc },
             gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, imageOptions: { ...prev.gammaPayload.imageOptions, source: imgSrc } } : undefined,
           } : prev);
+          // 同步 imgMode 状态，确保 confirmAndGenerate 使用正确的值
+          const reverseMap: Record<string, string> = {
+            'themeAccent': 'theme-img',
+            'noImages': 'none',
+            'webFreeToUseCommercially': 'web',
+            'aiGenerated': 'ai',
+          };
+          setImgMode(reverseMap[imgSrc] || 'theme-img');
         }}
         onClose={() => setShowThemePicker(false)}
       />
