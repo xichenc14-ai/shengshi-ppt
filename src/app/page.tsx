@@ -925,8 +925,24 @@ export default function Home() {
             method: 'POST',
             body: formData,
           });
-          const data = await res.json();
-          item.content = data.text || `[文件: ${f.name}]`;
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            alert(`文件 "${f.name}" 解析失败: ${errData.error || res.statusText}`);
+            item.content = `[文件: ${f.name}, 解析失败]`;
+          } else {
+            const data = await res.json();
+            // 🚨 解析明确失败时（failed=true），不设置 content，阻止垃圾文本进入 outline
+            if (data.failed) {
+              alert(`文件 "${f.name}" ${data.error || '解析失败'}，请将文字直接粘贴到输入框。`);
+              continue; // 跳过此文件，不添加到 files 列表
+            }
+            item.content = data.text || `[文件: ${f.name}]`;
+            // 检测服务端返回的解析失败提示
+            if (item.content && /解析失败|扫描件|无文字/.test(item.content)) {
+              alert(`文件 "${f.name}" 无法提取文字内容，请尝试手动复制粘贴。`);
+              continue; // 跳过，不添加到列表
+            }
+          }
         } catch (e) {
           console.warn('[FileProcess] 解析失败:', e);
           item.content = `[文件: ${f.name}]`;

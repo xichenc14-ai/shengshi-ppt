@@ -3,27 +3,21 @@ import { getClientIP, rateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 
-// ===== PDF 解析：优先使用 pdfjs-dist（Vercel serverless 兼容），fallback 到 pdf-parse =====
+// ===== PDF 解析：使用 pdf-parse（纯 Node.js，serverless 友好） =====
 
-async function parsePdfWithPdfJs(buffer: Buffer): Promise<string> {
-  // pdfjs-dist legacy (pure JS, Node.js 兼容)
-  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  // 标准字体数据 URL（用于纯 JS 模式）
-  const doc = await getDocument({
-    data: new Uint8Array(buffer),
-    standardFontDataUrl: '/standard_fonts/',
-  }).promise;
-  const parts: string[] = [];
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i);
-    const content = await page.getTextContent();
-    const pageText = content.items
-      .map((item: any) => item.str)
-      .join(' ')
-      .trim();
-    if (pageText) parts.push(pageText);
+async function parsePdfWithPdfJs(buffer: Buffer, fileName: string): Promise<string> {
+  const { PDFParse } = await import('pdf-parse');
+  const parser = new PDFParse({ data: new Uint8Array(buffer) } as any);
+  try {
+    const textResult = await parser.getText();
+    const text = (textResult.text || '').trim();
+    if (!text) {
+      return `[PDF: ${fileName}, ${buffer.length} bytes, 扫描件/无文字内容，建议手动复制文字粘贴]`;
+    }
+    return text;
+  } finally {
+    await parser.destroy();
   }
-  return parts.join('\n\n');
 }
 
 // ===== 主处理函数 =====
@@ -49,27 +43,16 @@ export async function POST(request: NextRequest) {
 
     // ===== PDF parsing（双引擎：pdfjs-dist 优先，pdf-parse fallback） =====
     if (fileName.endsWith('.pdf')) {
-      let parsed = false;
-      let errorMsg = '';
-
-      // 引擎1：pdfjs-dist（推荐，纯 JS，serverless 友好）
       try {
-        text = await parsePdfWithPdfJs(buffer);
-        if (text.trim()) {
-          parsed = true;
-        } else {
-          // 空内容，可能是扫描件
-          text = `[PDF: ${file.name}, ${buffer.length} bytes, 扫描件/无文字内容，建议手动复制文字粘贴]`;
-          parsed = true;
-        }
+        text = await parsePdfWithPdfJs(buffer, file.name);
       } catch (e1: any) {
-        errorMsg = `pdfjs-dist: ${e1.message}`;
-        console.warn('[Parse] pdfjs-dist failed, trying pdf-parse:', errorMsg);
-
-          // pdfjs-dist 失败时直接返回解析失败提示，不做额外 fallback
-        console.error('[Parse] pdfjs-dist failed:', errorMsg);
-        text = `[PDF: ${file.name}, 解析失败，请复制文字后直接粘贴]`;
-        parsed = true;
+        console.error('[Parse] pdf-parse failed:', e1.message);
+        return NextResponse.json({
+          text: '',
+          error: `PDF解析失败（${e1.message})，请将文字直接粘贴到输入框`,
+          failed: true,
+          fileName: file.name,
+        });
       }
     }
     // ===== CSV 纯文本（单独处理，避免 xlsx 库编码问题） =====
@@ -84,7 +67,12 @@ export async function POST(request: NextRequest) {
         }
       } catch (e: any) {
         console.error('[Parse] CSV 解析失败:', e.message);
-        text = `[CSV: ${file.name}，解析失败]`;
+        return NextResponse.json({
+          text: '',
+          error: `CSV解析失败（${e.message})，请将内容直接粘贴`,
+          failed: true,
+          fileName: file.name,
+        });
       }
     }
     // ===== Excel 解析（xlsx/xls） =====
@@ -103,7 +91,12 @@ export async function POST(request: NextRequest) {
         text = sheets.join('\n\n') || `[Excel文件: ${file.name}，无数据]`;
       } catch (e: any) {
         console.error('[Parse] Excel解析失败:', e.message);
-        text = `[Excel文件: ${file.name}，解析失败]`;
+        return NextResponse.json({
+          text: '',
+          error: `Excel解析失败（${e.message})，请将内容直接粘贴`,
+          failed: true,
+          fileName: file.name,
+        });
       }
     }
     // ===== Word 解析（mammoth 工业级方案） =====
@@ -120,14 +113,9 @@ export async function POST(request: NextRequest) {
           text = `[Word: ${file.name}, 解析内容为空，可能是全图片文档，请手动复制文字]`;
         }
       } catch (e: any) {
-        // 必须打印真实错误，否则永远不知道线上为什么挂了
-        console.error(`[Parse] Word 解析发生致命错误 (${file.name}):`, e.message);
-
-        // 不要静默返回 200，明确抛出异常让前端感知并提示用户重试或换格式
-        return NextResponse.json(
-          { error: `Word 文件解析失败，文档可能已损坏或格式不支持。请尝试保存为 PDF 或直接复制文字粘贴。(${e.message})` },
-          { status: 422 } // 422 Unprocessable Entity 是更语义化的状态码
-        );
+        // 返回 200 + 友好提示文本，避免客户端无法处理 422 状态码
+        console.error(`[Parse] Word 解析失败 (${file.name}):`, e.message);
+        text = `[Word: ${file.name}, 解析失败，请尝试保存为 PDF 或直接复制文字粘贴]`;
       }
     }
     else if (fileName.endsWith('.pptx') || fileName.endsWith('.ppt')) {
@@ -157,7 +145,12 @@ export async function POST(request: NextRequest) {
         text = slides.length > 0 ? slides.join('\n\n---\n\n') : `[PPT: ${file.name}, 无文本内容]`;
       } catch (e: any) {
         console.error('[Parse] PPT解析失败:', e.message);
-        text = `[PPT: ${file.name}，解析失败]`;
+        return NextResponse.json({
+          text: '',
+          error: `PPT解析失败（${e.message})，请将内容直接粘贴`,
+          failed: true,
+          fileName: file.name,
+        });
       }
     }
     // ===== 纯文本文件解析（txt/md） =====
@@ -176,10 +169,10 @@ export async function POST(request: NextRequest) {
       text = `[文件: ${file.name}]`;
     }
 
-    // 截断超长文本（提升至 80000 字，充分利用大模型长上下文能力）
-    const MAX_CHARS = 80000;
+    // 截断：对齐 outline API 的 10000 字符限制，留 2000 余量
+    const MAX_CHARS = 8000;
     if (text.length > MAX_CHARS) {
-      text = text.substring(0, MAX_CHARS) + '\n\n[...为保证生成质量，内容已截断...]';
+      text = text.substring(0, MAX_CHARS) + '\n\n[...内容已截断，原始文档过长，请精简或分段处理]';
     }
 
     return NextResponse.json({
