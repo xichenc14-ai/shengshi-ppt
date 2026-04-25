@@ -263,50 +263,85 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdfPage, pdfTotalPages]);
 
-  // 🚨 V9.1 (架构师修复版): 彻底抛弃 setTimeout，采用状态驱动与防竞态设计
+  // 🚨 V10.9: 预览使用后端代理（/api/proxy-pdf），禁止前端直连 Gamma
+  // 后端代理处理 302 重定向，返回 PDF 二进制流，前端用 blob URL 渲染
   useEffect(() => {
     // 只有当生成完成且进入 result 页面时，才触发自动预览
     if (phase !== 'result' || !result?.gammaUrl || !result?.generationId) return;
 
     let isMounted = true; // 防竞态标志
 
-    // 1. 立即响应状态变化，打开弹窗并显示 Loading，不依赖不可靠的时间猜测
+    // 1. 立即响应状态变化，打开弹窗并显示 Loading
     setShowPreview(true);
     setPreviewLoading(true);
     setPreviewPdfUrl(null);
 
-    // 2. 异步获取 PDF 渲染流
+    // 2. 异步获取 PDF 二进制流（后端代理，单次请求）
     const fetchPreview = async () => {
       try {
-        const r = await fetch(`/api/preview-pdf?generationId=${result.generationId}`);
-        if (!r.ok) throw new Error('获取预览链接失败');
-        const data = await r.json();
+        const r = await fetch(`/api/proxy-pdf?generationId=${result.generationId}`);
 
-        if (data.pdfUrl && isMounted) {
-          const pdfRes = await fetch(`/api/export?url=${encodeURIComponent(data.pdfUrl)}&name=preview.pdf`);
-          if (!pdfRes.ok) throw new Error('PDF 数据流代理失败');
-          const blob = await pdfRes.blob();
-
-          if (isMounted) {
-            setPreviewPdfUrl(URL.createObjectURL(blob));
-            setPreviewLoading(false);
+        // 如果后端返回 JSON（生成中/失败），处理错误状态
+        const contentType = r.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await r.json();
+          if (data.status === 'generating') {
+            // 生成中，轮询重试（3秒间隔，最多3分钟）
+            const startTime = Date.now();
+            const poll = async () => {
+              while (Date.now() - startTime < 180000 && isMounted) {
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                try {
+                  const pr = await fetch(`/api/proxy-pdf?generationId=${result.generationId}`);
+                  const pContentType = pr.headers.get('content-type') || '';
+                  if (pContentType.includes('application/pdf')) {
+                    const blob = await pr.blob();
+                    if (isMounted) {
+                      setPreviewPdfUrl(URL.createObjectURL(blob));
+                      setPreviewLoading(false);
+                    }
+                    return;
+                  }
+                  const pd = await pr.json();
+                  if (pd.status === 'generating') continue;
+                  if (pd.error) throw new Error(pd.error);
+                } catch (pe: any) {
+                  if (pe.message && !pe.message.includes('fetch')) throw pe;
+                }
+              }
+              if (isMounted) {
+                setPreviewLoading(false);
+                setError('预览加载超时，请尝试下载 PDF 查看');
+              }
+            };
+            poll();
+            return;
           }
-        } else if (isMounted) {
+          throw new Error(data.error || '获取预览失败');
+        }
+
+        if (!r.ok) throw new Error('获取预览失败');
+
+        // 成功：拿到 PDF 二进制流
+        const blob = await r.blob();
+        if (isMounted) {
+          setPreviewPdfUrl(URL.createObjectURL(blob));
           setPreviewLoading(false);
         }
-      } catch (e) {
-        console.warn('[Preview] 自动加载预览异常:', e);
+      } catch (e: any) {
+        console.warn('[Preview] 加载预览异常:', e);
         if (isMounted) {
           setPreviewLoading(false);
-          // 这里可以静默失败，因为弹窗已经打开，用户仍然可以点击下载按钮
+          setError(e.message || '预览加载失败，请尝试下载 PDF 查看');
         }
       }
-    };fetchPreview();
+    };
 
-    // 3. 卸载清理：如果用户关闭弹窗或重新生成，立即切断旧的网络请求状态更新
-    return () => {
-      isMounted = false;};
-  }, [phase, result?.generationId, result?.gammaUrl]); // 补全依赖项
+    fetchPreview();
+
+    // 3. 卸载清理
+    return () => { isMounted = false; };
+  }, [phase, result?.generationId, result?.gammaUrl]);
 
   // Enter generate flow
   const startGenerate = useCallback(() => {
@@ -1613,15 +1648,18 @@ export default function Home() {
                     onClick={async () => {
                       if (!result.generationId) return;
                       try {
-                        // 🚨 V9.1: 直接调API导出PDF并触发下载，不经过预览状态
-                        const res = await fetch(`/api/preview-pdf?generationId=${result.generationId}`);
-                        const data = await res.json();
-                        if (!data.pdfUrl) { alert('PDF导出失败，请稍后重试'); return; }
-                        // 通过export代理下载PDF
+                        // 🚨 V10.9: 使用 /api/download-pdf 后端代理（强制下载，解决跨域失效）
                         const filename = result.title ? `${result.title}.pdf` : '省心PPT.pdf';
-                        const pdfRes = await fetch(`/api/export?url=${encodeURIComponent(data.pdfUrl)}&name=${encodeURIComponent(filename)}`);
-                        const blob = await pdfRes.blob();
-                        if (blob.size < 100) { alert('PDF下载失败'); return; }
+                        const res = await fetch(`/api/download-pdf?generationId=${result.generationId}&filename=${encodeURIComponent(filename)}`);
+                        const contentType = res.headers.get('content-type') || '';
+                        if (contentType.includes('application/json')) {
+                          const data = await res.json();
+                          alert(data.error || data.message || 'PDF下载失败，请稍后重试');
+                          return;
+                        }
+                        if (!res.ok) { alert('PDF下载失败，请稍后重试'); return; }
+                        const blob = await res.blob();
+                        if (blob.size < 100) { alert('PDF下载失败，文件为空'); return; }
                         const blobUrl = URL.createObjectURL(blob);
                         const link = document.createElement('a');
                         link.href = blobUrl;
@@ -1823,16 +1861,36 @@ export default function Home() {
                 className="px-5 py-2 text-sm text-gray-400 hover:text-white rounded-lg transition-all">
                 返回
               </button>
-              {/* 📥 免费PDF下载（弹窗内重定向到PDF下载） */}
+              {/* 📥 免费PDF下载（弹窗内使用后端代理强制下载） */}
               {result.gammaUrl && (
-                <a
-                  href={previewPdfUrl ? previewPdfUrl : '#'}
-                  download={result.title ? `${result.title}.pdf` : '省心PPT.pdf'}
-                  onClick={(e) => { if (!previewPdfUrl) { e.preventDefault(); alert('请等待预览加载完成'); } }}
+                <button
+                  onClick={async () => {
+                    if (!result.generationId) return;
+                    try {
+                      // 🚨 V10.9: 使用 /api/download-pdf 后端代理
+                      const filename = result.title ? `${result.title}.pdf` : '省心PPT.pdf';
+                      const res = await fetch(`/api/download-pdf?generationId=${result.generationId}&filename=${encodeURIComponent(filename)}`);
+                      const contentType = res.headers.get('content-type') || '';
+                      if (contentType.includes('application/json')) {
+                        const data = await res.json();
+                        alert(data.error || data.message || 'PDF下载失败');
+                        return;
+                      }
+                      const blob = await res.blob();
+                      const blobUrl = URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = blobUrl;
+                      link.download = filename;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+                    } catch (e) { alert('PDF下载失败，请稍后重试'); }
+                  }}
                   className="px-5 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all"
                 >
                   📥 下载PDF
-                </a>
+                </button>
               )}
               {/* 🔒 会员导出PPTX */}
               {result.pptxUrl && (
