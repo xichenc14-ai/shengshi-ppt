@@ -33,12 +33,15 @@ export async function callGLM(
   systemPrompt: string,
   userPrompt: string,
   taskType: TaskType = 'outline',
-  retries = 3
+  retries = 3,
+  timeoutMs = 30000
 ): Promise<string> {
   const config = MODEL_MAP[taskType] || MODEL_MAP.outline;
 
   for (let attempt = 0; attempt < retries; attempt++) {
     const key = getNextKey();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(API_BASE, {
         method: 'POST',
@@ -46,6 +49,7 @@ export async function callGLM(
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${key}`,
         },
+        signal: controller.signal,
         body: JSON.stringify({
           model: config.model,
           messages: [
@@ -56,7 +60,7 @@ export async function callGLM(
           max_tokens: config.maxTokens,
         }),
       });
-
+      clearTimeout(timeout);
       if (!response.ok) {
         const errText = await response.text();
         console.warn(`GLM ${config.model} attempt ${attempt + 1} failed: ${response.status} ${errText}`);
@@ -74,6 +78,7 @@ export async function callGLM(
 
       return content;
     } catch (e) {
+      clearTimeout(timeout);
       console.warn(`GLM ${config.model} attempt ${attempt + 1} error:`, e);
       if (attempt < retries - 1) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
     }

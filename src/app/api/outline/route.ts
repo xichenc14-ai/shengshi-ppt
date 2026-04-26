@@ -258,23 +258,28 @@ ${inputText}`
     // ===== 联网搜索（暂不需要，AI 知识库足够） =====
     const searchContext = '';
 
-    // ===== 并发调用 AI（Vercel Hobby 10s限制，8秒超时） =====
-    const llmTimeout = 8000;
-    const results = await Promise.allSettled([
-      callKimi([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, timeoutMs: llmTimeout }),
-      callMiniMaxWithRetry([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, maxRetries: 1, timeoutMs: llmTimeout }),
-      callGLM(systemPrompt, baseUserPrompt, 'outline'),
-    ]);
+    // ===== 并发调用 AI，用Promise.any（谁先返回用谁） =====
+    // Vercel Hobby 10s限制，设9秒abort兜底
+    const ac = new AbortController();
+    const hardTimeout = setTimeout(() => ac.abort(), 9000);
     let parsed: any = null;
-    for (const r of results) {
-      if (r.status === 'fulfilled' && r.value) {
-        const raw = typeof r.value === 'string' ? r.value : (r.value as any)?.content || String(r.value);
-        parsed = tryParseJson(raw);
-        if (parsed) break;
-      }
+    try {
+      // Promise.any: 任意一个成功就返回，忽略其他失败
+      const fastest = await Promise.any([
+        callKimi([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, timeoutMs: 8500 }),
+        callMiniMaxWithRetry([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, maxRetries: 0, timeoutMs: 8500 }),
+        callGLM(systemPrompt, baseUserPrompt, 'outline', 1, 8500),
+      ]);
+      const raw = typeof fastest === 'string' ? fastest : (fastest as any)?.content || String(fastest);
+      parsed = tryParseJson(raw);
+    } catch (e: any) {
+      // Promise.any全部reject → 所有LLM都超时/失败
+      console.error('[Outline] All LLMs failed:', e.message);
+    } finally {
+      clearTimeout(hardTimeout);
     }
     if (!parsed) {
-      throw new Error('大纲生成失败，请稍后重试');
+      throw new Error('大纲生成超时，请稍后重试');
     }
 
     // ===== 构建返回结果 =====
