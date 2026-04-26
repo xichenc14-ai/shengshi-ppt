@@ -78,10 +78,11 @@ async function parsePdf(buffer: Buffer): Promise<string> {
     const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
     const { getDocument, GlobalWorkerOptions } = pdfjsLib;
     
-    // 设置workerSrc — pdfjs-dist v5.x必须指定
-    // 使用CDN上的worker（避免本地路径在Vercel serverless中找不到）
-    GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.296/pdf.worker.min.mjs';
-    console.log('[Parse] pdfjs workerSrc set (CDN)');
+    // 设置workerSrc — 使用data URL内联worker（避免CDN/file协议问题）
+    // @ts-ignore - Next.js支持?url导入
+    const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+    GlobalWorkerOptions.workerSrc = workerUrl;
+    console.log('[Parse] pdfjs workerSrc set:', typeof workerUrl, String(workerUrl).substring(0, 50));
     
     const loadingTask = getDocument({
       data: new Uint8Array(buffer),
