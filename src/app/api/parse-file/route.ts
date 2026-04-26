@@ -3,6 +3,24 @@ import { getClientIP, rateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 
+// ===== DOMMatrix polyfill（pdfjs-dist在Node.js环境需要） =====
+if (typeof globalThis !== 'undefined' && !globalThis.DOMMatrix) {
+  (globalThis as any).DOMMatrix = class DOMMatrix {
+    a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+    m11 = 1; m12 = 0; m13 = 0; m14 = 0; m21 = 0; m22 = 1; m23 = 0; m24 = 0;
+    m31 = 0; m32 = 0; m33 = 1; m34 = 0; m41 = 0; m42 = 0; m43 = 0; m44 = 1;
+    constructor(init?: any) {}
+    scale(sx: number, sy?: number) { return this; }
+    translate(tx: number, ty?: number) { return this; }
+    rotate(angle: number) { return this; }
+    multiply(other: any) { return this; }
+    inverse() { return new DOMMatrix(); }
+    transformPoint(point: any) { return { x: 0, y: 0, z: 0, w: 1 }; }
+    toMatrix() { return this; }
+    setMatrixValue(transformList: string) { return this; }
+  };
+}
+
 // ===== PDF 解析：优先使用 pdfjs-dist（Vercel serverless 兼容），fallback 到 pdf-parse =====
 
 async function parsePdfWithPdfJs(buffer: Buffer): Promise<string> {

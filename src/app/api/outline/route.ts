@@ -262,11 +262,13 @@ ${inputText}`
     // Promise.any: 任意一个成功就返回，忽略其他失败
     let parsed: any = null;
     let aiError = '';
+    const startTime = Date.now();
     try {
+      console.log('[Outline] Starting LLM calls...');
       const fastest = await Promise.any([
-        callKimi([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, timeoutMs: 24000 }),
-        callMiniMaxWithRetry([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, maxRetries: 0, timeoutMs: 24000 }),
-        callGLM(systemPrompt, baseUserPrompt, 'outline', 1, 24000),
+        callKimi([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, timeoutMs: 24000 }).then(r => { console.log('[Outline] Kimi responded in', Date.now() - startTime, 'ms'); return r; }).catch(e => { console.error('[Outline] Kimi error:', e.message); throw e; }),
+        callMiniMaxWithRetry([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, maxRetries: 0, timeoutMs: 24000 }).then(r => { console.log('[Outline] MiniMax responded in', Date.now() - startTime, 'ms'); return r; }).catch(e => { console.error('[Outline] MiniMax error:', e.message); throw e; }),
+        callGLM(systemPrompt, baseUserPrompt, 'outline', 1, 24000).then(r => { console.log('[Outline] GLM responded in', Date.now() - startTime, 'ms'); return r; }).catch(e => { console.error('[Outline] GLM error:', e.message); throw e; }),
       ]);
       const rawContent = typeof fastest === 'string' ? fastest : (fastest as any)?.content || String(fastest);
       parsed = tryParseJson(rawContent);
