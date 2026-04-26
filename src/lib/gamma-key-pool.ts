@@ -13,7 +13,7 @@ interface KeyInfo {
 // Key池配置
 const KEY_POOL: KeyInfo[] = [
   {
-    key: 'sk-gamma-i1Sy5rLFU0yC6WqMnaLHLgDb7qD2rAwwphpAerM9UE',
+    key: 'sk-gamma-aN5tVoqv26bND6vl7eIfaNzY5ffx20725LbgEnlSw',
     label: '主key',
     remaining: 3976,
     lastUsed: new Date(),
@@ -21,7 +21,7 @@ const KEY_POOL: KeyInfo[] = [
     failCount: 0,
   },
   {
-    key: 'sk-gamma-JmZlUGPRpmtw8VVNIoaEXUSQyyNAmWCWovc9otKdTtI',
+    key: 'sk-gamma-T6liPnfuBuch5oPfgdqDkU7cfcwS29IAv6M2QYBRmr8',
     label: '备用1',
     remaining: 3967,
     lastUsed: new Date(),
@@ -29,7 +29,7 @@ const KEY_POOL: KeyInfo[] = [
     failCount: 0,
   },
   {
-    key: 'sk-gamma-AtvnyrrCOWLBsPNmeX12G5byda32YBrmL3X0usQU4',
+    key: 'sk-gamma-cknOnrWaGzmJ6C8ieRIr1VAKIFz81kFOJnCOqV2oNU',
     label: '备用2',
     remaining: 3967,
     lastUsed: new Date(),
