@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
 import { selectBestKey, updateKeyBalance, recordKeyFailure } from '@/lib/gamma-key-pool';
+import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -155,8 +156,12 @@ export async function POST(request: NextRequest) {
     const apiKey = selectedKey.key;
     console.log('[Gamma Direct] 使用Key:', selectedKey.label, '| 余额:', selectedKey.remaining);
 
-    // 🚨 V8.6: finalThemeId 需要提前定义（深色主题判断在 imageOptions 构造时就需要）
-    const finalThemeId = themeId || SCENE_CONFIGS.biz.themeId;
+    // 🚨 V10.14: 使用主题映射转换themeId
+    const rawThemeId = themeId || SCENE_CONFIGS.biz.themeId;
+    const finalThemeId = getGammaThemeId(rawThemeId);
+    if (finalThemeId !== rawThemeId) {
+      console.warn(`[Gamma Direct] ThemeId mapped: "${rawThemeId}" → "${finalThemeId}"`);
+    }
 
     // 构建最终文本
     let finalInputText = inputText.trim();

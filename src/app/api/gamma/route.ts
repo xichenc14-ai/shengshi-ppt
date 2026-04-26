@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
 import { selectBestKey, updateKeyBalance, recordKeyFailure, getKeyPoolStatus, convertCreditsToUserPoints } from '@/lib/gamma-key-pool';
+import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -336,7 +337,12 @@ export async function POST(request: NextRequest) {
     console.log('[Gamma] 使用Key:', selectedKey.label, '| 余额:', selectedKey.remaining);
 
     const sceneConfig = SCENE_CONFIGS[scene] || SCENE_CONFIGS.biz;
-    const finalThemeId = themeId || sceneConfig.themeId;
+    // 🚨 V10.14: 使用主题映射转换themeId
+    const rawThemeId = themeId || sceneConfig.themeId;
+    const finalThemeId = getGammaThemeId(rawThemeId);
+    if (finalThemeId !== rawThemeId && rawThemeId !== sceneConfig.themeId) {
+      console.warn(`[Gamma] ThemeId mapped: "${rawThemeId}" → "${finalThemeId}"`);
+    }
     const finalTone = tone || sceneConfig.tone;
 
     // ===== 图片模式处理 =====

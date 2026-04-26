@@ -1,6 +1,6 @@
 {
   "name": "demo",
-  "version": "10.9.0",
+  "version": "10.14.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
