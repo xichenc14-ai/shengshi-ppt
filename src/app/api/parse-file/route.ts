@@ -78,11 +78,11 @@ async function parsePdf(buffer: Buffer): Promise<string> {
     const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
     const { getDocument, GlobalWorkerOptions } = pdfjsLib;
     
-    // 设置workerSrc — 使用data URL内联worker（避免CDN/file协议问题）
-    // @ts-ignore - Next.js支持?url导入
-    const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
-    GlobalWorkerOptions.workerSrc = workerUrl;
-    console.log('[Parse] pdfjs workerSrc set:', typeof workerUrl, String(workerUrl).substring(0, 50));
+    // 设置workerSrc — 使用Next.js webpack asset机制
+    // @ts-ignore
+    const workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href;
+    GlobalWorkerOptions.workerSrc = workerSrc;
+    console.log('[Parse] pdfjs workerSrc:', workerSrc?.substring(0, 80));
     
     const loadingTask = getDocument({
       data: new Uint8Array(buffer),
