@@ -3,13 +3,50 @@ import { getClientIP, rateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 
-// ===== PDF 解析：使用 pdf-parse v1.x（不依赖 web worker，Vercel serverless 兼容） =====
-
+/**
+ * 纯JS PDF文本提取（不依赖pdfjs-dist worker）
+ * 使用pdf-parse v1.x自带的老版pdfjs（disableWorker=true）
+ * 在Vercel serverless中通过dynamic import隔离
+ */
 async function parsePdf(buffer: Buffer): Promise<string> {
-  // pdf-parse v1.x 内部使用 pdfjs-dist 的纯 JS 模式，无需 worker
-  const pdfParse = require('pdf-parse');
-  const result = await pdfParse(buffer);
-  return (result.text || '').trim();
+  try {
+    // 动态import pdf-parse，避免build时打包pdfjs-dist
+    const pdfParse = (await import('pdf-parse')).default;
+    const result = await pdfParse(buffer);
+    return (result.text || '').trim();
+  } catch (e: any) {
+    console.error('[Parse] pdf-parse失败:', e.message);
+    // fallback: 尝试直接用pdfjs-dist legacy（如果存在）
+    try {
+      const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      // 全局polyfill
+      if (typeof globalThis !== 'undefined' && !(globalThis as any).DOMMatrix) {
+        (globalThis as any).DOMMatrix = class {
+          a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+          constructor() {}
+          scale() { return this; }
+          translate() { return this; }
+          rotate() { return this; }
+          multiply() { return this; }
+          inverse() { return this; }
+          transformPoint() { return { x: 0, y: 0 }; }
+          setMatrixValue() { return this; }
+        };
+      }
+      const doc = await getDocument({ data: new Uint8Array(buffer), useSystemFonts: true }).promise;
+      let text = '';
+      for (let i = 1; i <= doc.numPages; i++) {
+        const page = await doc.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items.map((item: any) => item.str).join(' ');
+        text += pageText + '\n\n';
+      }
+      return text.trim();
+    } catch (e2: any) {
+      console.error('[Parse] pdfjs-dist legacy也失败:', e2.message);
+      throw new Error('PDF解析失败: ' + e2.message);
+    }
+  }
 }
 
 // ===== 主处理函数 =====
@@ -22,6 +59,7 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
+
     if (!file) return NextResponse.json({ error: '未提供文件' }, { status: 400 });
 
     // 文件大小限制：50MB
@@ -45,22 +83,17 @@ export async function POST(request: NextRequest) {
         text = `[PDF: ${file.name}, 解析失败，请复制文字后直接粘贴]`;
       }
     }
-    // ===== CSV 纯文本（单独处理，避免 xlsx 库编码问题） =====
+    // ===== CSV 纯文本 =====
     else if (fileName.endsWith('.csv')) {
       try {
-        // 直接作为 UTF-8 文本读取，不走 xlsx 库
         const csvText = buffer.toString('utf-8');
-        if (csvText.trim()) {
-          text = csvText;
-        } else {
-          text = `[CSV: ${file.name}，内容为空]`;
-        }
+        text = csvText.trim() ? csvText : `[CSV: ${file.name}，内容为空]`;
       } catch (e: any) {
         console.error('[Parse] CSV 解析失败:', e.message);
         text = `[CSV: ${file.name}，解析失败]`;
       }
     }
-    // ===== Excel 解析（xlsx/xls） =====
+    // ===== Excel 解析 =====
     else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
       try {
         const XLSX = await import('xlsx');
@@ -69,9 +102,7 @@ export async function POST(request: NextRequest) {
         for (const sheetName of workbook.SheetNames) {
           const sheet = workbook.Sheets[sheetName];
           const csv = XLSX.utils.sheet_to_csv(sheet);
-          if (csv.trim()) {
-            sheets.push(`【${sheetName}】\n${csv}`);
-          }
+          if (csv.trim()) sheets.push(`【${sheetName}】\n${csv}`);
         }
         text = sheets.join('\n\n') || `[Excel文件: ${file.name}，无数据]`;
       } catch (e: any) {
@@ -79,80 +110,58 @@ export async function POST(request: NextRequest) {
         text = `[Excel文件: ${file.name}，解析失败]`;
       }
     }
-    // ===== Word 解析（mammoth 工业级方案） =====
+    // ===== Word 解析 =====
     else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
       try {
         const mammoth = await import('mammoth');
-        // mammoth.extractRawText 高保真提取纯文本，忽略复杂样式和 XML 嵌套
         const result = await mammoth.extractRawText({ buffer });
-        const plainText = result.value.trim();
-
-        if (plainText.length > 10) {
-          text = plainText;
-        } else {
-          text = `[Word: ${file.name}, 解析内容为空，可能是全图片文档，请手动复制文字]`;
-        }
+        text = result.value.trim().length > 10
+          ? result.value.trim()
+          : `[Word: ${file.name}, 解析内容为空，可能是全图片文档]`;
       } catch (e: any) {
-        // 必须打印真实错误，否则永远不知道线上为什么挂了
-        console.error(`[Parse] Word 解析发生致命错误 (${file.name}):`, e.message);
-
-        // 不要静默返回 200，明确抛出异常让前端感知并提示用户重试或换格式
         return NextResponse.json(
-          { error: `Word 文件解析失败，文档可能已损坏或格式不支持。请尝试保存为 PDF 或直接复制文字粘贴。(${e.message})` },
-          { status: 422 } // 422 Unprocessable Entity 是更语义化的状态码
+          { error: `Word解析失败: ${e.message}` },
+          { status: 422 }
         );
       }
     }
+    // ===== PPTX 解析 =====
     else if (fileName.endsWith('.pptx') || fileName.endsWith('.ppt')) {
       try {
         const JSZip = await import('jszip');
         const zip = await JSZip.loadAsync(buffer);
         const slides: string[] = [];
-
-        const slideFiles = Object.keys(zip.files).filter(f => f.startsWith('ppt/slides/slide') && f.endsWith('.xml'));
-        slideFiles.sort((a, b) => {
-          const numA = parseInt(a.match(/slide(\d+)/)?.[1] || '0');
-          const numB = parseInt(b.match(/slide(\d+)/)?.[1] || '0');
-          return numA - numB;
-        });
-
+        const slideFiles = Object.keys(zip.files)
+          .filter(f => f.startsWith('ppt/slides/slide') && f.endsWith('.xml'))
+          .sort((a, b) => {
+            const numA = parseInt(a.match(/slide(\d+)/)?.[1] || '0');
+            const numB = parseInt(b.match(/slide(\d+)/)?.[1] || '0');
+            return numA - numB;
+          });
         for (const slideFile of slideFiles) {
           const content = await zip.file(slideFile)?.async('text');
           if (content) {
             const texts = content.match(/<a:t>([^<]*)<\/a:t>/g) || [];
-            const slideText = texts.map(t => t.replace(/<a:t>|<\/a:t>/g, '').trim()).filter(Boolean).join('\n');
-            if (slideText) {
-              slides.push(slideText);
-            }
+            const slideText = texts.map(t => t.replace(/<\/?a:t>/g, '')).join(' ');
+            if (slideText.trim()) slides.push(slideText);
           }
         }
-
-        text = slides.length > 0 ? slides.join('\n\n---\n\n') : `[PPT: ${file.name}, 无文本内容]`;
+        text = slides.join('\n\n---\n\n') || `[PPT: ${file.name}, 无文本内容]`;
       } catch (e: any) {
-        console.error('[Parse] PPT解析失败:', e.message);
         text = `[PPT: ${file.name}，解析失败]`;
       }
     }
-    // ===== 纯文本文件解析（txt/md） =====
-    else if (fileName.endsWith('.txt') || fileName.endsWith('.md') || fileName.endsWith('.markdown')) {
-      try {
-        text = buffer.toString('utf-8');
-        if (!text.trim()) {
-          text = `[文件: ${file.name}，内容为空]`;
-        }
-      } catch (e: any) {
-        console.error('[Parse] 文本解析失败:', e.message);
-        text = `[文件: ${file.name}，解析失败]`;
-      }
+    // ===== 纯文本 =====
+    else if (fileName.endsWith('.txt') || fileName.endsWith('.md')) {
+      text = buffer.toString('utf-8').trim() || `[文件: ${file.name}，内容为空]`;
     }
     else {
       text = `[文件: ${file.name}]`;
     }
 
-    // 截断超长文本（提升至 80000 字，充分利用大模型长上下文能力）
     const MAX_CHARS = 80000;
     if (text.length > MAX_CHARS) {
-      text = text.substring(0, MAX_CHARS) + '\n\n[...为保证生成质量，内容已截断...]';
+      text = text.substring(0, MAX_CHARS) + '\n\n[...内容已截断...]';
     }
 
     return NextResponse.json({
