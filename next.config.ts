@@ -1,8 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // pdfjs-dist不打包进serverless（前端通过CDN加载）
-  serverExternalPackages: ['pdfjs-dist'],
   // 安全头部
   async headers() {
     return [
