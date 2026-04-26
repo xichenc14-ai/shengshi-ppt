@@ -12,12 +12,12 @@ export async function POST(req: NextRequest) {
   const systemPrompt = 'PPT大纲生成器。返回JSON:{title,slides:[{title,content:[],notes}]}';
   const userPrompt = `生成${slideCount}页PPT大纲：${inputText}`;
   
-  const apiKey = process.env.GLM_API_KEYS?.split(',')[0];
+  const apiKey = process.env.GLM_API_KEYS?.split(',').filter(Boolean)[0];
   if (!apiKey) {
     return NextResponse.json({ error: 'GLM API Key未配置' }, { status: 500 });
   }
 
-  console.log('[Outline-Simple] Calling GLM...');
+  console.log('[Outline-Simple] Using GLM key, len:', apiKey.length);
   const startTime = Date.now();
   
   try {
