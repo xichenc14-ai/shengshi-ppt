@@ -5,8 +5,8 @@ import { callMiniMax, callMiniMaxWithRetry } from '@/lib/minimax-client';
 import { callGLM } from '@/lib/glm-client';
 import { THEME_DATABASE } from '@/lib/theme-database';
 
-// 强制覆盖 Vercel 默认的 15s 超时限制，延长至 60 秒
-export const maxDuration = 60;
+// Edge Runtime: 30s timeout（vs Serverless 10s on Hobby plan）
+export const runtime = 'edge';
 
 // 有效主题ID集合（用于验证AI返回值）
 const THEME_DATABASE_IDS = new Set(THEME_DATABASE.map(t => t.id));
