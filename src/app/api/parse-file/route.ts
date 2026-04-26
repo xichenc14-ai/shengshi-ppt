@@ -144,8 +144,8 @@ export async function POST(request: NextRequest) {
           text = `[PDF: ${file.name}, ${buffer.length} bytes, 扫描件/无文字内容]`;
         }
       } catch (e1: any) {
-        console.error('[Parse] PDF解析失败:', e1.message);
-        text = `[PDF: ${file.name}, 解析失败，请复制文字后直接粘贴]`;
+        console.error('[Parse] PDF解析失败:', e1.message, e1.stack?.substring(0, 200));
+        text = `[PDF: ${file.name}, 解析失败(${e1.message})，请复制文字后直接粘贴]`;
       }
     } else if (fileName.endsWith('.csv')) {
       text = buffer.toString('utf-8').trim() || `[CSV: ${file.name}，内容为空]`;
