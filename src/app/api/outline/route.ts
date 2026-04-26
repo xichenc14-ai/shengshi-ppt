@@ -258,72 +258,23 @@ ${inputText}`
     // ===== 联网搜索（暂不需要，AI 知识库足够） =====
     const searchContext = '';
 
-    // ===== 调用 AI（带 fallback 链 + 重试机制 + JSON 验证） =====
-    // 核心：每个 AI 调用后立即验证 JSON，失败则继续下一个模型
+    // ===== 并发调用 AI（Vercel Hobby 10s限制，8秒超时） =====
+    const llmTimeout = 8000;
+    const results = await Promise.allSettled([
+      callKimi([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, timeoutMs: llmTimeout }),
+      callMiniMaxWithRetry([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, maxRetries: 1, timeoutMs: llmTimeout }),
+      callGLM(systemPrompt, baseUserPrompt, 'outline'),
+    ]);
     let parsed: any = null;
-    let aiError = '';
-
-    // 1. Kimi K2.5 (Primary) - 快速模式
-    if (!parsed) {
-      try {
-        const kimiResult = await callKimi(
-          [{ role: 'user', content: baseUserPrompt }],
-          { system: systemPrompt, maxTokens: 4096, temperature: 0.5, timeoutMs: 45000 }
-        );
-        const rawContent = typeof kimiResult === 'string' ? kimiResult : kimiResult?.content || '';
-        if (rawContent) {
-          parsed = tryParseJson(rawContent);
-          if (!parsed) {
-            aiError = 'Kimi: JSON 解析失败';
-            console.warn('[Outline] Kimi JSON parse failed');
-          }
-        }
-      } catch (e: any) {
-        aiError = `Kimi: ${e.message}`;
-        console.warn('[Outline] Kimi failed:', aiError);
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value) {
+        const raw = typeof r.value === 'string' ? r.value : (r.value as any)?.content || String(r.value);
+        parsed = tryParseJson(raw);
+        if (parsed) break;
       }
     }
-
-    // 2. MiniMax M2.7 (Fallback) - 30s 超时
     if (!parsed) {
-      try {
-        const rawContent = await callMiniMaxWithRetry(
-          [{ role: 'user', content: baseUserPrompt }],
-          { system: systemPrompt, maxTokens: 4096, temperature: 0.5, maxRetries: 2, timeoutMs: 30000 }
-        );
-        if (rawContent) {
-          parsed = tryParseJson(rawContent);
-          if (!parsed) {
-            aiError += ' | MiniMax: JSON 解析失败';
-            console.warn('[Outline] MiniMax JSON parse failed');
-          }
-        }
-      } catch (e2: any) {
-        aiError += ` | MiniMax: ${e2.message}`;
-        console.warn('[Outline] MiniMax failed:', e2.message);
-      }
-    }
-
-    // 3. GLM-5 (Last resort) - 30s 超时
-    if (!parsed) {
-      try {
-        const rawContent = await callGLM(systemPrompt, baseUserPrompt, 'outline');
-        if (rawContent) {
-          parsed = tryParseJson(rawContent);
-          if (!parsed) {
-            aiError += ' | GLM: JSON 解析失败';
-            console.warn('[Outline] GLM JSON parse failed');
-          }
-        }
-      } catch (e3: any) {
-        aiError += ` | GLM: ${e3.message}`;
-        console.warn('[Outline] GLM failed:', e3.message);
-      }
-    }
-
-    // 所有模型都失败了
-    if (!parsed) {
-      throw new Error(`大纲生成失败: ${aiError || '所有 AI 返回内容无法解析'}`);
+      throw new Error('大纲生成失败，请稍后重试');
     }
 
     // ===== 构建返回结果 =====
