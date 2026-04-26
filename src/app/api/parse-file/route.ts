@@ -3,45 +3,13 @@ import { getClientIP, rateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 
-// ===== DOMMatrix polyfill（pdfjs-dist在Node.js环境需要） =====
-if (typeof globalThis !== 'undefined' && !globalThis.DOMMatrix) {
-  (globalThis as any).DOMMatrix = class DOMMatrix {
-    a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
-    m11 = 1; m12 = 0; m13 = 0; m14 = 0; m21 = 0; m22 = 1; m23 = 0; m24 = 0;
-    m31 = 0; m32 = 0; m33 = 1; m34 = 0; m41 = 0; m42 = 0; m43 = 0; m44 = 1;
-    constructor(init?: any) {}
-    scale(sx: number, sy?: number) { return this; }
-    translate(tx: number, ty?: number) { return this; }
-    rotate(angle: number) { return this; }
-    multiply(other: any) { return this; }
-    inverse() { return new DOMMatrix(); }
-    transformPoint(point: any) { return { x: 0, y: 0, z: 0, w: 1 }; }
-    toMatrix() { return this; }
-    setMatrixValue(transformList: string) { return this; }
-  };
-}
+// ===== PDF 解析：使用 pdf-parse v1.x（不依赖 web worker，Vercel serverless 兼容） =====
 
-// ===== PDF 解析：优先使用 pdfjs-dist（Vercel serverless 兼容），fallback 到 pdf-parse =====
-
-async function parsePdfWithPdfJs(buffer: Buffer): Promise<string> {
-  // pdfjs-dist legacy (pure JS, Node.js 兼容)
-  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  // 标准字体数据 URL（用于纯 JS 模式）
-  const doc = await getDocument({
-    data: new Uint8Array(buffer),
-    standardFontDataUrl: '/standard_fonts/',
-  }).promise;
-  const parts: string[] = [];
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i);
-    const content = await page.getTextContent();
-    const pageText = content.items
-      .map((item: any) => item.str)
-      .join(' ')
-      .trim();
-    if (pageText) parts.push(pageText);
-  }
-  return parts.join('\n\n');
+async function parsePdf(buffer: Buffer): Promise<string> {
+  // pdf-parse v1.x 内部使用 pdfjs-dist 的纯 JS 模式，无需 worker
+  const pdfParse = require('pdf-parse');
+  const result = await pdfParse(buffer);
+  return (result.text || '').trim();
 }
 
 // ===== 主处理函数 =====
@@ -65,29 +33,16 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     let text = '';
 
-    // ===== PDF parsing（双引擎：pdfjs-dist 优先，pdf-parse fallback） =====
+    // ===== PDF parsing =====
     if (fileName.endsWith('.pdf')) {
-      let parsed = false;
-      let errorMsg = '';
-
-      // 引擎1：pdfjs-dist（推荐，纯 JS，serverless 友好）
       try {
-        text = await parsePdfWithPdfJs(buffer);
-        if (text.trim()) {
-          parsed = true;
-        } else {
-          // 空内容，可能是扫描件
+        text = await parsePdf(buffer);
+        if (!text) {
           text = `[PDF: ${file.name}, ${buffer.length} bytes, 扫描件/无文字内容，建议手动复制文字粘贴]`;
-          parsed = true;
         }
       } catch (e1: any) {
-        errorMsg = `pdfjs-dist: ${e1.message}`;
-        console.warn('[Parse] pdfjs-dist failed, trying pdf-parse:', errorMsg);
-
-          // pdfjs-dist 失败时直接返回解析失败提示，不做额外 fallback
-        console.error('[Parse] pdfjs-dist failed:', errorMsg);
+        console.error('[Parse] PDF解析失败:', e1.message);
         text = `[PDF: ${file.name}, 解析失败，请复制文字后直接粘贴]`;
-        parsed = true;
       }
     }
     // ===== CSV 纯文本（单独处理，避免 xlsx 库编码问题） =====
