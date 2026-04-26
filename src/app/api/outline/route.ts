@@ -5,8 +5,8 @@ import { callMiniMax, callMiniMaxWithRetry } from '@/lib/minimax-client';
 import { callGLM } from '@/lib/glm-client';
 import { THEME_DATABASE } from '@/lib/theme-database';
 
-// Edge Runtime: 30s timeout（vs Serverless 10s on Hobby plan）
-export const runtime = 'edge';
+// Serverless Runtime（v10.9在此模式下成功）
+export const runtime = 'nodejs';
 
 // 有效主题ID集合（用于验证AI返回值）
 const THEME_DATABASE_IDS = new Set(THEME_DATABASE.map(t => t.id));
@@ -258,28 +258,72 @@ ${inputText}`
     // ===== 联网搜索（暂不需要，AI 知识库足够） =====
     const searchContext = '';
 
-    // ===== 并发调用 AI（Edge Runtime 30s，设24s timeout） =====
-    // Promise.any: 任意一个成功就返回，忽略其他失败
+    // ===== 调用 AI（带 fallback 链 + 重试机制 + JSON 验证） =====
+    // 核心：每个 AI 调用后立即验证 JSON，失败则继续下一个模型
     let parsed: any = null;
     let aiError = '';
-    const startTime = Date.now();
-    try {
-      console.log('[Outline] Starting LLM calls...');
-      const fastest = await Promise.any([
-        callKimi([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, timeoutMs: 29000 }).then(r => { console.log('[Outline] Kimi responded in', Date.now() - startTime, 'ms'); return r; }).catch(e => { console.error('[Outline] Kimi error:', e.message); throw e; }),
-        callMiniMaxWithRetry([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, maxRetries: 0, timeoutMs: 29000 }).then(r => { console.log('[Outline] MiniMax responded in', Date.now() - startTime, 'ms'); return r; }).catch(e => { console.error('[Outline] MiniMax error:', e.message); throw e; }),
-        callGLM(systemPrompt, baseUserPrompt, 'outline', 1, 29000).then(r => { console.log('[Outline] GLM responded in', Date.now() - startTime, 'ms'); return r; }).catch(e => { console.error('[Outline] GLM error:', e.message); throw e; }),
-      ]);
-      const rawContent = typeof fastest === 'string' ? fastest : (fastest as any)?.content || String(fastest);
-      parsed = tryParseJson(rawContent);
-    } catch (e: any) {
-      aiError = e.message || 'All LLMs failed';
-      console.error('[Outline] All LLMs failed:', aiError);
+
+    // 1. Kimi K2.5 (Primary) - 快速模式
+    if (!parsed) {
+      try {
+        const kimiResult = await callKimi(
+          [{ role: 'user', content: baseUserPrompt }],
+          { system: systemPrompt, maxTokens: 4096, temperature: 0.5, timeoutMs: 45000 }
+        );
+        const rawContent = typeof kimiResult === 'string' ? kimiResult : kimiResult?.content || '';
+        if (rawContent) {
+          parsed = tryParseJson(rawContent);
+          if (!parsed) {
+            aiError = 'Kimi: JSON 解析失败';
+            console.warn('[Outline] Kimi JSON parse failed');
+          }
+        }
+      } catch (e: any) {
+        aiError = `Kimi: ${e.message}`;
+        console.warn('[Outline] Kimi failed:', aiError);
+      }
+    }
+
+    // 2. MiniMax M2.7 (Fallback) - 30s 超时
+    if (!parsed) {
+      try {
+        const rawContent = await callMiniMaxWithRetry(
+          [{ role: 'user', content: baseUserPrompt }],
+          { system: systemPrompt, maxTokens: 4096, temperature: 0.5, maxRetries: 2, timeoutMs: 30000 }
+        );
+        if (rawContent) {
+          parsed = tryParseJson(rawContent);
+          if (!parsed) {
+            aiError += ' | MiniMax: JSON 解析失败';
+            console.warn('[Outline] MiniMax JSON parse failed');
+          }
+        }
+      } catch (e2: any) {
+        aiError += ` | MiniMax: ${e2.message}`;
+        console.warn('[Outline] MiniMax failed:', e2.message);
+      }
+    }
+
+    // 3. GLM-5 (Last resort) - 30s 超时
+    if (!parsed) {
+      try {
+        const rawContent = await callGLM(systemPrompt, baseUserPrompt, 'outline');
+        if (rawContent) {
+          parsed = tryParseJson(rawContent);
+          if (!parsed) {
+            aiError += ' | GLM: JSON 解析失败';
+            console.warn('[Outline] GLM JSON parse failed');
+          }
+        }
+      } catch (e3: any) {
+        aiError += ` | GLM: ${e3.message}`;
+        console.warn('[Outline] GLM failed:', e3.message);
+      }
     }
 
     // 所有模型都失败了
     if (!parsed) {
-      throw new Error(`大纲生成失败: ${aiError || 'AI 超时，请重试'}`);
+      throw new Error(`大纲生成失败: ${aiError || '所有 AI 返回内容无法解析'}`);
     }
 
     // ===== 构建返回结果 =====
