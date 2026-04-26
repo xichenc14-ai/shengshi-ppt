@@ -48,7 +48,7 @@ export default function PDFPreview({ generationId, onClose }: PDFPreviewProps) {
       try {
         // 通过 API 获取 PDF
         setLoadingProgress(20);
-        const res = await fetch(`/api/proxy-pdf?generationId=${generationId}`);
+        const res = await fetch(`/api/export-pdf?generationId=${generationId}`);
         
         setLoadingProgress(40);
         
