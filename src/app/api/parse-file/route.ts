@@ -8,10 +8,10 @@ export const runtime = 'nodejs';
 async function parsePdfWithPdfJs(buffer: Buffer): Promise<string> {
   // pdfjs-dist legacy (pure JS, Node.js 兼容)
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  // 标准字体数据 URL（用于纯 JS 模式）
   const doc = await getDocument({
     data: new Uint8Array(buffer),
-    standardFontDataUrl: '/standard_fonts/',
+    // 不传 standardFontDataUrl，避免Vercel上字体加载失败导致整个解析中断
+    // pdfjs-dist 5.x 会在缺少字体时发出warning但仍能提取文本
   }).promise;
   const parts: string[] = [];
   for (let i = 1; i <= doc.numPages; i++) {
@@ -66,10 +66,23 @@ export async function POST(request: NextRequest) {
         errorMsg = `pdfjs-dist: ${e1.message}`;
         console.warn('[Parse] pdfjs-dist failed, trying pdf-parse:', errorMsg);
 
-          // pdfjs-dist 失败时直接返回解析失败提示，不做额外 fallback
-        console.error('[Parse] pdfjs-dist failed:', errorMsg);
-        text = `[PDF: ${file.name}, 解析失败，请复制文字后直接粘贴]`;
-        parsed = true;
+        // 引擎2：pdf-parse fallback
+        try {
+          const pdfParse = await import('pdf-parse');
+          const pdfData = await (pdfParse as any).default(buffer);
+          text = pdfData.text;
+          if (text.trim()) {
+            console.log('[Parse] pdf-parse fallback succeeded');
+            parsed = true;
+          } else {
+            text = `[PDF: ${file.name}, ${buffer.length} bytes, 扫描件/无文字内容，建议手动复制文字粘贴]`;
+            parsed = true;
+          }
+        } catch (e2: any) {
+          console.error('[Parse] Both engines failed:', e2.message);
+          text = `[PDF: ${file.name}, 解析失败，请复制文字后直接粘贴]`;
+          parsed = true;
+        }
       }
     }
     // ===== CSV 纯文本（单独处理，避免 xlsx 库编码问题） =====
