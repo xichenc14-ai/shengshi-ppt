@@ -119,7 +119,8 @@ export default function PDFPreview({ generationId, onClose }: PDFPreviewProps) {
       await page.render({
         canvasContext: context!,
         viewport: viewport,
-      }).promise;
+        canvas: canvas,
+      } as any).promise;
 
     } catch (err) {
       console.error('[PDFPreview] 渲染失败:', err);
