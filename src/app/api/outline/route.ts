@@ -258,28 +258,26 @@ ${inputText}`
     // ===== 联网搜索（暂不需要，AI 知识库足够） =====
     const searchContext = '';
 
-    // ===== 并发调用 AI，用Promise.any（谁先返回用谁） =====
-    // Vercel Hobby 10s限制，设9秒abort兜底
-    const ac = new AbortController();
-    const hardTimeout = setTimeout(() => ac.abort(), 9000);
+    // ===== 并发调用 AI（Edge Runtime 30s，设24s timeout） =====
+    // Promise.any: 任意一个成功就返回，忽略其他失败
     let parsed: any = null;
+    let aiError = '';
     try {
-      // Promise.any: 任意一个成功就返回，忽略其他失败
       const fastest = await Promise.any([
-        callKimi([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, timeoutMs: 8500 }),
-        callMiniMaxWithRetry([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, maxRetries: 0, timeoutMs: 8500 }),
-        callGLM(systemPrompt, baseUserPrompt, 'outline', 1, 8500),
+        callKimi([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, timeoutMs: 24000 }),
+        callMiniMaxWithRetry([{ role: 'user', content: baseUserPrompt }], { system: systemPrompt, maxTokens: 2048, temperature: 0.5, maxRetries: 0, timeoutMs: 24000 }),
+        callGLM(systemPrompt, baseUserPrompt, 'outline', 1, 24000),
       ]);
-      const raw = typeof fastest === 'string' ? fastest : (fastest as any)?.content || String(fastest);
-      parsed = tryParseJson(raw);
+      const rawContent = typeof fastest === 'string' ? fastest : (fastest as any)?.content || String(fastest);
+      parsed = tryParseJson(rawContent);
     } catch (e: any) {
-      // Promise.any全部reject → 所有LLM都超时/失败
-      console.error('[Outline] All LLMs failed:', e.message);
-    } finally {
-      clearTimeout(hardTimeout);
+      aiError = e.message || 'All LLMs failed';
+      console.error('[Outline] All LLMs failed:', aiError);
     }
+
+    // 所有模型都失败了
     if (!parsed) {
-      throw new Error('大纲生成超时，请稍后重试');
+      throw new Error(`大纲生成失败: ${aiError || 'AI 超时，请重试'}`);
     }
 
     // ===== 构建返回结果 =====
