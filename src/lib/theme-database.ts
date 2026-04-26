@@ -8,6 +8,8 @@ export interface ThemeData {
   emoji: string;
   style: string;
   scenes: string[];
+  _deprecated?: boolean;  // v10.15: 标记已废弃的主题
+  _replacedBy?: string;   // v10.15: 替换为哪个主题
 }
 
 export const THEME_DATABASE: ThemeData[] = [
