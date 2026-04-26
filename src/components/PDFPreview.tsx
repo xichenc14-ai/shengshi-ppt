@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// 设置 PDF.js worker
-// 使用 CDN 加载 worker，避免打包问题
+// 设置 PDF.js worker（仅客户端）
 if (typeof window !== 'undefined') {
   pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 }
@@ -26,7 +26,7 @@ interface PDFPreviewProps {
  */
 export default function PDFPreview({ generationId, onClose }: PDFPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [scale, setScale] = useState(1.5);
@@ -103,7 +103,7 @@ export default function PDFPreview({ generationId, onClose }: PDFPreviewProps) {
   }, [generationId]);
 
   // 渲染指定页
-  const renderPage = useCallback(async (pdf: pdfjsLib.PDFDocumentProxy, pageNum: number, renderScale: number) => {
+  const renderPage = useCallback(async (pdf: PDFDocumentProxy, pageNum: number, renderScale: number) => {
     if (!canvasRef.current) return;
 
     try {
