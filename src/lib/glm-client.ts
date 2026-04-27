@@ -22,7 +22,7 @@ type TaskType = 'outline' | 'search_judge' | 'simple';
 
 const MODEL_MAP: Record<TaskType, { model: string; maxTokens: number; temperature: number }> = {
   // 大纲生成：用 turbo，速度快质量好
-  outline: { model: 'glm-5', maxTokens: 2048, temperature: 0.7 },
+  outline: { model: 'glm-5', maxTokens: 1500, temperature: 0.7 },  // 原2048
   // AI 搜索判断：用 glm-5，最快，不需要深度推理
   search_judge: { model: 'glm-5', maxTokens: 2048, temperature: 0.3 },
   // 简单任务：用 glm-5
