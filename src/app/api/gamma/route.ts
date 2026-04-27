@@ -419,7 +419,9 @@ export async function POST(request: NextRequest) {
         dimensions: '16x9',
       },
       // 🚨 V8.6: 不传 slides 参数（Gamma API 不接受此参数，可能导致 400）
-    };
+      // P0 Fix: 明确删除 slides 字段，确保不被发送到 Gamma
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    }; delete (gammaPayload as any).slides;
 
     // 🔍 DEBUG: log key fields
     console.log('[Gamma] textMode: preserve (fixed) | imageOptions:', JSON.stringify(finalImageOptions), '| imageMode:', imageMode);

@@ -355,7 +355,9 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       // 🚨 V6.1 修复：themeId/tone 优先从 outlineResult 取
       const finalThemeId = (directTheme !== 'auto' ? directTheme : outlineResult.themeId) || 'consultant';
       const finalTone = directTone || outlineResult.tone || 'professional';
-      const gammaRequestBody = { inputText: md, textMode: 'preserve', format: 'presentation', numCards: editedSlides.length, exportAs: 'pptx', themeId: finalThemeId, tone: finalTone, imageMode: directImgMode, slides: editedSlides, visualMetaphor };
+      // P0 Fix: 删除 slides 字段，Gamma API 不接受此参数，会导致 400 错误
+      // P1 Fix: 当 genMode='condense' 时，Gamma 只支持 preserve 模式（已硬编码）
+      const gammaRequestBody = { inputText: md, textMode: 'preserve', format: 'presentation', numCards: editedSlides.length, exportAs: 'pptx', themeId: finalThemeId, tone: finalTone, imageMode: directImgMode, visualMetaphor };
 
       const gRes = await fetch('/api/gamma', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
