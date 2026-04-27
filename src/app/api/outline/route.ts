@@ -266,7 +266,24 @@ ${inputText}`
     let parsed: any = null;
     let aiError = '';
 
-    // 1. MiniMax M2.7 (Primary) - 8s 超时，快速失败给 fallback
+    // 1. GLM-5 (Primary) - 15s 超时，Vercel兼容性好
+    if (!parsed) {
+      try {
+        const rawContent = await callGLM(systemPrompt, baseUserPrompt, 'outline', 3, 15000);
+        if (rawContent) {
+          parsed = tryParseJson(rawContent);
+          if (!parsed) {
+            aiError = 'GLM: JSON 解析失败';
+            console.warn('[Outline] GLM JSON parse failed');
+          }
+        }
+      } catch (e: any) {
+        aiError = `GLM: ${e.message}`;
+        console.warn('[Outline] GLM failed:', aiError);
+      }
+    }
+
+    // 2. MiniMax M2.7 (Fallback 1) - 8s 超时，快速失败
     if (!parsed) {
       try {
         const rawContent = await callMiniMaxWithRetry(
@@ -276,22 +293,22 @@ ${inputText}`
         if (rawContent) {
           parsed = tryParseJson(rawContent);
           if (!parsed) {
-            aiError = 'MiniMax: JSON 解析失败';
+            aiError += ' | MiniMax: JSON 解析失败';
             console.warn('[Outline] MiniMax JSON parse failed');
           }
         }
-      } catch (e: any) {
-        aiError = `MiniMax: ${e.message}`;
+      } catch (e2: any) {
+        aiError += ` | MiniMax: ${e2.message}`;
         console.warn('[Outline] MiniMax failed:', aiError);
       }
     }
 
-    // 2. Kimi K2.5 (Fallback) - 45s 超时
+    // 3. Kimi K2.5 (Last resort) - 30s 超时
     if (!parsed) {
       try {
         const kimiResult = await callKimi(
           [{ role: 'user', content: baseUserPrompt }],
-          { system: systemPrompt, maxTokens: 4096, temperature: 0.5, timeoutMs: 45000 }
+          { system: systemPrompt, maxTokens: 4096, temperature: 0.5, timeoutMs: 30000 }
         );
         const rawContent = typeof kimiResult === 'string' ? kimiResult : kimiResult?.content || '';
         if (rawContent) {
@@ -301,26 +318,9 @@ ${inputText}`
             console.warn('[Outline] Kimi JSON parse failed');
           }
         }
-      } catch (e2: any) {
-        aiError += ` | Kimi: ${e2.message}`;
-        console.warn('[Outline] Kimi failed:', e2.message);
-      }
-    }
-
-    // 3. GLM-5 (Last resort) - 30s 超时
-    if (!parsed) {
-      try {
-        const rawContent = await callGLM(systemPrompt, baseUserPrompt, 'outline');
-        if (rawContent) {
-          parsed = tryParseJson(rawContent);
-          if (!parsed) {
-            aiError += ' | GLM: JSON 解析失败';
-            console.warn('[Outline] GLM JSON parse failed');
-          }
-        }
       } catch (e3: any) {
-        aiError += ` | GLM: ${e3.message}`;
-        console.warn('[Outline] GLM failed:', e3.message);
+        aiError += ` | Kimi: ${e3.message}`;
+        console.warn('[Outline] Kimi failed:', e3.message);
       }
     }
 
