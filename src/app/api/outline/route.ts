@@ -8,6 +8,9 @@ import { THEME_DATABASE } from '@/lib/theme-database';
 // Serverless Runtime（v10.9在此模式下成功）
 export const runtime = 'nodejs';
 
+// 延长超时至60秒（Vercel Hobby支持maxDuration=60）
+export const maxDuration = 60;
+
 // 有效主题ID集合（用于验证AI返回值）
 const THEME_DATABASE_IDS = new Set(THEME_DATABASE.map(t => t.id));
 
