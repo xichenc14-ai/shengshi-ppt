@@ -266,7 +266,27 @@ ${inputText}`
     let parsed: any = null;
     let aiError = '';
 
-    // 1. Kimi K2.5 (Primary) - 快速模式
+    // 1. MiniMax M2.7 (Primary) - 8s 超时，快速失败给 fallback
+    if (!parsed) {
+      try {
+        const rawContent = await callMiniMaxWithRetry(
+          [{ role: 'user', content: baseUserPrompt }],
+          { system: systemPrompt, maxTokens: 4096, temperature: 0.5, maxRetries: 2, timeoutMs: 8000 }
+        );
+        if (rawContent) {
+          parsed = tryParseJson(rawContent);
+          if (!parsed) {
+            aiError = 'MiniMax: JSON 解析失败';
+            console.warn('[Outline] MiniMax JSON parse failed');
+          }
+        }
+      } catch (e: any) {
+        aiError = `MiniMax: ${e.message}`;
+        console.warn('[Outline] MiniMax failed:', aiError);
+      }
+    }
+
+    // 2. Kimi K2.5 (Fallback) - 45s 超时
     if (!parsed) {
       try {
         const kimiResult = await callKimi(
@@ -277,33 +297,13 @@ ${inputText}`
         if (rawContent) {
           parsed = tryParseJson(rawContent);
           if (!parsed) {
-            aiError = 'Kimi: JSON 解析失败';
+            aiError += ' | Kimi: JSON 解析失败';
             console.warn('[Outline] Kimi JSON parse failed');
           }
         }
-      } catch (e: any) {
-        aiError = `Kimi: ${e.message}`;
-        console.warn('[Outline] Kimi failed:', aiError);
-      }
-    }
-
-    // 2. MiniMax M2.7 (Fallback) - 30s 超时
-    if (!parsed) {
-      try {
-        const rawContent = await callMiniMaxWithRetry(
-          [{ role: 'user', content: baseUserPrompt }],
-          { system: systemPrompt, maxTokens: 4096, temperature: 0.5, maxRetries: 2, timeoutMs: 30000 }
-        );
-        if (rawContent) {
-          parsed = tryParseJson(rawContent);
-          if (!parsed) {
-            aiError += ' | MiniMax: JSON 解析失败';
-            console.warn('[Outline] MiniMax JSON parse failed');
-          }
-        }
       } catch (e2: any) {
-        aiError += ` | MiniMax: ${e2.message}`;
-        console.warn('[Outline] MiniMax failed:', e2.message);
+        aiError += ` | Kimi: ${e2.message}`;
+        console.warn('[Outline] Kimi failed:', e2.message);
       }
     }
 
