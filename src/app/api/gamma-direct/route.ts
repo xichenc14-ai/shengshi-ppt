@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
       // 原因：gamma-direct 的 inputText 已经是前端处理好的 markdown
       // （可能来自 buildPreserveMarkdown 或用户手动输入的结构化内容）
       imageSource = 'webFreeToUseCommercially',
-      exportAs = 'pdf',
+      exportAs = 'pptx',
       visualMetaphor,
     } = body;
 
