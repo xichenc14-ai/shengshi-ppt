@@ -28,7 +28,7 @@ export async function GET() {
         workspaceInfo = await meRes.json();
       }
     } catch (e) {
-      console.warn('[gamma-balance] /me fetch failed:', e.message);
+      console.warn('[gamma-balance] /me fetch failed:', e instanceof Error ? e.message : String(e));
     }
 
     // 2. 获取 key pool 追踪的余额（基于历史生成响应，非实时）
