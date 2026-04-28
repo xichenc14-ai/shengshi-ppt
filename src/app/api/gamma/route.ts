@@ -287,6 +287,12 @@ export async function POST(request: NextRequest) {
 
     // 支持结构化 slides 数据或纯文本 inputText
     let finalInputText: string;
+    // 🚨 Bug fix: reject whitespace-only input BEFORE any processing
+    // 否则 "   " 会变成 "# \n\n---\n" 并通过后续验证
+    if (!inputText || typeof inputText !== 'string' || !inputText.trim()) {
+      return NextResponse.json({ error: '请输入内容' }, { status: 400 });
+    }
+
     if (inputText && inputText.trim()) {
       // 优先使用 inputText(已由前端 buildMdV2 处理过的高质量 markdown)
       finalInputText = inputText.trim();
