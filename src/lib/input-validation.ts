@@ -122,7 +122,7 @@ export function validateText(topic: string, fileContents: string[]): ValidationR
   }
 
   if (topic.trim().length === 0 && fileContents.length === 0) {
-    errors.push('请输入PPT主题或上传文件');
+    errors.push('请输入PPT主题或上传文件，AI将自动为你生成精美PPT');
   }
 
   return {

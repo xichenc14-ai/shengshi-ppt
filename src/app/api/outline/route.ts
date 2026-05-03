@@ -4,6 +4,8 @@ import { callKimi, callKimiWithSearch } from '@/lib/kimi-client';
 import { callMiniMax, callMiniMaxWithRetry } from '@/lib/minimax-client';
 import { callGLM } from '@/lib/glm-client';
 import { THEME_DATABASE } from '@/lib/theme-database';
+import { normalizeUserInput, parseMarkdownOutline, generateMinimalOutline } from '@/lib/ppt-param-adapter';
+import type { OutlineSlide, OutlineMeta, OutlineResponse } from '@/lib/types/outline-response';
 
 // Serverless Runtime（v10.9在此模式下成功）
 export const runtime = 'nodejs';
@@ -39,7 +41,7 @@ const SCENE_THEME_MAP: Record<string, { themeId: string; tone: string; imageMode
   '通用': { themeId: 'consultant', tone: 'professional', imageMode: 'theme-img' },
 };
 
-// ===== JSON 解析函数（带多层修复） =====
+// ===== JSON 解析函数（带多层修复 + Markdown fallback） =====
 function tryParseJson(rawContent: string): any | null {
   if (!rawContent || typeof rawContent !== 'string') return null;
 
@@ -94,6 +96,23 @@ function tryParseJson(rawContent: string): any | null {
     }
   }
 
+  // ===== D2: Markdown fallback =====
+  // 所有 JSON 解析失败后，尝试从 Markdown 中提取结构
+  console.log('[Outline] JSON parse failed, trying Markdown fallback...');
+  const mdParsed = parseMarkdownOutline(cleaned);
+  if (mdParsed && mdParsed.slides.length > 0) {
+    console.log('[Outline] Markdown fallback succeeded, extracted', mdParsed.slides.length, 'slides');
+    return {
+      title: mdParsed.title,
+      slides: mdParsed.slides.map(s => ({
+        title: s.title,
+        content: s.bullets,
+        notes: '',
+      })),
+      _fromMarkdown: true,
+    };
+  }
+
   // 所有修复尝试都失败
   console.error('[Outline] JSON parse error. Raw (first 500):', cleaned.substring(0, 500));
   console.error('[Outline] Raw (last 200):', cleaned.substring(cleaned.length - 200));
@@ -104,14 +123,18 @@ function tryParseJson(rawContent: string): any | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const { inputText, slideCount, textMode = 'generate', auto = false } = await request.json();
+    const rawBody = await request.json();
+    
+    // ===== D2: 接入 normalizeUserInput =====
+    const normalized = normalizeUserInput(rawBody);
+    const { topic, pageCount, contentStrategy, style, purpose, themeId: rawThemeId, imageMode: rawImageMode, auto } = normalized;
 
-    if (!inputText || inputText.trim().length === 0) {
+    if (!topic || topic.trim().length === 0) {
       return NextResponse.json({ error: '请输入内容' }, { status: 400 });
     }
 
     // V7 输入校验：只限制上限，不限制下限（"咖啡" "5页" 都要能处理）
-    if (inputText.length > 10000) {
+    if (topic.length > 10000) {
       return NextResponse.json({ error: '内容过长，请精简到10000字以内' }, { status: 400 });
     }
 
@@ -122,11 +145,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '请求过于频繁，请稍后再试' }, { status: 429 });
     }
 
-    const numCards = slideCount || 10;
+    const numCards = pageCount;
 
     // ===== 省心模式智能判断：分析输入类型 =====
-    const smartModeAnalysis = analyzeInputType(inputText);
-    let finalTextMode = textMode;
+    const smartModeAnalysis = analyzeInputType(topic);
+    let finalTextMode = contentStrategy;
 
     // 如果是 auto 模式（省心模式），根据分析结果自动选择 textMode
     if (auto) {
@@ -255,8 +278,8 @@ export async function POST(request: NextRequest) {
 请根据以上分析，${smartModeAnalysis.processInstruction}
 
 素材内容：
-${inputText}`
-      : `请根据以下内容生成PPT大纲（${numCards}页）：\n\n${inputText}`;
+${topic}`
+      : `请根据以下内容生成PPT大纲（${numCards}页）：\n\n${topic}`;
 
     // ===== 联网搜索（暂不需要，AI 知识库足够） =====
     const searchContext = '';
@@ -324,35 +347,94 @@ ${inputText}`
       }
     }
 
-    // 所有模型都失败了
+    // 所有模型都失败了 - D2: 使用最小可用大纲 fallback
     if (!parsed) {
-      throw new Error(`大纲生成失败: ${aiError || '所有 AI 返回内容无法解析'}`);
+      console.warn('[Outline] All AI failed, using minimal outline fallback');
+      const fallback = generateMinimalOutline(topic, numCards);
+      parsed = {
+        title: fallback.title,
+        slides: fallback.slides.map(s => ({
+          title: s.title,
+          content: s.bullets,
+          notes: s.speakerNotes,
+        })),
+        _fallback: true,
+      };
     }
 
-    // ===== 构建返回结果 =====
+    // ===== D2: 空/异常响应 Fallback =====
+    if (!parsed.slides || !Array.isArray(parsed.slides) || parsed.slides.length === 0) {
+      console.warn('[Outline] Empty or invalid slides, using minimal outline fallback');
+      const fallback = generateMinimalOutline(topic, numCards);
+      parsed = {
+        title: parsed.title || fallback.title,
+        slides: fallback.slides.map(s => ({
+          title: s.title,
+          content: s.bullets,
+          notes: s.speakerNotes,
+        })),
+        _fallback: true,
+      };
+    }
+
+    // ===== 构建返回结果（D2: 添加 meta 字段） =====
     const fullText = `${parsed.title || ''} ${(parsed.slides || []).map((s: any) => s.title).join(' ')}`.toLowerCase();
     const detectedScene = parsed.scene || detectScene(fullText);
     const sceneConfig = SCENE_THEME_MAP[detectedScene] || SCENE_THEME_MAP['通用'];
 
     // 验证 AI 返回的 themeId 是否有效，无效则用场景默认
-    const aiThemeId = parsed.themeId;
+    const aiThemeId = parsed.themeId || rawThemeId;
     const validThemeId = aiThemeId && THEME_DATABASE_IDS.has(aiThemeId) ? aiThemeId : sceneConfig.themeId;
 
-    const slides = (parsed.slides || []).map((s: any, i: number) => ({
-      id: Math.random().toString(36).substring(2, 9),
+    // D2: 构建 canonical slides（带 index/bullets 字段）
+    const slides: OutlineSlide[] = (parsed.slides || []).map((s: any, i: number) => ({
+      index: i + 1,
       title: s.title || `第${i + 1}页`,
-      content: s.content || [],
-      notes: s.notes,
+      bullets: s.content || s.bullets || [],
+      content: s.content || s.bullets || [], // 兼容旧字段
+      speakerNotes: s.notes || s.speakerNotes,
+      notes: s.notes || s.speakerNotes, // 兼容旧字段
     }));
 
-    return NextResponse.json({
-      title: parsed.title || 'PPT',
-      slides,
+    // D2: 构建 meta 字段
+    const meta: OutlineMeta = {
+      topic,
+      pageCount: slides.length,
+      style: parsed.tone || style || sceneConfig.tone,
+      purpose: detectedScene || purpose,
+      imageMode: parsed.imageMode || rawImageMode || sceneConfig.imageMode,
+      contentStrategy: finalTextMode,
+    };
+
+    // D2: 构建前端兼容的 slides（带 id 字段）
+    const frontendSlides = slides.map((s, i) => ({
+      id: Math.random().toString(36).substring(2, 9),
+      index: s.index ?? i + 1,
+      title: s.title,
+      bullets: s.bullets,
+      content: s.bullets,
+      speakerNotes: s.speakerNotes,
+      notes: s.speakerNotes,
+    }));
+
+    // D2: 返回 canonical outline（title + slides[] + meta）
+    const response: OutlineResponse & { slides: any[] } = {
+      title: parsed.title || topic || 'PPT',
+      slides: frontendSlides,
+      meta,
+      // 兼容旧字段
       themeId: validThemeId,
       tone: parsed.tone || sceneConfig.tone,
       imageMode: parsed.imageMode || sceneConfig.imageMode,
       scene: detectedScene,
-    });
+    };
+
+    // D2: 如果是 fallback，添加标记
+    if (parsed._fallback || parsed._fromMarkdown) {
+      response._fallback = true;
+    }
+
+    return NextResponse.json(response);
   } catch (error: any) {
     console.error('[Outline] Error:', error);
     return NextResponse.json({ error: error.message || '大纲生成失败' }, { status: 500 });

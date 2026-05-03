@@ -7,6 +7,10 @@ const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/53
 /**
  * 预览信息 API - v10.14.1
  * 
+ * ⚠️ DEPRECATED - D4
+ * 请使用新的 /api/preview 路由，返回规范化的 PreviewInfo 结构
+ * 此路由保留用于向后兼容，将在后续版本移除
+ * 
  * 功能：查询 Gamma 生成状态，返回 gammaUrl 供前端"在新标签页中查看"
  * 
  * 根因：Gamma API GET /generations/{id} 不返回 cards/previewUrl 字段

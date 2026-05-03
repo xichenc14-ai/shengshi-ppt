@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
 import { selectBestKey, updateKeyBalance, recordKeyFailure, getKeyPoolStatus, convertCreditsToUserPoints } from '@/lib/gamma-key-pool';
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
+import { normalizeUserInput, mapImageSource } from '@/lib/adapters/ppt-param-adapter';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -264,7 +265,7 @@ export async function POST(request: NextRequest) {
       // 原因：大纲已由 outline API 预处理，Gamma 只负责排版
       // 用户选的扩充/缩减/保持，只影响 outline API，不影响 Gamma
       format = 'presentation',
-      numCards = 8,
+      numCards,
       exportAs = 'pptx',
       themeId,
       scene = 'biz',
@@ -279,6 +280,10 @@ export async function POST(request: NextRequest) {
       cardSplit,
       textOptions,
     } = body;
+
+    // 🚨 D1: Normalize aliased fields → canonical PptUserInput
+    const normalized = normalizeUserInput(body as Record<string, unknown>);
+    const pageCount = normalized.pageCount ?? 8;
 
     // 🚨 V8.2 核心原则：Gamma API 固定使用 preserve 模式
     // 无论用户选什么模式（扩充/缩减/保持），Gamma 只接收 preserve
@@ -407,7 +412,6 @@ export async function POST(request: NextRequest) {
       inputText: finalInputText,
       textMode: 'preserve', // 固定值！Gamma只负责排版渲染
       format,
-      numCards,
       exportAs,
       themeId: finalThemeId,
       additionalInstructions: finalAdditionalInstructions,
@@ -428,6 +432,8 @@ export async function POST(request: NextRequest) {
       // P0 Fix: 明确删除 slides 字段，确保不被发送到 Gamma
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
     }; delete (gammaPayload as any).slides;
+    // 🚨 D1: Use canonical pageCount (aliased from numCards) in Gamma payload
+    gammaPayload.numCards = pageCount;
 
     // 🔍 DEBUG: log key fields
     console.log('[Gamma] textMode: preserve (fixed) | imageOptions:', JSON.stringify(finalImageOptions), '| imageMode:', imageMode);
@@ -464,10 +470,23 @@ export async function POST(request: NextRequest) {
       console.log('[Gamma] 积分扣除:', gammaData.credits.deducted, '| 剩余:', gammaData.credits.remaining);
     }
 
+    // 🚨 D3: Artifact contract — 规范化返回结构，包含 taskId + artifact + gamma meta
     return NextResponse.json({
       generationId,
+      taskId: generationId,
+      status: 'success',
       message: '生成任务已创建',
-      config: { themeId: finalThemeId, tone: finalTone, imageMode: finalImageOptions?.source || imageMode, numCards },
+      artifact: {
+        pollingUrl: `/api/gamma?id=${generationId}`,
+        gammaUrl: null, // 等轮询完成后才有
+      },
+      gamma: {
+        mode: 'smart',
+        contentStrategy: normalized.contentStrategy || 'auto',
+        pageCount,
+        themeId: finalThemeId,
+      },
+      config: { themeId: finalThemeId, tone: finalTone, imageMode: finalImageOptions?.source || imageMode, pageCount },
       credits: gammaData.credits, // 返回积分信息供前端使用
     });
   } catch (error: any) {
@@ -481,6 +500,16 @@ export async function POST(request: NextRequest) {
 
 // GET: 查询 Gamma 生成状态(前端轮询)
 export async function GET(request: NextRequest) {
+  // 🚨 D3 Fix Q6: 添加 rateLimit 保护（与 POST 一致）
+  const ip = getClientIP(request);
+  if (isIPBlocked(ip)) {
+    return NextResponse.json({ error: '请求受限' }, { status: 403 });
+  }
+  const { allowed } = rateLimit(`gamma_get:${ip}`, getRateLimitConfig('/api/gamma'));
+  if (!allowed) {
+    return NextResponse.json({ error: '查询过于频繁,请稍后再试' }, { status: 429 });
+  }
+
   try {
     // GET查询可以使用任意key（generationId不依赖key）
     const selectedKey = selectBestKey();

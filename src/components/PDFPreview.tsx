@@ -11,6 +11,8 @@ if (typeof window !== 'undefined') {
 
 interface PDFPreviewProps {
   generationId: string;
+  exportUrl?: string | null;  // D4: 可选的导出URL，用于格式检测
+  gammaUrl?: string | null;   // D4: 可选的Gamma链接，用于fallback
   onClose?: () => void;
 }
 
@@ -24,7 +26,7 @@ interface PDFPreviewProps {
  * - 加载进度提示
  * - 错误处理 + fallback提示
  */
-export default function PDFPreview({ generationId, onClose }: PDFPreviewProps) {
+export default function PDFPreview({ generationId, exportUrl, gammaUrl, onClose }: PDFPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -46,6 +48,14 @@ export default function PDFPreview({ generationId, onClose }: PDFPreviewProps) {
       setFallbackPptx(false);
 
       try {
+        // D4: 格式检测 - 如果exportUrl存在且不是PDF，直接提示下载PPTX
+        if (exportUrl && !exportUrl.toLowerCase().includes('.pdf')) {
+          setLoading(false);
+          setFallbackPptx(true);
+          setError('当前文件为PPTX格式，建议直接下载查看');
+          return;
+        }
+
         // 通过 API 获取 PDF
         setLoadingProgress(20);
         const res = await fetch(`/api/export-pdf?generationId=${generationId}`);
@@ -208,6 +218,26 @@ export default function PDFPreview({ generationId, onClose }: PDFPreviewProps) {
               <p className="text-sm text-orange-700">
                 💡 建议：下载PPTX文件后，用 Keynote/PowerPoint/WPS 打开即可预览
               </p>
+              <div className="flex gap-2 mt-3 justify-center">
+                <button
+                  onClick={() => {
+                    if (exportUrl) {
+                      window.open(exportUrl, '_blank');
+                    }
+                  }}
+                  className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors"
+                >
+                  下载 PPTX
+                </button>
+                {gammaUrl && (
+                  <button
+                    onClick={() => window.open(gammaUrl, '_blank')}
+                    className="px-4 py-2 bg-purple-500 text-white rounded-lg text-sm font-medium hover:bg-purple-600 transition-colors"
+                  >
+                    打开Gamma在线预览
+                  </button>
+                )}
+              </div>
             </div>
           )}
           

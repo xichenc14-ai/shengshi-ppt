@@ -1,28 +1,161 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { Presentation } from '@/lib/types';
 
-// AI生成PPT内容的API Route - 使用 GLM-5-turbo
-export async function POST(request: NextRequest) {
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
+
+// 套餐积分配置（与 payment/route.ts 保持一致）
+const BASE_CREDIT_PER_PAGE = 2;
+
+function calcCredits(numPages: number, imageSource: string, imageModel?: string, estimatedImages?: number): number {
+  let total = numPages * BASE_CREDIT_PER_PAGE;
+  if (imageSource === 'aiGenerated') {
+    const HIGH_MODELS = ['imagen-3-pro', 'flux-1-pro', 'ideogram-v3-turbo', 'luma-photon-1', 'leonardo-phoenix', 'flux-kontext-pro', 'imagen-4-pro', 'ideogram-v3', 'gemini-2.5-flash-image'];
+    const perImage = (imageModel && HIGH_MODELS.includes(imageModel)) ? 10 : 2;
+    const count = estimatedImages ?? Math.ceil(numPages / 2);
+    total += count * perImage;
+  }
+  return total;
+}
+
+/**
+ * 原子化扣积分（与 user/route.ts 的 deduct 逻辑一致）
+ */
+async function atomicDeductCredits(sb: NonNullable<ReturnType<typeof getSupabase>>, userId: string, amount: number, description: string): Promise<{ success: boolean; balance?: number; error?: string }> {
   try {
-    const { topic, slideCount = 8, style = 'professional' } = await request.json();
+    type DeductCreditsRpc = (
+      name: 'deduct_credits_atomic',
+      params: { p_user_id: string; p_amount: number; p_description: string }
+    ) => unknown;
+
+    const { data: rpcResult, error: rpcErr } = await ((sb.rpc as unknown) as DeductCreditsRpc)('deduct_credits_atomic', {
+      p_user_id: userId,
+      p_amount: amount,
+      p_description: description,
+    }) as { data: unknown; error: unknown };
+
+    if (!rpcErr) {
+      return { success: true, balance: (rpcResult as any)?.new_balance ?? undefined };
+    }
+  } catch {}
+
+  // Fallback: 乐观锁
+  const { data: current, error: qErr } = await sb.from('users').select('credits').eq('id', userId).single();
+  if (qErr || !current) return { success: false, error: '用户不存在' };
+  const currentCredits = Number(((current as { credits?: number | null }).credits ?? 0));
+  if (currentCredits < amount) return { success: false, error: '积分不足' };
+
+  const newBal = currentCredits - amount;
+  const usersTable = sb.from('users') as unknown as {
+    update: (values: { credits: number }) => {
+      eq: (column: string, value: unknown) => {
+        eq: (column: string, value: unknown) => Promise<{ error: unknown }>;
+      };
+    };
+  };
+  const { error: updErr } = await usersTable.update({ credits: newBal }).eq('id', userId).eq('credits', currentCredits);
+  if (updErr) return { success: false, error: '积分扣除失败' };
+
+  try {
+    const creditTransactionsTable = sb.from('credit_transactions') as unknown as {
+      insert: (values: {
+        user_id: string;
+        amount: number;
+        balance_after: number;
+        type: string;
+        description: string;
+      }) => Promise<{ error: unknown }>;
+    };
+    await creditTransactionsTable.insert({
+      user_id: userId, amount: -amount, balance_after: newBal,
+      type: 'generation', description,
+    });
+  } catch {}
+
+  return { success: true, balance: newBal };
+}
+
+/**
+ * 回滚积分（与 user/route.ts 的 rollback 逻辑一致）
+ */
+async function rollbackCredits(sb: NonNullable<ReturnType<typeof getSupabase>>, userId: string, amount: number, reason: string): Promise<void> {
+  const { data: current } = await sb.from('users').select('credits').eq('id', userId).single();
+  if (!current) return;
+  const rollbackCurrentCredits = Number(((current as { credits?: number | null }).credits ?? 0));
+  const newBal = rollbackCurrentCredits + amount;
+  const rollbackUsersTable = sb.from('users') as unknown as {
+    update: (values: { credits: number }) => {
+      eq: (column: string, value: unknown) => {
+        eq: (column: string, value: unknown) => Promise<{ error: unknown }>;
+      };
+    };
+  };
+  await rollbackUsersTable.update({ credits: newBal }).eq('id', userId).eq('credits', rollbackCurrentCredits);
+  try {
+    const rollbackTransactionsTable = sb.from('credit_transactions') as unknown as {
+      insert: (values: {
+        user_id: string;
+        amount: number;
+        balance_after: number;
+        type: string;
+        description: string;
+      }) => Promise<{ error: unknown }>;
+    };
+    await rollbackTransactionsTable.insert({
+      user_id: userId, amount, balance_after: newBal,
+      type: 'rollback', description: `回滚-${reason}-返还${amount}积分`,
+    });
+  } catch {}
+}
+
+// AI生成PPT内容的API Route
+// 流程: 先生成 → 生成成功则扣积分 → 失败则自动回滚（不扣积分）
+export async function POST(request: NextRequest) {
+  let userId: string | undefined;
+  let creditsToDeduct = 0;
+  let creditDeducted = false;
+  let sb: ReturnType<typeof getSupabase> | null = null;
+
+  try {
+    const body = await request.json();
+    const { topic, slideCount = 8, style = 'professional', userId: uid, imageSource, imageModel, estimatedImages } = body;
+    userId = uid;
 
     if (!topic || topic.trim().length === 0) {
-      return NextResponse.json(
-        { error: '请输入PPT主题' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: '请输入PPT主题' }, { status: 400 });
     }
 
+    // 计算积分（但不扣）
+    creditsToDeduct = calcCredits(slideCount, imageSource, imageModel, estimatedImages);
+
+    // 初始化数据库
+    sb = getSupabase();
+
+    // 验证用户积分充足（生成前预检）
+    if (sb && userId && creditsToDeduct > 0) {
+      const { data: user } = await sb.from('users').select('credits').eq('id', userId).single();
+      if (user && (user.credits || 0) < creditsToDeduct) {
+        return NextResponse.json(
+          { error: '积分不足', needed: creditsToDeduct, balance: user.credits || 0 },
+          { status: 402 }
+        );
+      }
+    }
+
+    // ===== 阶段1: 调用 AI 生成内容 =====
     const apiKey = process.env.MYDAMOXING_API_KEY;
     if (!apiKey) {
       console.warn('MYDAMOXING_API_KEY not set, returning sample data');
-      return NextResponse.json({
-        presentation: generateSamplePresentation(topic),
-        usedFallback: true,
-      });
+      const presentation = generateSamplePresentation(topic);
+      // fallback 模式不扣积分
+      return NextResponse.json({ presentation, usedFallback: true });
     }
 
-    // 调用 GLM-5-turbo API
     const systemPrompt = `你是一个专业的PPT内容策划师。用户会给你一个主题，你需要生成完整的PPT内容。
 
 严格输出JSON格式，不要输出任何其他内容，不要用markdown代码块包裹：
@@ -87,6 +220,7 @@ PPT结构规范：
     }
 
     if (!response || !response.ok) {
+      // AI 调用失败 → 不扣积分，直接返回错误
       throw new Error(`AI API调用失败（已重试3次）: ${lastError}`);
     }
 
@@ -127,9 +261,45 @@ PPT结构规范：
       createdAt: new Date().toISOString(),
     };
 
+    // ===== 阶段2: 生成成功 → 扣积分 =====
+    if (sb && userId && creditsToDeduct > 0) {
+      const desc = `生成PPT-${slideCount}页-${imageSource || 'noImages'}${imageModel ? `-${imageModel}` : ''}-共${creditsToDeduct}积分`;
+      const deductResult = await atomicDeductCredits(sb, userId, creditsToDeduct, desc);
+      if (deductResult.success) {
+        creditDeducted = true;
+        return NextResponse.json({
+          presentation,
+          creditsUsed: creditsToDeduct,
+          balance: deductResult.balance,
+        });
+      } else {
+        // 扣积分失败 → 生成已成功但无法扣积分
+        // 这是极罕见边界情况，记录为严重错误，但仍返回PPT（用户已获得价值）
+        console.error(`[Generate] 生成成功但扣积分失败 userId=${userId}, credits=${creditsToDeduct}, error=${deductResult.error}`);
+        return NextResponse.json({
+          presentation,
+          creditsUsed: 0,
+          balance: null,
+          warning: '积分扣除失败，请联系客服',
+        });
+      }
+    }
+
     return NextResponse.json({ presentation });
+
   } catch (error: any) {
-    console.error('Generate error:', error);
+    // ===== 生成失败 → 无需回滚（未扣积分） =====
+    console.error('[Generate] 生成失败:', error?.message);
+
+    // 如果已扣积分但后续出错，尝试回滚
+    if (sb && userId && creditsToDeduct > 0 && creditDeducted) {
+      await rollbackCredits(sb, userId, creditsToDeduct, '生成异常');
+      return NextResponse.json(
+        { error: error.message || '生成失败，请重试（积分已返还）' },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(
       { error: error.message || '生成失败，请重试' },
       { status: 500 }

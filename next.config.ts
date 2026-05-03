@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // P0-004: 确保 SPA 路由的 SSR fallback
+  // 统一使用尾部斜杠策略，避免路由重复
+  trailingSlash: false,
+
   // 安全头部
   async headers() {
     return [

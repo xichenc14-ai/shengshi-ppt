@@ -61,9 +61,14 @@ export async function GET(req: NextRequest) {
 
   // ===== 创建/重置测试账户 =====
   if (action === 'create_test_user') {
+    // 生产环境禁用调试token
+    const DEBUG_TOKEN = process.env.DEBUG_TOKEN ?? null;
+    const isDebugEnabled = DEBUG_TOKEN && process.env.NODE_ENV !== 'production';
+    if (!isDebugEnabled) {
+      return NextResponse.json({ error: '该接口仅限开发环境使用' }, { status: 403 });
+    }
     const token = searchParams.get('token');
-    const devToken = process.env.DEBUG_TOKEN || 'xichen-debug-2026';
-    if (token !== devToken && !isDevCleanupAllowed(req)) {
+    if (token !== DEBUG_TOKEN && !isDevCleanupAllowed(req)) {
       return NextResponse.json({ error: '无权限' }, { status: 403 });
     }
     const phone = searchParams.get('phone') || '13800138001';

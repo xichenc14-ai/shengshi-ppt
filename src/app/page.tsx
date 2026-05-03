@@ -27,6 +27,7 @@ import { validateInput, LIMITS } from '@/lib/input-validation';
 import { getThemeById } from '@/lib/theme-database';
 import { checkPermission, mapImgModeToSource, getPlan, PLAN_LIST } from '@/lib/membership';
 import { CREDIT_PER_PAGE, IMG_CREDIT_PER_PAGE } from '@/lib/credits';
+import { PreviewInfo } from '@/types/preview';
 
 /* ==================== Config ==================== */
 
@@ -100,7 +101,8 @@ export default function Home() {
   const [theme, setTheme] = useState('auto');
   const [tone, setTone] = useState('professional');
   const [imgMode, setImgMode] = useState('theme-img');
-  const [pages, setPages] = useState(8);
+  // 🚨 D1: Renamed pages → pageCount for canonical field consistency
+  const [pageCount, setPageCount] = useState(8);
 
   // Generation state
   const [loading, setLoading] = useState(false);
@@ -116,6 +118,9 @@ export default function Home() {
   const [smartGammaPayload, setSmartGammaPayload] = useState<any>(null); // 省心模式 AI 生成的完整参数
   const [editedSlides, setEditedSlides] = useState<SlideItem[]>([]);
   const [originalSlides, setOriginalSlides] = useState<SlideItem[]>([]); // 🚨 存储原始大纲（用于检测是否编辑）
+  // 🚨 D3 Fix Q4: 使用 ref 同步 editedSlides，防止 confirmAndGenerate 闭包读取陈旧值
+  const editedSlidesRef = useRef<SlideItem[]>(editedSlides);
+  useEffect(() => { editedSlidesRef.current = editedSlides; }, [editedSlides]);
   const [streamingSlides, setStreamingSlides] = useState<SlideItem[]>([]);
 
   // Drag-and-drop state for outline reordering
@@ -127,6 +132,7 @@ export default function Home() {
   const [exporting, setExporting] = useState(false); // 导出中
   const [pdfExporting, setPdfExporting] = useState(false); // 导出PDF中
   const [previewGammaUrl, setPreviewGammaUrl] = useState<string>(''); // v10.13: Gamma 在线预览链接
+  const [previewInfo, setPreviewInfo] = useState<PreviewInfo | null>(null); // D4: 预览信息状态
   const [showPdfPreview, setShowPdfPreview] = useState(false); // v10.15: PDF预览弹窗
 
   const fileRef = useRef<HTMLInputElement>(null);
@@ -263,7 +269,7 @@ export default function Home() {
 
     // 🔐 会员权限检查（用实际最大页数，避免state不同步问题）
     const userPlan = getPlan(user.plan_type || 'free');
-    const effectivePages = Math.min(pages, userPlan.maxPages);
+    const effectivePages = Math.min(pageCount, userPlan.maxPages);
     const imageSource = mapImgModeToSource(directImgMode);
     const perm = checkPermission(user.plan_type || 'free', {
       numPages: effectivePages,
@@ -334,7 +340,7 @@ export default function Home() {
       // 🚨 V9修复：preserve 模式需要确保有分页符
       let finalInputText = inputText;
       if (directTextMode === 'preserve' && !inputText.includes('---')) {
-        finalInputText = buildPreserveMarkdown(inputText, pages);
+        finalInputText = buildPreserveMarkdown(inputText, pageCount);
       }
 
       const gRes = await fetch('/api/gamma-direct', {
@@ -343,7 +349,7 @@ export default function Home() {
         body: JSON.stringify({
           inputText: finalInputText,
           themeId: directTheme,
-          numCards: pages,
+          numCards: pageCount,
           imageSource: directImgMode,
           tone: directTone,
           textMode: directTextMode,
@@ -401,21 +407,26 @@ export default function Home() {
 
         await new Promise(r => setTimeout(r, 500));
         const topicText = inputText.split('\n')[0].replace(/^#\s*/, '').trim();
-        setResult({ title: topicText || 'PPT', slides: [], pptxUrl: finalExportUrl, gammaUrl: lastStatusData?.gammaUrl || '', actualPages: pages, generationId: gd.generationId });
+        setResult({ title: topicText || 'PPT', slides: [], pptxUrl: finalExportUrl, gammaUrl: lastStatusData?.gammaUrl || '', actualPages: pageCount, generationId: gd.generationId });
         setGenProgress(100);
         setPhase('result');
 
-        // v10.13: 获取 Gamma 在线预览链接
+        // D4: 使用新的 /api/preview 获取规范化预览信息
         if (gd.generationId) {
-          // 🚨 v10.8: 优先使用轮询已获取的 gammaUrl，同时异步获取 preview-proxy
+          // 优先使用轮询已获取的 gammaUrl
           if (lastStatusData?.gammaUrl) {
             setPreviewGammaUrl(lastStatusData.gammaUrl);
           }
-          fetch(`/api/preview-proxy?id=${gd.generationId}`)
+          // 异步获取完整预览信息
+          fetch(`/api/preview?id=${gd.generationId}`)
             .then(res => res.json())
-            .then(data => {
+            .then((data: PreviewInfo) => {
+              setPreviewInfo(data);
               if (data.gammaUrl && !previewGammaUrl) {
                 setPreviewGammaUrl(data.gammaUrl);
+              }
+              if (data.error) {
+                console.warn('[Preview] Error:', data.error.message);
               }
             })
             .catch(e => console.warn('[Preview] Failed:', e));
@@ -429,7 +440,7 @@ export default function Home() {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${user.id}`,
             },
-            body: JSON.stringify({ action: 'save', userId: user.id, title: topicText || 'PPT', slides: [], themeId: directTheme, downloadUrl: finalExportUrl, pageCount: pages, imageMode: directImgMode }),
+            body: JSON.stringify({ action: 'save', userId: user.id, title: topicText || 'PPT', slides: [], themeId: directTheme, downloadUrl: finalExportUrl, pageCount, imageMode: directImgMode }),
           });
         } catch (e) { console.warn('[History] 保存失败:', e); }
       }
@@ -440,7 +451,7 @@ export default function Home() {
       setPhase('input');
     }
     setLoading(false);
-  }, [user, collectText, directTheme, directTone, directImgMode, directTextMode, pages, openPayment, rollbackCredits]);
+  }, [user, collectText, directTheme, directTone, directImgMode, directTextMode, pageCount, openPayment, rollbackCredits]);
 
   // 🚨 V6 标准化：所有模式统一走 outline API → 大纲确认 → Gamma
   const generateOutline = useCallback(async () => {
@@ -487,14 +498,14 @@ export default function Home() {
       }
 
       // 省心模式：从用户输入中提取页数（如"6页"、"6 页"、"6"）
-      let effectivePages = pages;
+      let effectivePages = pageCount;
       if (mode === 'smart') {
         const pageMatch = inputText.match(/(\d+)\s*页/);
         if (pageMatch) {
           const extractedPages = parseInt(pageMatch[1], 10);
           if (extractedPages >= 3 && extractedPages <= 30) {
             effectivePages = extractedPages;
-            setPages(extractedPages);
+            setPageCount(extractedPages);
             console.log('[SmartMode] 从输入中提取页数:', extractedPages);
           }
         }
@@ -594,7 +605,7 @@ export default function Home() {
       setPhase('input');
     }
     setLoading(false);
-  }, [user, files, topic, showPro, genMode, pages, collectText, mode, directTextMode, directImgMode, directTheme, directTone]);
+  }, [user, files, topic, showPro, genMode, pageCount, collectText, mode, directTextMode, directImgMode, directTheme, directTone]);
 
   // 🚨 V6 简化：省心模式入口（权限检查 + 调用统一流程）
   // 🚨 v10.7.1: 所有模式统一走 outline → 大纲编辑 → 生成（专业模式不再跳过大纲编辑页面）
@@ -812,17 +823,22 @@ export default function Home() {
         setGenProgress(100);
         setPhase('result');
 
-        // v10.13: 获取 Gamma 在线预览链接
+        // D4: 使用新的 /api/preview 获取规范化预览信息
         if (gd.generationId) {
-          // 🚨 v10.8: 优先使用轮询已获取的 gammaUrl，同时异步获取 preview-proxy
+          // 优先使用轮询已获取的 gammaUrl
           if (lastStatusData?.gammaUrl) {
             setPreviewGammaUrl(lastStatusData.gammaUrl);
           }
-          fetch(`/api/preview-proxy?id=${gd.generationId}`)
+          // 异步获取完整预览信息
+          fetch(`/api/preview?id=${gd.generationId}`)
             .then(res => res.json())
-            .then(data => {
+            .then((data: PreviewInfo) => {
+              setPreviewInfo(data);
               if (data.gammaUrl && !previewGammaUrl) {
                 setPreviewGammaUrl(data.gammaUrl);
+              }
+              if (data.error) {
+                console.warn('[Preview] Error:', data.error.message);
               }
             })
             .catch(e => console.warn('[Preview] Failed:', e));
@@ -869,6 +885,8 @@ export default function Home() {
     setPhase('landing');
     setGenProgress(0);
     setGenStep(0);
+    setPreviewInfo(null); // D4: 重置预览信息
+    setPreviewGammaUrl(''); // D4: 重置预览URL
   };
 
   const backToLanding = () => {
@@ -912,8 +930,8 @@ export default function Home() {
     
     setExporting(true);
     try {
-      const pageCount = result.actualPages || pages;
-      const totalPrice = pageCount * 0.2; // ¥0.2/页
+      const totalPages = result.actualPages || pageCount;
+      const totalPrice = totalPages * 0.2; // ¥0.2/页
       
       if (user.plan_type && user.plan_type !== 'free') {
         // 会员直接下载
@@ -921,7 +939,7 @@ export default function Home() {
           await fetch("/api/download", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "record", userId: user.id, pageCount, format: "pptx" }),
+            body: JSON.stringify({ action: "record", userId: user.id, pageCount: totalPages, format: "pptx" }),
           });
         } catch (err) { console.warn("[Download] 记录失败:", err); }
         
@@ -941,7 +959,7 @@ export default function Home() {
       } else {
         // 非会员：弹出支付确认
         const choice = window.confirm(
-          `导出PPT需支付 \n\n📄 当前PPT共 ${pageCount} 页\n💰 单次付费：¥${totalPrice.toFixed(1)}元（¥0.2/页）\n⭐ 订阅会员：免费无限次\n\n付费后积分自动返还！\n\n点「确定」= 支付下载\n点「取消」= 查看订阅方案`
+          `导出PPT需支付 \n\n📄 当前PPT共 ${totalPages} 页\n💰 单次付费：¥${totalPrice.toFixed(1)}元（¥0.2/页）\n⭐ 订阅会员：免费无限次\n\n付费后积分自动返还！\n\n点「确定」= 支付下载\n点「取消」= 查看订阅方案`
         );
         
         if (choice) {
@@ -961,7 +979,7 @@ export default function Home() {
           // TODO: 调用支付接口
           alert('PPT已下载！支付接口开发中，稍后补充');
         } else {
-          openPayment({ id: 'shengxin', name: '省心会员', price: '¥19.9', billing: 'monthly', reason: `订阅会员 · ${pageCount}页PPT免费下` });
+          openPayment({ id: 'shengxin', name: '省心会员', price: '¥19.9', billing: 'monthly', reason: `订阅会员 · ${totalPages}页PPT免费下` });
         }
       }
     } finally {
@@ -973,7 +991,7 @@ export default function Home() {
     if (!user) { openLogin(); return; }
     if (!result?.generationId) return;
     
-    const pageCount = result.actualPages || pages;
+    const pdfPageCount = result.actualPages || pageCount;
     setPdfExporting(true);
     try {
       const filename = result.title ? `${result.title}.pdf` : '省心PPT.pdf';
@@ -983,7 +1001,7 @@ export default function Home() {
         await fetch('/api/download', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'record', userId: user.id, pageCount, format: 'pdf' }),
+          body: JSON.stringify({ action: 'record', userId: user.id, pageCount: pdfPageCount, format: 'pdf' }),
         });
       } catch {}
 
@@ -1351,7 +1369,7 @@ export default function Home() {
                   <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">
                     创建你的<span className="bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] bg-clip-text text-transparent"> PPT</span>
                   </h1>
-                  <p className="text-sm text-gray-400 mt-1.5">描述你的需求，AI 30秒出稿</p>
+                  <p className="text-sm text-gray-400 mt-1.5">输入主题或上传文件，AI自动生成PPT</p>
                 </div>
 
                 {/* Input card */}
@@ -1361,7 +1379,7 @@ export default function Home() {
                     <textarea
                       value={topic}
                       onChange={e => setTopic(e.target.value)}
-                      placeholder="输入你想创建的 PPT 主题，例如：2024年度营销策略汇报"
+                      placeholder="输入PPT主题，如：2024年度工作汇报、咖啡品牌推广方案"
                       className="w-full min-h-[100px] px-4 py-3 rounded-xl bg-gray-50/50 border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-400 transition-all"
                     />
                     {/* Attach button inside textarea (bottom-left) */}
@@ -1487,7 +1505,7 @@ export default function Home() {
                           <div>
                             <label className="text-xs text-gray-500 mb-2 block font-medium">页数</label>
                             <select
-                              value={Math.min(pages, getPlan(user?.plan_type || 'free').maxPages)}
+                              value={Math.min(pageCount, getPlan(user?.plan_type || 'free').maxPages)}
                               onChange={e => {
                                 const val = Number(e.target.value);
                                 const maxP = getPlan(user?.plan_type || 'free').maxPages;
@@ -1502,7 +1520,7 @@ export default function Home() {
                                   });
                                   return;
                                 }
-                                setPages(val);
+                                setPageCount(val);
                               }}
                               className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-white focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] outline-none transition-all appearance-none cursor-pointer"
                               style={{backgroundImage: 'url(\"data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3e%3cpath stroke=\'%236b7280\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'M6 8l4 4 4-4\'/%3e%3c/svg%3e\")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', paddingRight: '2.5rem'}}
@@ -1598,6 +1616,9 @@ export default function Home() {
                   >
                     ✨ 开始生成 PPT
                   </button>
+                  {!hasInput && (
+                    <p className="text-xs text-gray-400 text-center mt-2">请输入PPT主题或上传文件</p>
+                  )}
                 </div>
               </>
             )}
@@ -1842,23 +1863,87 @@ export default function Home() {
             <div className="text-center mb-6">
               <div className="text-5xl mb-3">🎉</div>
               <h2 className="text-xl font-bold text-gray-900 mb-1">PPT 已生成！</h2>
-              <p className="text-sm text-gray-500">{result.title || '演示文稿'} · {result.actualPages || pages} 页</p>
+              <p className="text-sm text-gray-500">{result.title || '演示文稿'} · {result.actualPages || pageCount} 页</p>
             </div>
 
-            {/* 🚨 v10.13: 预览区 — 使用 Gamma 在线预览（新标签页打开） */}
+            {/* D4: 预览区 — 使用 Gamma 在线预览（新标签页打开） */}
             {/* 根因：Gamma API 不返回 cards/previewUrl，X-Frame-Options: SAMEORIGIN 禁止 iframe */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden mb-6">
               {/* 预览标题栏 */}
               <div className="bg-gradient-to-r from-purple-50 to-indigo-50 px-4 py-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-green-500">✓</span>
-                  <span className="text-xs text-gray-600">PPT 已生成 · {result.actualPages || pages} 页</span>
+                  <span className="text-xs text-gray-600">PPT 已生成 · {result.actualPages || pageCount} 页</span>
                 </div>
+                {/* D4: 显示导出格式徽章 */}
+                {previewInfo?.exportFormat && previewInfo.exportFormat !== 'unknown' && (
+                  <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">
+                    {previewInfo.exportFormat === 'pptx' ? 'PPTX' : 'PDF'}
+                  </span>
+                )}
               </div>
 
               {/* 预览区域 */}
               <div className="p-6">
-                {previewGammaUrl || result.gammaUrl ? (
+                {/* D4: 根据 previewInfo.status 显示不同状态 */}
+                {previewInfo?.status === 'loading' && !previewGammaUrl && !result.gammaUrl && (
+                  <div className="bg-gray-100 rounded-xl p-8 text-center">
+                    <div className="animate-spin w-8 h-8 border-2 border-purple-200 border-t-purple-600 rounded-full mx-auto mb-3"></div>
+                    <p className="text-gray-500 text-sm">正在获取预览信息...</p>
+                  </div>
+                )}
+                
+                {previewInfo?.status === 'pending' && (
+                  <div className="bg-gray-100 rounded-xl p-8 text-center">
+                    <div className="text-4xl mb-3">⏳</div>
+                    <p className="text-gray-500 text-sm mb-1">PPT 正在生成中...</p>
+                    <p className="text-gray-400 text-xs">请稍候，生成完成后即可预览</p>
+                  </div>
+                )}
+                
+                {(previewInfo?.status === 'ready' || previewInfo?.status === 'partial') && (previewGammaUrl || result.gammaUrl) && (
+                  <a
+                    href={previewGammaUrl || result.gammaUrl || '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-8 text-center group hover:from-gray-800 hover:to-gray-700 transition-all"
+                  >
+                    <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">👁️</div>
+                    <p className="text-white font-bold text-lg mb-2">
+                      {previewInfo?.status === 'partial' ? '在线预览（部分功能）' : '在线预览 PPT'}
+                    </p>
+                    <p className="text-gray-400 text-sm">点击在新标签页中查看完整演示文稿</p>
+                    <div className="mt-4 inline-flex items-center gap-2 bg-white/10 rounded-full px-4 py-2 text-white/80 text-xs">
+                      <span>↗</span> 打开预览
+                    </div>
+                  </a>
+                )}
+                
+                {previewInfo?.status === 'partial' && previewInfo.error && (
+                  <div className="mt-3 bg-yellow-50 rounded-lg px-3 py-2 text-xs text-yellow-700">
+                    ⚠️ {previewInfo.error.message}
+                  </div>
+                )}
+                
+                {previewInfo?.status === 'failed' && (
+                  <div className="bg-red-50 rounded-xl p-8 text-center">
+                    <div className="text-4xl mb-3">⚠️</div>
+                    <p className="text-red-600 font-bold mb-2">预览不可用</p>
+                    <p className="text-gray-500 text-sm mb-3">
+                      {previewInfo.error?.message || '请尝试下载PPTX文件'}
+                    </p>
+                    <button
+                      onClick={handleExportPPT}
+                      disabled={!result.generationId || exporting}
+                      className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50 transition-colors"
+                    >
+                      {exporting ? '下载中...' : '下载 PPTX'}
+                    </button>
+                  </div>
+                )}
+                
+                {/* 兜底：previewInfo 未加载时使用旧逻辑 */}
+                {!previewInfo && (previewGammaUrl || result.gammaUrl) && (
                   <a
                     href={previewGammaUrl || result.gammaUrl || '#'}
                     target="_blank"
@@ -1872,7 +1957,9 @@ export default function Home() {
                       <span>↗</span> 打开预览
                     </div>
                   </a>
-                ) : (
+                )}
+                
+                {!previewInfo && !previewGammaUrl && !result.gammaUrl && (
                   <div className="bg-gray-100 rounded-xl p-8 text-center">
                     <div className="text-4xl mb-3">📄</div>
                     <p className="text-gray-500 text-sm mb-1">预览加载中...</p>
@@ -1959,7 +2046,7 @@ export default function Home() {
         theme={theme} setTheme={setTheme}
         tone={tone} setTone={setTone}
         imgMode={imgMode} setImgMode={setImgMode}
-        pages={pages} setPages={setPages}
+        pages={pageCount} setPages={setPageCount}
       />
 
       <LoginModal open={showLogin} onClose={closeLogin} />
@@ -2006,6 +2093,8 @@ export default function Home() {
       {showPdfPreview && result?.generationId && (
         <PDFPreview
           generationId={result.generationId}
+          exportUrl={previewInfo?.exportUrl || result.pptxUrl}
+          gammaUrl={previewInfo?.gammaUrl || result.gammaUrl}
           onClose={() => setShowPdfPreview(false)}
         />
       )}

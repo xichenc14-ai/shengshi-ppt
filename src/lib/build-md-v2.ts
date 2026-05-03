@@ -13,6 +13,7 @@ export type SlideItem = {
   title: string;
   content?: string[];  // 页面核心要点数组（兼容旧字段名）
   points?: string[];   // 页面核心要点数组（新字段名，优先级更高）
+  bullets?: string[];  // D2: canonical 字段
   notes?: string;      // 演讲者备注
 };
 
@@ -121,7 +122,7 @@ export function buildMdV2(
 
   // 遍历每一页幻灯片
   slides.forEach((slide, index) => {
-    const rawPoints = slide.points ?? slide.content ?? [];
+    const rawPoints = slide.bullets ?? slide.points ?? slide.content ?? [];
 
     // 🚨 V8.3 修复：空 points 时用标题作为唯一要点，避免输出空内容导致 Gamma 400
     const points = rawPoints.length > 0 ? rawPoints : [slide.title];

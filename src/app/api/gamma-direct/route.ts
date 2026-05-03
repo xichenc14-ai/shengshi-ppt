@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
 import { selectBestKey, updateKeyBalance, recordKeyFailure } from '@/lib/gamma-key-pool';
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
+import { normalizeUserInput, mapImageSource } from '@/lib/adapters/ppt-param-adapter';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -137,7 +138,7 @@ export async function POST(request: NextRequest) {
     const {
       inputText,
       themeId,
-      numCards = 8,
+      numCards,
       tone = 'professional',
       // 🚨 V8.2：textMode 不再从请求读取，Gamma 固定使用 preserve
       // 原因：gamma-direct 的 inputText 已经是前端处理好的 markdown
@@ -146,6 +147,10 @@ export async function POST(request: NextRequest) {
       exportAs = 'pptx',
       visualMetaphor,
     } = body;
+
+    // 🚨 D1: Normalize aliased fields → canonical PptUserInput
+    const normalized = normalizeUserInput(body as Record<string, unknown>);
+    const pageCount = normalized.pageCount ?? 8;
 
     if (!inputText?.trim()) {
       return NextResponse.json({ error: '请输入内容' }, { status: 400 });
@@ -220,11 +225,12 @@ export async function POST(request: NextRequest) {
     const criticalInstruction = '\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作或修改任何事实信息。严格按照提供的Markdown层级和---分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。';
 
     // 步骤1:创建 Gamma 生成任务(恢复技术部验证的完整参数)
+    // 🚨 D1: Use canonical pageCount (aliased from numCards) in Gamma payload
     const gammaPayload = {
       inputText: finalInputText,
       textMode: 'preserve', // 🚨 V8.2：固定使用 preserve
       format: 'presentation',
-      numCards,
+      numCards: pageCount,
       exportAs,
       themeId: finalThemeId,
       cardSplit: 'inputTextBreaks', // 🚨 V8.2：强制精确分页
@@ -265,9 +271,16 @@ export async function POST(request: NextRequest) {
       console.log('[Gamma Direct] 积分扣除:', createData.credits.deducted, '| 剩余:', createData.credits.remaining);
     }
 
+    // 🚨 D3 Fix Q3: 补充 config 字段，与 gamma/route.ts 保持一致
     return NextResponse.json({
       generationId,
+      taskId: generationId,
+      status: 'pending', // 直通模式不等待完成
       message: '直通生成任务已创建',
+      artifact: {
+        pollingUrl: `/api/gamma?id=${generationId}`,
+      },
+      config: { themeId: finalThemeId, tone, pageCount },
       credits: createData.credits,
     });
   } catch (error: any) {
