@@ -1,0 +1,407 @@
+/**
+ * ppt-param-adapter - D1 canonical data normalization
+ *
+ * 职责：
+ * 1. normalizeUserInput     — 规范化用户输入字段别名
+ * 2. mapImageSource         — 图片源字符串映射（兼容 themeId 参数）
+ * 3. buildGammaPayload      — 构建 Gamma API payload（单参数宽兼容）
+ * 4. parseMarkdownOutline   — Markdown fallback outline 解析
+ * 5. generateMinimalOutline  — 生成最小 outline（AI 不可用时）
+ *
+ * 兼容调用点：
+ * - src/app/api/gamma/route.ts:         import { normalizeUserInput, mapImageSource }
+ * - src/app/api/gamma-direct/route.ts:  import { normalizeUserInput, mapImageSource }
+ * - src/app/api/outline/route.ts:       import { normalizeUserInput, parseMarkdownOutline, generateMinimalOutline }
+ */
+
+import type { OutlineSlide } from '@/lib/types/outline-response';
+
+// ─────────────────────────────────────────────
+// A. normalizeUserInput
+// ─────────────────────────────────────────────
+
+export interface PptUserInput {
+  topic?: string;
+  inputText?: string;
+  text?: string;
+  pageCount?: number;
+  slideCount?: number;
+  numCards?: number;
+  pages?: number;
+  textMode?: string;
+  contentStrategy?: string;
+  themeId?: string;
+  templateId?: string;
+  tone?: string;
+  style?: string;
+  imageSource?: string;
+  imgMode?: string;
+  imageMode?: string;
+  directImgMode?: string;
+  additionalInstructions?: string;
+  extraInstructions?: string;
+  exportAs?: string;
+  format?: string;
+  auto?: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * 规范化用户输入字段别名 → canonical PptUserInput
+ *
+ * 字段映射规则：
+ * topic / inputText / text                     → topic
+ * pageCount / slideCount / numCards / pages     → pageCount
+ * textMode / contentStrategy                    → textMode
+ * themeId / templateId                          → themeId
+ * tone / style                                  → tone
+ * imageSource / imgMode / imageMode / directImgMode → imageSource
+ * additionalInstructions / extraInstructions    → additionalInstructions
+ * exportAs / format                             → exportAs
+ *
+ * 返回值：canonical 字段优先，...v 作为最后覆盖层
+ */
+export function normalizeUserInput(raw: Record<string, unknown>): PptUserInput {
+  const v = raw;
+
+  // topic
+  let topic = v.topic as string | undefined;
+  if (!topic) topic = v.inputText as string | undefined;
+  if (!topic) topic = v.text as string | undefined;
+
+  // pageCount
+  let pageCount = v.pageCount as number | undefined;
+  if (!pageCount) pageCount = v.slideCount as number | undefined;
+  if (!pageCount) pageCount = v.numCards as number | undefined;
+  if (!pageCount) pageCount = v.pages as number | undefined;
+
+  // textMode
+  let textMode = v.textMode as string | undefined;
+  if (!textMode) textMode = v.contentStrategy as string | undefined;
+
+  // themeId
+  let themeId = v.themeId as string | undefined;
+  if (!themeId) themeId = v.templateId as string | undefined;
+
+  // tone
+  let tone = v.tone as string | undefined;
+  if (!tone) tone = v.style as string | undefined;
+
+  // imageSource
+  let imageSource = v.imageSource as string | undefined;
+  if (!imageSource) imageSource = v.imgMode as string | undefined;
+  if (!imageSource) imageSource = v.imageMode as string | undefined;
+  if (!imageSource) imageSource = v.directImgMode as string | undefined;
+
+  // additionalInstructions
+  let additionalInstructions = v.additionalInstructions as string | undefined;
+  if (!additionalInstructions) additionalInstructions = v.extraInstructions as string | undefined;
+
+  // exportAs
+  let exportAs = v.exportAs as string | undefined;
+  if (!exportAs) exportAs = v.format as string | undefined;
+
+  return {
+    ...v,
+    topic,
+    inputText: topic,
+    pageCount,
+    textMode,
+    contentStrategy: textMode,
+    themeId,
+    templateId: themeId,
+    tone,
+    style: tone,
+    imageSource,
+    additionalInstructions,
+    exportAs,
+    auto: v.auto as boolean | undefined,
+  } as PptUserInput;
+}
+
+// ─────────────────────────────────────────────
+// B. mapImageSource
+// ─────────────────────────────────────────────
+
+/**
+ * imageSource 字符串映射到 Gamma API imageOptions.source 值
+ *
+ * 兼容签名：第二参数 themeId 预留给调用方扩展，当前版本不使用
+ *
+ * 支持输入（不区分大小写，完整别名清单）：
+ * - noImages / none                    → noImages
+ * - theme-img / theme                  → themeAccent
+ * - pictographic / 插图                 → themeAccent
+ * - web / 网图 / 搜索图                 → webFreeToUseCommercially
+ * - webFreeToUseCommercially           → webFreeToUseCommercially
+ * - ai / aiGenerated / AI图             → aiGenerated (imagen-3-flash)
+ * - ai-pro / AI尊享                    → aiGenerated (imagen-3-pro)
+ * - 默认                                → themeAccent
+ */
+export function mapImageSource(
+  imageSource: string | undefined,
+  _themeId?: string // 预留给调用方使用，当前版本不使用
+): Record<string, unknown> {
+  if (!imageSource) {
+    return { source: 'themeAccent' };
+  }
+
+  const normalized = imageSource.toLowerCase().trim();
+
+  switch (normalized) {
+    case 'noimages':
+    case 'none':
+      return { source: 'noImages' };
+
+    case 'webfreetousecommercially':
+    case 'web':
+    case '网图':
+    case '搜索图':
+      return { source: 'webFreeToUseCommercially' };
+
+    case 'aigenerated':
+    case 'ai':
+    case 'ai图':
+      return {
+        source: 'aiGenerated',
+        model: 'imagen-3-flash',
+        style: 'flat illustration, minimalist, clean background, negative space',
+      };
+
+    case 'ai-pro':
+    case 'ai尊享':
+      return {
+        source: 'aiGenerated',
+        model: 'imagen-3-pro',
+        style: 'professional, high quality, cinematic, detailed',
+      };
+
+    case 'theme':
+    case 'theme-img':
+    case 'pictographic':
+    case '插图':
+      return { source: 'themeAccent' };
+
+    default:
+      return { source: 'themeAccent' };
+  }
+}
+
+// ─────────────────────────────────────────────
+// C. buildGammaPayload
+// ─────────────────────────────────────────────
+
+/**
+ * 构建 Gamma API payload（gamma-direct 直通模式）
+ *
+ * 单参数宽兼容设计：输入同时包含 normalizeUserInput 规范后的字段
+ * 和 gammaFields 调用方自定义字段，全部在一笔对象内传入。
+ */
+export function buildGammaPayload(
+  input: PptUserInput & {
+    finalInputText?: string;
+    finalThemeId?: string;
+    finalTone?: string;
+    imageOptions?: Record<string, unknown>;
+    instructions?: string;
+    textMode?: 'preserve' | 'generate' | 'condense';
+  }
+): Record<string, unknown> {
+  const normalized = normalizeUserInput(input);
+
+  const finalInputText = (input as Record<string, unknown>).finalInputText as string | undefined
+    || normalized.inputText
+    || normalized.topic
+    || '';
+  const finalThemeId = (input as Record<string, unknown>).finalThemeId as string | undefined
+    || normalized.themeId
+    || '';
+  const finalTone = (input as Record<string, unknown>).finalTone as string | undefined
+    || normalized.tone
+    || 'professional';
+  const imageOptions = (input as Record<string, unknown>).imageOptions as Record<string, unknown> | undefined
+    || { source: 'themeAccent' };
+  const instructions = (input as Record<string, unknown>).instructions as string | undefined
+    || normalized.additionalInstructions
+    || '';
+  const textMode = (input as Record<string, unknown>).textMode as string | undefined
+    || 'preserve';
+
+  return {
+    inputText: finalInputText,
+    textMode,
+    format: normalized.exportAs || 'presentation',
+    numCards: normalized.pageCount ?? 8,
+    exportAs: normalized.exportAs || 'pptx',
+    themeId: finalThemeId,
+    cardSplit: 'inputTextBreaks',
+    additionalInstructions: instructions,
+    textOptions: {
+      amount: 'medium',
+      tone: finalTone,
+      language: 'zh-cn',
+    },
+    imageOptions,
+    cardOptions: { dimensions: '16x9' },
+  };
+}
+
+// ─────────────────────────────────────────────
+// D. parseMarkdownOutline
+// ─────────────────────────────────────────────
+
+/**
+ * 从 Markdown 文本解析 outline 结构（JSON 解析失败时的 fallback）
+ *
+ * 解析规则：
+ * - # 标题           → doc title
+ * - ## 标题          → slide.title，index 从 1 开始递增
+ * - - 或 * 开头的行   → slide.bullets
+ * - --- 分隔符        → 完成当前 slide
+ *
+ * 每条 slide 输出包含完整兼容字段：
+ *   index, title, bullets, content(=bullets), speakerNotes, notes
+ */
+export function parseMarkdownOutline(raw: string): {
+  title: string;
+  slides: OutlineSlide[];
+} | null {
+  if (!raw || typeof raw !== 'string') return null;
+
+  const lines = raw.split('\n');
+  const slides: OutlineSlide[] = [];
+  let docTitle = '';
+  let currentSlide: { title: string; bullets: string[] } | null = null;
+  let slideIndex = 1; // 从 1 开始
+
+  const pushSlide = (title: string, bullets: string[]): void => {
+    slides.push({
+      index: slideIndex++,
+      title,
+      bullets,
+      content: [...bullets],
+      speakerNotes: undefined,
+      notes: undefined,
+    });
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // 文档标题：# Title
+    if (trimmed.startsWith('# ') && !trimmed.startsWith('## ')) {
+      docTitle = trimmed.replace(/^#\s*/, '').trim();
+      continue;
+    }
+
+    // 新 slide：## Title
+    if (trimmed.startsWith('## ')) {
+      if (currentSlide) {
+        pushSlide(currentSlide.title, currentSlide.bullets);
+      }
+      currentSlide = {
+        title: trimmed.replace(/^##\s*/, '').trim(),
+        bullets: [],
+      };
+      continue;
+    }
+
+    // 分隔符 → 完成当前 slide
+    if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
+      if (currentSlide) {
+        pushSlide(currentSlide.title, currentSlide.bullets);
+        currentSlide = null;
+      }
+      continue;
+    }
+
+    // 要点行：- item 或 * item 或 1. item
+    const isBullet =
+      trimmed.startsWith('- ') ||
+      trimmed.startsWith('* ') ||
+      /^\d+\.\s/.test(trimmed);
+
+    if (isBullet && currentSlide) {
+      const text = trimmed
+        .replace(/^[-*]\s*/, '')
+        .replace(/^\d+\.\s*/, '')
+        .trim();
+      if (text) currentSlide.bullets.push(text);
+      continue;
+    }
+
+    // 普通文本行（无当前 slide → 作为新 slide 的标题）
+    if (!currentSlide && trimmed.length > 5) {
+      currentSlide = {
+        title: trimmed.length > 30
+          ? trimmed.substring(0, 30) + '...'
+          : trimmed,
+        bullets: [],
+      };
+    }
+  }
+
+  // 最后一个 slide
+  if (currentSlide) {
+    pushSlide(currentSlide.title, currentSlide.bullets);
+  }
+
+  return slides.length > 0
+    ? { title: docTitle || 'PPT', slides }
+    : null;
+}
+
+// ─────────────────────────────────────────────
+// E. generateMinimalOutline
+// ─────────────────────────────────────────────
+
+/**
+ * 当所有 AI 模型不可用时，生成最小可用 outline
+ *
+ * @param topic 用户输入的主题
+ * @param numCards 请求的页数（默认 8，范围 3-20）
+ */
+export function generateMinimalOutline(
+  topic: string,
+  numCards: number = 8
+): { title: string; slides: OutlineSlide[] } {
+  const safeTopic = topic?.trim() || 'PPT';
+  const safeCount = Math.max(3, Math.min(numCards || 8, 20));
+
+  const slides: OutlineSlide[] = [];
+
+  // 封面（index = 1）
+  slides.push({
+    index: 1,
+    title: safeTopic,
+    bullets: ['概括主题的封面'],
+    content: ['概括主题的封面'],
+    speakerNotes: undefined,
+    notes: '封面金句：简洁有力',
+  });
+
+  // 内容页
+  for (let i = 2; i < safeCount; i++) {
+    slides.push({
+      index: i,
+      title: `核心要点 ${i - 1}`,
+      bullets: ['要点1', '要点2', '要点3'],
+      content: ['要点1', '要点2', '要点3'],
+      speakerNotes: undefined,
+      notes: '数据页标注：📊 柱状图',
+    });
+  }
+
+  // 结尾页
+  slides.push({
+    index: safeCount,
+    title: '总结与展望',
+    bullets: ['关键收获', '下一步行动', '感谢观看'],
+    content: ['关键收获', '下一步行动', '感谢观看'],
+    speakerNotes: undefined,
+    notes: '结尾金句：总结全文核心观点',
+  });
+
+  return { title: safeTopic, slides };
+}

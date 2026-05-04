@@ -268,7 +268,8 @@ export async function POST(request: NextRequest) {
 总共${numCards}页`,
     };
 
-    const systemPrompt = modePrompts[finalTextMode] || modePrompts.generate;
+    const promptMode = (finalTextMode || 'generate') as keyof typeof modePrompts;
+const systemPrompt = modePrompts[promptMode] || modePrompts.generate;
     const baseUserPrompt = auto
       ? `【智能模式分析结果】
 输入类型：${smartModeAnalysis.type}
