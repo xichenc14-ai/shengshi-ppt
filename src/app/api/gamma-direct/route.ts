@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getSession } from '@/lib/session';
 import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
 import { selectBestKey, updateKeyBalance, recordKeyFailure } from '@/lib/gamma-key-pool';
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
 import { normalizeUserInput, mapImageSource } from '@/lib/adapters/ppt-param-adapter';
+import { getPlan, checkPermission } from '@/lib/membership';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -124,6 +126,18 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 
 // POST: 直通模式 - 调用 Gamma API 并等待完成,直接返回下载链接
 export async function POST(request: NextRequest) {
+  // ===== Layer 1: Auth Guard =====
+  const session = await getSession();
+  if (!session?.isLoggedIn || !session?.user) {
+    console.log('[GammaDirect] AUTH_FAILED: not logged in');
+    return NextResponse.json({ error: '请先登录', code: 'UNAUTHENTICATED' }, { status: 401 });
+  }
+  const userId = session.user.id;
+  const userCredits = session.user.credits;
+  const userPlanType = session.user.plan_type || 'free';
+  console.log(`[GammaDirect] AUTH_OK userId=${userId} credits=${userCredits} plan=${userPlanType}`);
+
+  // ===== Layer 2: IP Rate Limit =====
   const ip = getClientIP(request);
   if (isIPBlocked(ip)) {
     return NextResponse.json({ error: '请求受限' }, { status: 403 });
@@ -140,9 +154,6 @@ export async function POST(request: NextRequest) {
       themeId,
       numCards,
       tone = 'professional',
-      // 🚨 V8.2：textMode 不再从请求读取，Gamma 固定使用 preserve
-      // 原因：gamma-direct 的 inputText 已经是前端处理好的 markdown
-      // （可能来自 buildPreserveMarkdown 或用户手动输入的结构化内容）
       imageSource = 'webFreeToUseCommercially',
       exportAs = 'pptx',
       visualMetaphor,
@@ -152,9 +163,60 @@ export async function POST(request: NextRequest) {
     const normalized = normalizeUserInput(body as Record<string, unknown>);
     const pageCount = normalized.pageCount ?? 8;
 
+    // Unified type narrowing: normalized.aiModel typed as unknown from Record cast
+    // Only use non-empty strings; filter empty/whitespace strings to undefined
+    const aiModel: string | undefined =
+      typeof normalized.aiModel === 'string' && normalized.aiModel.trim().length > 0
+        ? normalized.aiModel.trim()
+        : undefined;
+
+    // ===== Layer 3: Input Validation =====
     if (!inputText?.trim()) {
       return NextResponse.json({ error: '请输入内容' }, { status: 400 });
     }
+    if (pageCount < 1 || pageCount > 100) {
+      return NextResponse.json({ error: '页数必须在1-100之间' }, { status: 400 });
+    }
+
+    // ===== Layer 4: Membership/Permission Check =====
+    const permissionCheck = checkPermission(userPlanType, {
+      numPages: pageCount,
+      imageSource: imageSource,
+      aiModel: aiModel,
+    });
+    if (!permissionCheck.allowed) {
+      console.log(`[GammaDirect] QUOTA_DENIED userId=${userId} reason=${permissionCheck.reason}`);
+      return NextResponse.json({
+        error: permissionCheck.reason,
+        code: 'QUOTA_EXCEEDED',
+        requiredPlan: permissionCheck.requiredPlan,
+      }, { status: 403 });
+    }
+    console.log(`[GammaDirect] QUOTA_OK required=${pageCount} pages imageSource=${imageSource}`);
+
+    // ===== Layer 5: Credit Check (before Gamma call) =====
+    // Estimate credits needed: 2 credits/page + AI image credits if applicable
+    const BASE_CREDIT_PER_PAGE = 2;
+    let totalCredit = pageCount * BASE_CREDIT_PER_PAGE;
+    if (imageSource === 'aiGenerated') {
+      const HIGH_MODELS = ['imagen-3-pro', 'flux-1-pro', 'ideogram-v3-turbo', 'luma-photon-1', 'leonardo-phoenix', 'flux-kontext-pro', 'imagen-4-pro', 'ideogram-v3', 'gemini-2.5-flash-image'];
+      const model = aiModel || 'imagen-3-flash';
+      const imageCreditsPerImage = HIGH_MODELS.includes(model) ? 10 : 2;
+      const estimatedImageCount = Math.ceil(pageCount / 2);
+      totalCredit += estimatedImageCount * imageCreditsPerImage;
+    }
+    if (userCredits < totalCredit) {
+      console.log(`[GammaDirect] CREDIT_INSUFFICIENT userId=${userId} needed=${totalCredit} balance=${userCredits}`);
+      return NextResponse.json({
+        error: '积分不足',
+        code: 'INSUFFICIENT_CREDITS',
+        needed: totalCredit,
+        balance: userCredits,
+      }, { status: 402 });
+    }
+    console.log(`[GammaDirect] CREDIT_CHECK_OK userId=${userId} required=${totalCredit} balance=${userCredits}`);
+
+    // ===== Layer 6: Gamma API Call (existing code unchanged) =====
 
     // 🚨 V8: 使用Key池智能选择
     const selectedKey = selectBestKey();
@@ -240,7 +302,7 @@ export async function POST(request: NextRequest) {
       cardOptions: { dimensions: '16x9' },
     };
 
-    console.log('[Gamma Direct] Payload:', JSON.stringify(gammaPayload, null, 2));
+    console.log('[GammaDirect] Payload:', JSON.stringify(gammaPayload, null, 2));
 
     const createRes = await fetch(`${GAMMA_API_BASE}/generations`, {
       method: 'POST',
@@ -254,8 +316,9 @@ export async function POST(request: NextRequest) {
 
     if (!createRes.ok) {
       const errText = await createRes.text();
-      console.error('[Gamma Direct] API error:', createRes.status, errText);
+      console.error('[GammaDirect] API error:', createRes.status, errText);
       recordKeyFailure(apiKey);
+      console.log(`[GammaDirect] ERROR reason=gamma_api_failed code=GAMMA_API_ERROR status=${createRes.status}`);
       return NextResponse.json({
         error: `Gamma API 调用失败: ${createRes.status}`,
         detail: errText.substring(0, 500)
@@ -268,7 +331,35 @@ export async function POST(request: NextRequest) {
     // 🚨 V8: 记录积分信息（如果有返回）
     if (createData.credits) {
       updateKeyBalance(apiKey, createData.credits.deducted, createData.credits.remaining);
-      console.log('[Gamma Direct] 积分扣除:', createData.credits.deducted, '| 剩余:', createData.credits.remaining);
+      console.log('[GammaDirect] 积分扣除:', createData.credits.deducted, '| 剩余:', createData.credits.remaining);
+    }
+
+    // ===== Layer 7: Credit Deduction (after successful Gamma creation) =====
+    // Deduct credits via user API
+    try {
+      const deductRes = await fetch(new URL('/api/user', request.url).toString(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'deduct',
+          userId: userId,
+          numPages: pageCount,
+          imageSource: imageSource,
+          imageModel: aiModel,
+          estimatedImages: Math.ceil(pageCount / 2),
+        }),
+      });
+      const deductData = await deductRes.json();
+      if (!deductRes.ok) {
+        // Credit deduction failed — log but don't fail the generation
+        console.log(`[GammaDirect] CREDIT_DEDUCT_FAILED userId=${userId} error=${deductData.error}`);
+      } else {
+        const newBalance = deductData.balance ?? (userCredits - totalCredit);
+        console.log(`[GammaDirect] CREDIT_DEDUCTED userId=${userId} amount=${totalCredit} newBalance=${newBalance}`);
+      }
+    } catch (deductErr) {
+      console.error('[GammaDirect] Credit deduction error:', deductErr);
+      // Don't fail the response — generation already succeeded
     }
 
     // 🚨 D3 Fix Q3: 补充 config 字段，与 gamma/route.ts 保持一致
@@ -285,6 +376,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Gamma direct error:', error);
+    console.log(`[GammaDirect] ERROR reason=${error.message || 'unknown'} code=INTERNAL_ERROR status=500`);
     return NextResponse.json({ error: error.message || '生成失败' }, { status: 500 });
   }
 }
