@@ -233,8 +233,7 @@ export default function Home() {
   // Track hasInput
   useEffect(() => { setHasInput(files.length > 0 || topic.trim().length > 0); }, [files, topic]);
 
-  // 🚨 v10.13: 预览使用 Gamma gammaUrl 在新标签页打开（iframe 被 X-Frame-Options: SAMEORIGIN 禁止）
-  // 通过 preview-proxy API 获取 gammaUrl，前端显示打开预览按钮
+  // v10.45: Gamma在线预览已移除，使用PPTX/PDF下载替代
 
   // Enter generate flow
   const startGenerate = useCallback(() => {
@@ -1066,7 +1065,7 @@ export default function Home() {
   // Outline editing helpers
   const updateSlide = (idx: number, field: 'title' | 'content', val: string) => {
     setEditedSlides(prev => prev.map((s, i) =>
-      i === idx ? (field === 'title' ? { ...s, title: val } : { ...s, content: val.split('\n').filter(Boolean) }) : s
+      i === idx ? (field === 'title' ? { ...s, title: val } : { ...s, content: (val || '').split('\n').filter(Boolean) }) : s
     ));
   };
 
@@ -1662,9 +1661,9 @@ export default function Home() {
                         <div className="flex-1 min-w-0">
                           <input value={slide.title} onChange={e => updateSlide(idx, 'title', e.target.value)}
                             className="w-full text-sm font-semibold text-gray-800 bg-transparent border-b border-transparent focus:border-[#5B4FE9] outline-none py-0.5" />
-                          {slide.content && slide.content.length > 0 && (
-                            <textarea value={slide.content.join('\n')} onChange={e => updateSlide(idx, 'content', e.target.value)}
-                              rows={Math.min(slide.content.length, 4)}
+                          {(slide.content && slide.content.length > 0) && (
+                            <textarea value={(slide.content || []).join('\n')} onChange={e => updateSlide(idx, 'content', e.target.value)}
+                              rows={Math.min((slide.content || []).length, 4)}
                               className="w-full mt-1 text-xs text-gray-500 bg-gray-50 rounded-lg px-2.5 py-1.5 border border-transparent focus:border-[#5B4FE9] outline-none resize-none" />
                           )}
                         </div>
@@ -1872,8 +1871,7 @@ export default function Home() {
               <p className="text-sm text-gray-500">{result.title || '演示文稿'} · {result.actualPages || pageCount} 页</p>
             </div>
 
-            {/* D4: 预览区 — 使用 Gamma 在线预览（新标签页打开） */}
-            {/* 根因：Gamma API 不返回 cards/previewUrl，X-Frame-Options: SAMEORIGIN 禁止 iframe */}
+            {/* v10.45: Gamma在线预览已移除 — 用户直接使用PPTX下载和PDF预览 */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden mb-6">
               {/* 预览标题栏 */}
               <div className="bg-gradient-to-r from-purple-50 to-indigo-50 px-4 py-2 flex items-center justify-between">
@@ -1903,31 +1901,7 @@ export default function Home() {
                   <div className="bg-gray-100 rounded-xl p-8 text-center">
                     <div className="text-4xl mb-3">⏳</div>
                     <p className="text-gray-500 text-sm mb-1">PPT 正在生成中...</p>
-                    <p className="text-gray-400 text-xs">请稍候，生成完成后即可预览</p>
-                  </div>
-                )}
-                
-                {(previewInfo?.status === 'ready' || previewInfo?.status === 'partial') && (previewGammaUrl || result.gammaUrl) && (
-                  <a
-                    href={previewGammaUrl || result.gammaUrl || '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-8 text-center group hover:from-gray-800 hover:to-gray-700 transition-all"
-                  >
-                    <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">👁️</div>
-                    <p className="text-white font-bold text-lg mb-2">
-                      {previewInfo?.status === 'partial' ? '在线预览（部分功能）' : '在线预览 PPT'}
-                    </p>
-                    <p className="text-gray-400 text-sm">点击在新标签页中查看完整演示文稿</p>
-                    <div className="mt-4 inline-flex items-center gap-2 bg-white/10 rounded-full px-4 py-2 text-white/80 text-xs">
-                      <span>↗</span> 打开预览
-                    </div>
-                  </a>
-                )}
-                
-                {previewInfo?.status === 'partial' && previewInfo.error && (
-                  <div className="mt-3 bg-yellow-50 rounded-lg px-3 py-2 text-xs text-yellow-700">
-                    ⚠️ {previewInfo.error.message}
+                    <p className="text-gray-400 text-xs">请稍候，生成完成后即可下载</p>
                   </div>
                 )}
                 
@@ -1948,28 +1922,30 @@ export default function Home() {
                   </div>
                 )}
                 
-                {/* 兜底：previewInfo 未加载时使用旧逻辑 */}
-                {!previewInfo && (previewGammaUrl || result.gammaUrl) && (
-                  <a
-                    href={previewGammaUrl || result.gammaUrl || '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-8 text-center group hover:from-gray-800 hover:to-gray-700 transition-all"
-                  >
-                    <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">👁️</div>
-                    <p className="text-white font-bold text-lg mb-2">在线预览 PPT</p>
-                    <p className="text-gray-400 text-sm">点击在新标签页中查看完整演示文稿</p>
-                    <div className="mt-4 inline-flex items-center gap-2 bg-white/10 rounded-full px-4 py-2 text-white/80 text-xs">
-                      <span>↗</span> 打开预览
+                {/* Gamma在线预览已移除 v10.45 — 用户可直接下载PPTX/PDF */}
+                {(!previewInfo || previewInfo?.status === 'loading') && (
+                  <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-8 text-center">
+                    <div className="text-5xl mb-4">📄</div>
+                    <p className="text-white font-bold text-lg mb-2">PPT 已就绪</p>
+                    <p className="text-gray-400 text-sm mb-4">使用下方按钮下载或预览</p>
+                    <div className="flex justify-center gap-3">
+                      <button
+                        onClick={handleExportPPT}
+                        disabled={!result.generationId || exporting}
+                        className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-orange-200/40 hover:shadow-xl active:scale-[0.98] transition-all flex items-center gap-2 disabled:opacity-50"
+                      >
+                        {exporting ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        ) : '📄'} 下载 PPT
+                      </button>
+                      <button
+                        onClick={() => setShowPdfPreview(true)}
+                        disabled={!result.generationId}
+                        className="px-6 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-purple-200/40 hover:shadow-xl active:scale-[0.98] transition-all flex items-center gap-2 disabled:opacity-50"
+                      >
+                        👁️ PDF 预览
+                      </button>
                     </div>
-                  </a>
-                )}
-                
-                {!previewInfo && !previewGammaUrl && !result.gammaUrl && (
-                  <div className="bg-gray-100 rounded-xl p-8 text-center">
-                    <div className="text-4xl mb-3">📄</div>
-                    <p className="text-gray-500 text-sm mb-1">预览加载中...</p>
-                    <p className="text-gray-400 text-xs">稍后可点击下方按钮下载 PPT</p>
                   </div>
                 )}
               </div>
