@@ -1,9 +1,26 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
   // P0-004: 确保 SPA 路由的 SSR fallback
   // 统一使用尾部斜杠策略，避免路由重复
   trailingSlash: false,
+
+  // DOMMatrix polyfill for pdfjs-dist during SSR/prerendering
+  // DOMMatrix polyfill — loaded via page-level import (src/lib/dommatrix-polyfill.js)
+  // Turbopack does not use webpack plugins, so ProvidePlugin was removed.
+  turbopack: {},
+
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        canvas: false,
+        path: false,
+      };
+    }
+    return config;
+  },
 
   // 安全头部
   async headers() {

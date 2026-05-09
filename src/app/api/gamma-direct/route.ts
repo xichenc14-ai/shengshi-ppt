@@ -295,7 +295,7 @@ export async function POST(request: NextRequest) {
       numCards: pageCount,
       exportAs,
       themeId: finalThemeId,
-      cardSplit: 'inputTextBreaks', // 🚨 V8.2：强制精确分页
+      cardSplit: undefined, // removed inputTextBreaks to avoid blank pages
       additionalInstructions: finalInstructions + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji代替web SVG图标。' + criticalInstruction,
       textOptions: { amount: 'medium', tone, language: 'zh-cn' },
       imageOptions,

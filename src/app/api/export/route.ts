@@ -1,19 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getPptBuffer } from './route.utils';
 
-// 简易内存缓存（Vercel Serverless 单实例内有效）
-const pptCache = new Map<string, { buffer: Buffer; createdAt: number }>();
 const CACHE_TTL = 5 * 60 * 1000;
-
-export function registerPptBuffer(fileId: string, buffer: Buffer) {
-  pptCache.set(fileId, { buffer, createdAt: Date.now() });
-}
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, val] of pptCache.entries()) {
-    if (now - val.createdAt > CACHE_TTL) pptCache.delete(key);
-  }
-}, 60 * 1000);
 
 // GET: 支持两种模式
 // 1. ?file=xxx → 从内存缓存读取（本地生成）
@@ -62,22 +50,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '缺少文件参数' }, { status: 400 });
     }
 
-    const cached = pptCache.get(fileId);
+    const cached = getPptBuffer(fileId);
     if (!cached) {
       return NextResponse.json({ error: '文件不存在或已过期' }, { status: 404 });
     }
 
-    if (Date.now() - cached.createdAt > CACHE_TTL) {
-      pptCache.delete(fileId);
-      return NextResponse.json({ error: '文件已过期' }, { status: 410 });
-    }
+    // 注意：已过期检查由 utils 侧的 setInterval 处理，这里不做重复删除
 
-    return new NextResponse(new Uint8Array(cached.buffer), {
+    return new NextResponse(new Uint8Array(cached), {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
         'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
-        'Content-Length': cached.buffer.length.toString(),
+        'Content-Length': cached.length.toString(),
         'Cache-Control': 'no-cache',
       },
     });

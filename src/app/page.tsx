@@ -1,5 +1,6 @@
 'use client';
 
+import '@/lib/dommatrix-polyfill';
 import React, { useState, useCallback, useRef, useEffect, Suspense } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -19,8 +20,9 @@ import StreamingOutline from '@/components/StreamingOutline';
 import GenerationProgress from '@/components/GenerationProgress';
 import SkeletonCard from '@/components/SkeletonCard';
 import ThemeSelector from '@/components/ThemeSelector';
+import PDFPreview from '@/components/PDFPreview';
 import dynamicImport from 'next/dynamic';
-const PDFPreview = dynamicImport(() => import('@/components/PDFPreview'), { ssr: false });
+
 import ScrollingBanner from '@/components/ScrollingBanner';
 import { buildMdV2, buildAdditionalInstructions } from '@/lib/build-md-v2';
 import { validateInput, LIMITS } from '@/lib/input-validation';
@@ -130,10 +132,9 @@ export default function Home() {
   // Result
   const [result, setResult] = useState<{ title: string; slides: SlideItem[]; pptxUrl: string; gammaUrl?: string; actualPages?: number; generationId?: string } | null>(null);
   const [exporting, setExporting] = useState(false); // 导出中
-  const [pdfExporting, setPdfExporting] = useState(false); // 导出PDF中
   const [previewGammaUrl, setPreviewGammaUrl] = useState<string>(''); // v10.13: Gamma 在线预览链接
   const [previewInfo, setPreviewInfo] = useState<PreviewInfo | null>(null); // D4: 预览信息状态
-  const [showPdfPreview, setShowPdfPreview] = useState(false); // v10.15: PDF预览弹窗
+  const [showPdfPreview, setShowPdfPreview] = useState(false); // v10.47: PDF预览弹窗
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -992,63 +993,6 @@ export default function Home() {
     }
   };
 
-  const handleExportPDF = async () => {
-    if (!user) { openLogin(); return; }
-    if (!result?.generationId) return;
-    
-    const pdfPageCount = result.actualPages || pageCount;
-    setPdfExporting(true);
-    try {
-      const filename = result.title ? `${result.title}.pdf` : '省心PPT.pdf';
-      
-      // 记录下载
-      try {
-        await fetch('/api/download', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'record', userId: user.id, pageCount: pdfPageCount, format: 'pdf' }),
-        });
-      } catch {}
-
-      // v10.9: 使用新的 /api/download-pdf 代理（后端处理302重定向 + PDF导出）
-      const pdfController = new AbortController();
-      const pdfTimeout = setTimeout(() => pdfController.abort(), 60000); // 60秒超时（PDF导出需要额外时间）
-      
-      let res: Response;
-      try {
-        res = await fetch(`/api/download-pdf?generationId=${result.generationId}&name=${encodeURIComponent(filename)}`, {
-          signal: pdfController.signal,
-        });
-      } catch (fetchErr: any) {
-        clearTimeout(pdfTimeout);
-        setPdfExporting(false);
-        const usePptx = window.confirm(
-          'PDF 下载超时\n\n建议：下载 PPTX 文件后，用 Keynote/PowerPoint/WPS 导出为 PDF\n\n是否下载 PPTX 版本？'
-        );
-        if (usePptx) handleExportPPT();
-        return;
-      }
-      clearTimeout(pdfTimeout);
-
-      const contentType = res.headers.get('Content-Type') || '';
-      if (!res.ok || contentType.includes('application/json')) {
-        const errData = await res.json().catch(() => ({ fallbackPptx: true }));
-        setPdfExporting(false);
-        const usePptx = window.confirm(
-          'PDF 格式暂不可用\n\n建议：下载 PPTX 文件后，用 Keynote/PowerPoint/WPS 导出为 PDF\n\n是否下载 PPTX 版本？'
-        );
-        if (usePptx) handleExportPPT();
-        return;
-      }
-      
-      // v10.9: 使用 blob → 临时 a 标签 → click → 清理 DOM
-      const blob = await res.blob();
-      downloadBlob(blob, filename);
-    } finally {
-      setPdfExporting(false);
-    }
-  };
-
 
 
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -1871,7 +1815,7 @@ export default function Home() {
               <p className="text-sm text-gray-500">{result.title || '演示文稿'} · {result.actualPages || pageCount} 页</p>
             </div>
 
-            {/* v10.45: Gamma在线预览已移除 — 用户直接使用PPTX下载和PDF预览 */}
+            {/* v10.47: 恢复PDF预览和PPTX下载 */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden mb-6">
               {/* 预览标题栏 */}
               <div className="bg-gradient-to-r from-purple-50 to-indigo-50 px-4 py-2 flex items-center justify-between">
@@ -1879,94 +1823,41 @@ export default function Home() {
                   <span className="text-green-500">✓</span>
                   <span className="text-xs text-gray-600">PPT 已生成 · {result.actualPages || pageCount} 页</span>
                 </div>
-                {/* D4: 显示导出格式徽章 */}
-                {previewInfo?.exportFormat && previewInfo.exportFormat !== 'unknown' && (
-                  <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">
-                    {previewInfo.exportFormat === 'pptx' ? 'PPTX' : 'PDF'}
-                  </span>
-                )}
+                <button
+                  onClick={() => setShowPdfPreview(true)}
+                  className="px-3 py-1 text-xs text-purple-600 hover:text-purple-800 hover:bg-purple-100 rounded-lg transition-all"
+                >
+                  🔍 PDF预览
+                </button>
               </div>
 
               {/* 预览区域 */}
               <div className="p-6">
-                {/* D4: 根据 previewInfo.status 显示不同状态 */}
-                {previewInfo?.status === 'loading' && !previewGammaUrl && !result.gammaUrl && (
-                  <div className="bg-gray-100 rounded-xl p-8 text-center">
-                    <div className="animate-spin w-8 h-8 border-2 border-purple-200 border-t-purple-600 rounded-full mx-auto mb-3"></div>
-                    <p className="text-gray-500 text-sm">正在获取预览信息...</p>
-                  </div>
-                )}
-                
-                {previewInfo?.status === 'pending' && (
-                  <div className="bg-gray-100 rounded-xl p-8 text-center">
-                    <div className="text-4xl mb-3">⏳</div>
-                    <p className="text-gray-500 text-sm mb-1">PPT 正在生成中...</p>
-                    <p className="text-gray-400 text-xs">请稍候，生成完成后即可下载</p>
-                  </div>
-                )}
-                
-                {previewInfo?.status === 'failed' && (
-                  <div className="bg-red-50 rounded-xl p-8 text-center">
-                    <div className="text-4xl mb-3">⚠️</div>
-                    <p className="text-red-600 font-bold mb-2">预览不可用</p>
-                    <p className="text-gray-500 text-sm mb-3">
-                      {previewInfo.error?.message || '请尝试下载PPTX文件'}
-                    </p>
+                <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-8 text-center">
+                  <div className="text-5xl mb-4">📄</div>
+                  <p className="text-white font-bold text-lg mb-2">PPT 已就绪</p>
+                  <p className="text-gray-400 text-sm mb-4">点击下方按钮下载PPTX文件</p>
+                  <div className="flex justify-center gap-3">
                     <button
                       onClick={handleExportPPT}
                       disabled={!result.generationId || exporting}
-                      className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50 transition-colors"
+                      className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-orange-200/40 hover:shadow-xl active:scale-[0.98] transition-all flex items-center gap-2 disabled:opacity-50"
                     >
-                      {exporting ? '下载中...' : '下载 PPTX'}
+                      {exporting ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      ) : '📄'} 下载 PPTX
                     </button>
                   </div>
-                )}
-                
-                {/* Gamma在线预览已移除 v10.45 — 用户可直接下载PPTX/PDF */}
-                {(!previewInfo || previewInfo?.status === 'loading') && (
-                  <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-8 text-center">
-                    <div className="text-5xl mb-4">📄</div>
-                    <p className="text-white font-bold text-lg mb-2">PPT 已就绪</p>
-                    <p className="text-gray-400 text-sm mb-4">使用下方按钮下载或预览</p>
-                    <div className="flex justify-center gap-3">
-                      <button
-                        onClick={handleExportPPT}
-                        disabled={!result.generationId || exporting}
-                        className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-orange-200/40 hover:shadow-xl active:scale-[0.98] transition-all flex items-center gap-2 disabled:opacity-50"
-                      >
-                        {exporting ? (
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        ) : '📄'} 下载 PPT
-                      </button>
-                      <button
-                        onClick={() => setShowPdfPreview(true)}
-                        disabled={!result.generationId}
-                        className="px-6 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-purple-200/40 hover:shadow-xl active:scale-[0.98] transition-all flex items-center gap-2 disabled:opacity-50"
-                      >
-                        👁️ PDF 预览
-                      </button>
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
             </div>
 
-            {/* v10.15: 预览按钮 + 导出按钮 */}
-            <div className="grid grid-cols-3 gap-3 mb-6">
-              {/* PDF预览按钮 */}
-              <button
-                onClick={() => setShowPdfPreview(true)}
-                disabled={!result.generationId}
-                className="py-4 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-2xl text-base font-bold shadow-lg shadow-purple-200/40 hover:shadow-xl hover:shadow-purple-300/50 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span className="text-xl">👁️</span>
-                PDF 预览
-              </button>
-              {/* PPT下载按钮 */}
+            {/* v10.47: 仅保留PPTX下载按钮 */}
+            <div className="mb-6">
               <button
                 onClick={handleExportPPT}
                 disabled={!result.generationId || exporting}
-                className="py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-2xl text-base font-bold shadow-lg shadow-orange-200/40 hover:shadow-xl hover:shadow-orange-300/50 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-2xl text-base font-bold shadow-lg shadow-orange-200/40 hover:shadow-xl hover:shadow-orange-300/50 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {exporting ? (
                   <>
@@ -1976,26 +1867,7 @@ export default function Home() {
                 ) : (
                   <>
                     <span className="text-xl">📄</span>
-                    下载 PPT
-                  </>
-                )}
-              </button>
-              {/* PDF下载按钮 */}
-              <button
-                onClick={handleExportPDF}
-                disabled={!result.generationId || pdfExporting}
-                className="py-4 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-2xl text-base font-bold shadow-lg shadow-blue-200/40 hover:shadow-xl hover:shadow-blue-300/50 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {pdfExporting ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    下载中...
-                  </>
-                ) : (
-                  <>
-                    <span className="text-xl">📑</span>
-                    下载 PDF
-                    <span className="text-[10px] opacity-60 ml-1">· 可能需转PPT</span>
+                    下载 PPTX
                   </>
                 )}
               </button>
@@ -2018,6 +1890,16 @@ export default function Home() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ===== PDF预览弹窗 ===== */}
+      {showPdfPreview && result?.generationId && (
+        <PDFPreview
+          generationId={result.generationId}
+          exportUrl={result.pptxUrl}
+          gammaUrl={result.gammaUrl}
+          onClose={() => setShowPdfPreview(false)}
+        />
       )}
 
       {/* ===== MODALS ===== */}
@@ -2071,15 +1953,6 @@ export default function Home() {
         onClose={() => setShowThemePicker(false)}
       />
 
-      {/* v10.15: PDF预览弹窗 */}
-      {showPdfPreview && result?.generationId && (
-        <PDFPreview
-          generationId={result.generationId}
-          exportUrl={previewInfo?.exportUrl || result.pptxUrl}
-          gammaUrl={previewInfo?.gammaUrl || result.gammaUrl}
-          onClose={() => setShowPdfPreview(false)}
-        />
-      )}
 
     </div>
   );
