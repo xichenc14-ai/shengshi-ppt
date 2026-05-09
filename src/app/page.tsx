@@ -976,8 +976,14 @@ export default function Home() {
           
           const blob = await res.blob();
           downloadBlob(blob, filename);
-          // TODO: 调用支付接口
-          alert('PPT已下载！支付接口开发中，稍后补充');
+          // [D5] 非会员下载后弹出支付订阅提示，不再使用单纯的 alert
+          openPayment({
+            id: 'shengxin',
+            name: '省心会员 · ✨',
+            price: '¥19.9/月',
+            billing: 'monthly',
+            reason: `本次已免费下载，开通会员后可无限次下载`,
+          });
         } else {
           openPayment({ id: 'shengxin', name: '省心会员', price: '¥19.9', billing: 'monthly', reason: `订阅会员 · ${totalPages}页PPT免费下` });
         }

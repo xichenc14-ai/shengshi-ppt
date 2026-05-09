@@ -31,11 +31,13 @@ export async function GET(req: NextRequest) {
     }, { status: 400 });
   }
 
+  const startTime = Date.now();
+
   try {
     const selectedKey = selectBestKey();
     const apiKey = selectedKey.key;
 
-    // Step 1: 先检查生成状态（与 export-pptx 保持一致）
+    // [D5] Step 1: 先检查生成状态（与 export-pptx 保持一致）
     const statusRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
       headers: {
         'X-API-KEY': apiKey,
@@ -71,52 +73,190 @@ export async function GET(req: NextRequest) {
       }, { status: 500 });
     }
 
-    // Step 2: 调用 Gamma PDF 导出 API
-    const exportRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/export`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'User-Agent': GAMMA_UA,
-      },
-      body: JSON.stringify({ format: FORMAT }),
-      signal: AbortSignal.timeout(60000),
-    });
-
-    if (!exportRes.ok) {
-      const errText = await exportRes.text().catch(() => '');
-      console.error('[DownloadPDF] Export失败:', exportRes.status, errText);
+    // [D5] 预检：检查总耗时，如果已超过 120s 则自动降级
+    const elapsedMs = Date.now() - startTime;
+    if (elapsedMs >= 120000) {
+      console.warn('[DownloadPDF] 已超过 120s 限制，自动降级为 PPTX fallback');
       return NextResponse.json({
         generationId,
-        status: 'failed',
-        error: { code: 'EXPORT_FAILED', message: `PDF导出失败: ${exportRes.status}` },
-      }, { status: 502 });
+        status: 'degraded',
+        error: { code: 'EXPORT_TIMEOUT_DEGRADED', message: 'PDF 导出超时，建议下载 PPTX' },
+        fallbackPptx: true,
+        pptxUrl: statusData.exportUrl || statusData.deck?.url || null,
+      }, { status: 200 });
     }
 
-    const exportData = await exportRes.json();
-    const pdfUrl = exportData.exportUrl || exportData.url;
+    // [D5] Step 2: 尝试 post /exports 复数端点（先尝试更可靠的端点）
+    let pdfUrl = '';
+
+    // 先检查是否有现成的 exportUrl
+    if (statusData.exportUrl && statusData.exportUrl.toLowerCase().includes('.pdf')) {
+      pdfUrl = statusData.exportUrl;
+      console.log('[DownloadPDF] 使用已有 PDF URL:', pdfUrl);
+    }
+
+    // 如果没有现成的，调用导出 API
+    if (!pdfUrl) {
+      // 先尝试复数端点 /exports
+      const exportsRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/exports`, {
+        method: 'POST',
+        headers: {
+          'X-API-KEY': apiKey,
+          'Content-Type': 'application/json',
+          'User-Agent': GAMMA_UA,
+        },
+        body: JSON.stringify({ format: FORMAT }),
+        signal: AbortSignal.timeout(30000), // 30s 超时
+      });
+
+      if (exportsRes.ok) {
+        const exportsData = await exportsRes.json();
+        if (exportsData.url) {
+          pdfUrl = exportsData.url;
+        } else if (exportsData.exportUrl) {
+          pdfUrl = exportsData.exportUrl;
+        } else if (exportsData.pdfUrl) {
+          pdfUrl = exportsData.pdfUrl;
+        } else if (exportsData.downloadUrl) {
+          pdfUrl = exportsData.downloadUrl;
+        } else if (exportsData.id || exportsData.exportId) {
+          // 需要轮询等待导出完成
+          const exportId = exportsData.id || exportsData.exportId;
+          console.log('[DownloadPDF] 开始轮询导出任务:', exportId);
+
+          for (let i = 0; i < 15; i++) {
+            // [D5] 每次轮询前检查总耗时
+            if (Date.now() - startTime >= 120000) {
+              console.warn('[DownloadPDF] 轮询超 120s，自动降级 fallback');
+              return NextResponse.json({
+                generationId,
+                status: 'degraded',
+                error: { code: 'EXPORT_TIMEOUT_DEGRADED', message: 'PDF 导出超时，建议下载 PPTX' },
+                fallbackPptx: true,
+              }, { status: 200 });
+            }
+
+            await new Promise(r => setTimeout(r, 2000));
+
+            const checkRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/exports/${exportId}`, {
+              headers: {
+                'X-API-KEY': apiKey,
+                'User-Agent': GAMMA_UA,
+              },
+            });
+
+            if (!checkRes.ok) {
+              console.warn('[DownloadPDF] 查询导出状态失败:', checkRes.status);
+              continue;
+            }
+
+            const checkData = await checkRes.json();
+            console.log(`[DownloadPDF] 轮询 ${i+1}/15, 状态: ${checkData.status || 'unknown'}`);
+
+            if (checkData.url || checkData.exportUrl || checkData.pdfUrl || checkData.downloadUrl) {
+              pdfUrl = checkData.url || checkData.exportUrl || checkData.pdfUrl || checkData.downloadUrl;
+              console.log('[DownloadPDF] PDF 导出完成:', pdfUrl);
+              break;
+            }
+
+            if (checkData.status === 'failed' || checkData.error) {
+              console.error('[DownloadPDF] PDF 导出失败:', checkData.error);
+              return NextResponse.json({
+                generationId,
+                status: 'degraded',
+                error: { code: 'EXPORT_FAILED', message: checkData.error || 'PDF 导出失败' },
+                fallbackPptx: true,
+              }, { status: 200 });
+            }
+
+            if (checkData.status === 'completed' || checkData.status === 'ready') {
+              pdfUrl = checkData.url || checkData.exportUrl || checkData.pdfUrl || checkData.downloadUrl;
+              if (pdfUrl) {
+                console.log('[DownloadPDF] 导出完成:', pdfUrl);
+                break;
+              }
+            }
+          }
+        }
+
+        // 如果复数端点未返回 URL，尝试单数端点
+        if (!pdfUrl) {
+          console.log('[DownloadPDF] /exports 未返回 URL，尝试 /export fallback...');
+          const fallbackExportRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/export`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+              'User-Agent': GAMMA_UA,
+            },
+            body: JSON.stringify({ format: FORMAT }),
+            signal: AbortSignal.timeout(30000),
+          });
+
+          if (fallbackExportRes.ok) {
+            const fallbackData = await fallbackExportRes.json();
+            pdfUrl = fallbackData.exportUrl || fallbackData.url || '';
+            console.log('[DownloadPDF] /export fallback 成功:', pdfUrl);
+          }
+        }
+      } else {
+        // 复数端点失败，尝试单数端点
+        console.log('[DownloadPDF] /exports 失败，尝试 /export fallback...');
+        const fallbackExportRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/export`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'User-Agent': GAMMA_UA,
+          },
+          body: JSON.stringify({ format: FORMAT }),
+          signal: AbortSignal.timeout(30000),
+        });
+
+        if (fallbackExportRes.ok) {
+          const fallbackData = await fallbackExportRes.json();
+          pdfUrl = fallbackData.exportUrl || fallbackData.url || '';
+          console.log('[DownloadPDF] /export fallback 成功:', pdfUrl);
+        }
+      }
+    }
 
     if (!pdfUrl) {
+      console.error('[DownloadPDF] 未获取到 PDF 链接');
       return NextResponse.json({
         generationId,
-        status: 'failed',
+        status: 'degraded',
         error: { code: 'FILE_NOT_AVAILABLE', message: '未获取到 PDF 链接' },
-      }, { status: 500 });
+        fallbackPptx: true,
+      }, { status: 200 });
     }
 
-    // Step 3: 后端代理获取 PDF 二进制流（处理 302 重定向）
+    // [D5] Step 3: 下载前再次检查总耗时
+    if (Date.now() - startTime >= 120000) {
+      console.warn('[DownloadPDF] 下载前已超 120s，自动降级');
+      return NextResponse.json({
+        generationId,
+        status: 'degraded',
+        error: { code: 'EXPORT_TIMEOUT_DEGRADED', message: 'PDF 下载超时，建议下载 PPTX' },
+        fallbackPptx: true,
+      }, { status: 200 });
+    }
+
+    // 后端代理获取 PDF 二进制流（处理 302 重定向）
     const pdfRes = await fetch(pdfUrl, {
       headers: { 'User-Agent': GAMMA_UA },
       redirect: 'follow',
-      signal: AbortSignal.timeout(120000),
+      signal: AbortSignal.timeout(60000),
     });
 
     if (!pdfRes.ok) {
+      console.error('[DownloadPDF] 获取 PDF 文件失败:', pdfRes.status);
       return NextResponse.json({
         generationId,
-        status: 'failed',
+        status: 'degraded',
         error: { code: 'DOWNLOAD_FAILED', message: `获取 PDF 文件失败: ${pdfRes.status}` },
-      }, { status: 502 });
+        fallbackPptx: true,
+      }, { status: 200 });
     }
 
     const arrayBuffer = await pdfRes.arrayBuffer();

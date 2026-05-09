@@ -76,13 +76,10 @@ async function parsePdf(buffer: Buffer): Promise<string> {
   try {
     // 使用pdfjs-dist/legacy（纯JS，不需要web worker）
     const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-    const { getDocument, GlobalWorkerOptions } = pdfjsLib;
+    const { getDocument } = pdfjsLib;
     
-    // 设置workerSrc — 使用Next.js webpack asset机制
-    // @ts-ignore
-    const workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href;
-    GlobalWorkerOptions.workerSrc = workerSrc;
-    console.log('[Parse] pdfjs workerSrc:', workerSrc?.substring(0, 80));
+    // 使用legacy/inline模式：无需设置workerSrc，pdfjs-dist/legacy 已内联worker
+    // 不设置 GlobalWorkerOptions.workerSrc 以避免 serverless 中路径解析冲突和 polyfill 注入顺序问题
     
     const loadingTask = getDocument({
       data: new Uint8Array(buffer),
@@ -139,6 +136,25 @@ export async function POST(request: NextRequest) {
     const fileName = file.name.toLowerCase();
     const buffer = Buffer.from(await file.arrayBuffer());
     let text = '';
+
+    // Extension-MIME consistency validation
+    const ALLOWED_MIME_TYPES: Record<string, string> = {
+      '.pdf': 'application/pdf',
+      '.csv': 'text/csv',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.xls': 'application/vnd.ms-excel',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.doc': 'application/msword',
+      '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      '.ppt': 'application/vnd.ms-powerpoint',
+      '.txt': 'text/plain',
+      '.md': 'text/markdown',
+    };
+
+    const detectedExt = Object.keys(ALLOWED_MIME_TYPES).find(ext => fileName.endsWith(ext));
+    if (detectedExt && file.type && file.type !== ALLOWED_MIME_TYPES[detectedExt]) {
+      return NextResponse.json({ error: '文件类型与内容类型不匹配' }, { status: 400 });
+    }
 
     if (fileName.endsWith('.pdf')) {
       try {
