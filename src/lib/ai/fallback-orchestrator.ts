@@ -1,9 +1,9 @@
 // src/lib/ai/fallback-orchestrator.ts
-// v10.48: MiniMax + DeepSeek 双 Provider Fallback
+// v10.50: MiniMax + DeepSeek 双 Provider Fallback（默认 DeepSeek）
 //
 // 架构决策: AI 服务支持 MiniMax（主） + DeepSeek（备）
-// - MiniMax 优先，失败后切换 DeepSeek
-// - DeepSeek 失败后切换 MiniMax 重试
+// - 默认 DeepSeek 优先，失败后切换 MiniMax
+// - 可通过 OUTLINE_PRIMARY_PROVIDER / AI_PRIMARY_PROVIDER 覆盖优先级
 
 import { callMiniMaxWithRetry } from '@/lib/minimax-client';
 import { callDeepSeekWithRetry } from '@/lib/deepseek-client';
@@ -50,9 +50,8 @@ export interface FallbackOptions {
 
 // === Constants ===
 
-const MAX_RETRIES = 2;
 const BASE_TIMEOUT_MS = 30_000;
-const RETRY_DELAY_MS = 2_000;
+const PROVIDER_RETRIES = 2;
 
 // === Helper Functions ===
 
@@ -81,9 +80,31 @@ function extractStatusCode(e: unknown): number | undefined {
   return undefined;
 }
 
-function sanitizeAttempt(attempt: FallbackAttempt): FallbackAttempt {
-  const { data: _data, error: _error, ...rest } = attempt;
-  return rest;
+function normalizeProvider(raw: string | undefined): FallbackProvider | null {
+  if (!raw) return null;
+  const value = raw.toLowerCase().trim();
+  if (value === 'minimax') return 'minimax';
+  if (value === 'deepseek') return 'deepseek';
+  return null;
+}
+
+function isProviderConfigured(provider: FallbackProvider): boolean {
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST) return true;
+  if (provider === 'minimax') return Boolean(process.env.MINIMAX_API_KEY);
+  return Boolean(process.env.DEEPSEEK_API_KEY);
+}
+
+function buildProviderOrder(): FallbackProvider[] {
+  // 支持通过环境变量切换主模型：
+  // OUTLINE_PRIMARY_PROVIDER=deepseek|minimax（推荐）
+  // AI_PRIMARY_PROVIDER=deepseek|minimax（兼容别名）
+  const preferred =
+    normalizeProvider(process.env.OUTLINE_PRIMARY_PROVIDER)
+    || normalizeProvider(process.env.AI_PRIMARY_PROVIDER)
+    || 'deepseek'; // 默认改为 DeepSeek（用户要求）
+
+  const secondary: FallbackProvider = preferred === 'deepseek' ? 'minimax' : 'deepseek';
+  return [preferred, secondary, preferred];
 }
 
 // === Core Function ===
@@ -91,27 +112,36 @@ function sanitizeAttempt(attempt: FallbackAttempt): FallbackAttempt {
 export async function callWithFallback(
   options: FallbackOptions
 ): Promise<FallbackResult> {
-  const requestId = typeof crypto !== 'undefined' && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const startTime = Date.now();
   const attempts: FallbackAttempt[] = [];
   const messages = buildMessages(options.systemPrompt, options.userPrompt);
 
-  // 尝试顺序：MiniMax → DeepSeek → MiniMax 重试
-  const providers: FallbackProvider[] = ['minimax', 'deepseek', 'minimax'];
+  // 尝试顺序：主模型 → 备用模型 → 主模型重试
+  const providers = buildProviderOrder();
   let lastError: unknown;
   let lastStatusCode: number | undefined;
-  let finalProvider: FallbackProvider | null = null;
 
   for (const provider of providers) {
     const attemptStart = Date.now();
     const timeoutMs = BASE_TIMEOUT_MS;
 
+    if (!isProviderConfigured(provider)) {
+      const msg = `${provider} API Key 未配置，跳过`;
+      attempts.push({
+        provider,
+        success: false,
+        durationMs: 0,
+        errorClass: 'AuthError',
+        error: msg,
+      });
+      lastError = new Error(msg);
+      console.warn(`[fallback-orchestrator] ${msg}`);
+      continue;
+    }
+
     try {
       const data = provider === 'minimax'
-        ? await callMiniMaxWithRetry(messages, { timeoutMs, maxRetries: 0 })
-        : await callDeepSeekWithRetry(messages, { timeoutMs, maxRetries: 0 });
+        ? await callMiniMaxWithRetry(messages, { timeoutMs, maxRetries: PROVIDER_RETRIES })
+        : await callDeepSeekWithRetry(messages, { timeoutMs, maxRetries: PROVIDER_RETRIES });
 
       const durationMs = Date.now() - attemptStart;
       const fallbackAttempt: FallbackAttempt = {
@@ -121,7 +151,6 @@ export async function callWithFallback(
         data,
       };
       attempts.push(fallbackAttempt);
-      finalProvider = provider;
 
       console.log(`[fallback-orchestrator] ${provider} 成功，耗时 ${durationMs}ms`);
 
@@ -148,11 +177,6 @@ export async function callWithFallback(
         statusCode,
         error: e,
       });
-
-      // 认证错误不重试
-      if (errorClass === 'AuthError' || errorClass === 'BadRequest') {
-        break;
-      }
     }
   }
 

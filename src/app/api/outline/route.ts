@@ -333,6 +333,14 @@ ${topic}`
 
       if (!result.ok) {
         aiError = result.error?.message ?? '抱歉，AI服务暂时繁忙，请稍后再试';
+        const attempts = (result.attempts || []).map((a) => ({
+          provider: a.provider,
+          success: a.success,
+          errorClass: a.errorClass,
+          statusCode: a.statusCode,
+          durationMs: a.durationMs,
+        }));
+        console.warn('[Outline] Fallback attempts:', JSON.stringify(attempts));
         console.warn('[Outline] All AI providers failed:', aiError);
       } else if (result.data) {
         parsed = tryParseJson(result.data);
