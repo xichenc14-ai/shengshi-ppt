@@ -1252,9 +1252,11 @@ export default function Home() {
 
     try {
       const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
+      const generationId = result.generationId;
+      if (!generationId) throw new Error('缺少生成任务ID，无法预览');
 
       const pptxFilename = `${safeTitle}.pptx`;
-      const pptxPath = buildPreviewApiPath(result.generationId, 'pptx', pptxFilename, true);
+      const pptxPath = buildPreviewApiPath(generationId, 'pptx', pptxFilename, true);
       if (typeof window !== 'undefined') {
         const absolutePptxUrl = `${window.location.origin}${pptxPath}`;
         setPreviewPptxEmbedUrl(`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absolutePptxUrl)}`);
@@ -1262,24 +1264,31 @@ export default function Home() {
         setPreviewPptxEmbedUrl('');
       }
 
-      const pdfFilename = `${safeTitle}.pdf`;
-      const pdfPath = buildPreviewApiPath(result.generationId, 'pdf', pdfFilename, true);
-      const pdfRes = await fetch(pdfPath);
-      const contentType = (pdfRes.headers.get('Content-Type') || '').toLowerCase();
-      if (!pdfRes.ok || contentType.includes('application/json')) {
-        const errData = await pdfRes.json().catch(() => ({ error: 'PDF 预览文件获取失败' }));
-        setPreviewPdfError(errData.error || 'PDF 预览文件获取失败');
-      } else {
+      setPreviewLoading(false);
+
+      // PDF 预览作为增强能力异步加载，不阻塞 PPTX 预览首屏。
+      (async () => {
+        const pdfFilename = `${safeTitle}.pdf`;
+        const pdfPath = buildPreviewApiPath(generationId, 'pdf', pdfFilename, true);
+        const pdfRes = await fetch(pdfPath);
+        const contentType = (pdfRes.headers.get('Content-Type') || '').toLowerCase();
+        if (!pdfRes.ok || contentType.includes('application/json')) {
+          const errData = await pdfRes.json().catch(() => ({ error: 'PDF 预览文件获取失败' }));
+          setPreviewPdfError(errData.error || 'PDF 预览文件获取失败');
+          return;
+        }
+
         const pdfBlob = await pdfRes.blob();
         const pdfObjectUrl = URL.createObjectURL(pdfBlob);
         setPreviewPdfObjectUrl((prev) => {
           if (prev) URL.revokeObjectURL(prev);
           return pdfObjectUrl;
         });
-      }
+      })().catch((err: any) => {
+        setPreviewPdfError(err?.message || 'PDF 预览文件获取失败');
+      });
     } catch (e: any) {
       setPreviewError(e.message || '在线预览加载失败');
-    } finally {
       setPreviewLoading(false);
     }
   }, [result?.generationId, result?.title]);
