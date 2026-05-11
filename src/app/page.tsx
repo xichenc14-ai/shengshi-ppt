@@ -469,7 +469,7 @@ export default function Home() {
           imageSource: directImgMode,
           tone: directTone,
           textMode: directTextMode,
-          exportAs: 'pptx',
+          exportAs: 'pdf',
         }),
       });
       // 先读取响应文本，再尝试解析 JSON
@@ -969,7 +969,7 @@ export default function Home() {
         textMode: tm,
         format: 'presentation',
         numCards: editedSlides.length,
-        exportAs: 'pptx',
+        exportAs: 'pdf',
         themeId: finalThemeId,
         tone: finalTone,
         imageMode: finalImageSource,
