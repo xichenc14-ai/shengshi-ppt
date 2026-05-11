@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
-import { selectBestKey, updateKeyBalance, recordKeyFailure, getKeyPoolStatus, convertCreditsToUserPoints } from '@/lib/gamma-key-pool';
+import { selectBestKey, updateKeyBalance, recordKeyFailure } from '@/lib/gamma-key-pool';
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
-import { normalizeUserInput, mapImageSource } from '@/lib/adapters/ppt-param-adapter';
+import { buildGammaImageOptions, normalizeUserInput } from '@/lib/adapters/ppt-param-adapter';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -285,11 +285,6 @@ export async function POST(request: NextRequest) {
     const normalized = normalizeUserInput(body as Record<string, unknown>);
     const pageCount = normalized.pageCount ?? 8;
 
-    // 🚨 V8.2 核心原则：Gamma API 固定使用 preserve 模式
-    // 无论用户选什么模式（扩充/缩减/保持），Gamma 只接收 preserve
-    // 因为大纲已经由 outline API 预处理好了，Gamma 只负责排版渲染
-    const textMode = 'preserve';
-
     // 支持结构化 slides 数据或纯文本 inputText
     let finalInputText: string;
     // 🚨 Bug fix: reject whitespace-only input BEFORE any processing
@@ -354,37 +349,17 @@ export async function POST(request: NextRequest) {
     if (finalThemeId !== rawThemeId && rawThemeId !== sceneConfig.themeId) {
       console.warn(`[Gamma] ThemeId mapped: "${rawThemeId}" → "${finalThemeId}"`);
     }
-    const finalTone = tone || sceneConfig.tone;
+    const finalTone = normalized.tone || tone || sceneConfig.tone;
 
-    // ===== 图片模式处理 =====
-    // 如果已传入完整的 imageOptions(省心模式),直接使用
-    // 否则根据 imageMode 字符串生成
-    let finalImageOptions: Record<string, any>;
-    if (imageOptions && typeof imageOptions === 'object' && imageOptions.source) {
-      // 省心模式:直接使用传入的 imageOptions
-      finalImageOptions = imageOptions;
-    } else if (imageMode === 'none') {
-      finalImageOptions = { source: 'noImages' };
-    } else if (imageMode === 'theme-img' || imageMode === 'theme') {
-      // 主题套图：根据主题深浅选择最佳图片源
-      // 深色主题(founder/aurora/electric)下themeAccent常显示占位符，改用网图
-      const darkThemes = new Set(['founder', 'aurora', 'electric', 'blues', 'gamma', 'luxe', 'aurum']);
-      if (darkThemes.has(finalThemeId)) {
-        finalImageOptions = { source: 'webFreeToUseCommercially' };
-      } else {
-        finalImageOptions = { source: 'themeAccent' };
-      }
-    } else if (imageMode === 'web') {
-      finalImageOptions = { source: 'webFreeToUseCommercially' };
-    } else if (imageMode === 'ai') {
-      // AI定制图：普通AI模型
-      finalImageOptions = { source: 'aiGenerated', model: 'imagen-3-flash', style: 'flat illustration, minimalist, clean background, negative space' };
-    } else if (imageMode === 'ai-pro') {
-      // AI尊享图：高质量模型(8 credits/图)
-      finalImageOptions = { source: 'aiGenerated', model: 'imagen-3-pro', style: 'professional, high quality, cinematic, detailed' };
-    } else {
-      finalImageOptions = { source: 'themeAccent' }; // 主题套图，默认推荐
-    }
+    // 🚨 P0 Fix: 统一使用 mapImageSource 处理 imageOptions
+    // 如果已传入完整的 imageOptions(省心模式)直接使用；否则从 imageMode 映射
+    const finalImageOptions = buildGammaImageOptions(
+      normalized.imageSource || imageMode,
+      finalThemeId,
+      imageOptions && typeof imageOptions === 'object'
+        ? (imageOptions as Record<string, unknown>)
+        : undefined
+    );
 
     const instructions = INSTRUCTION_TEMPLATES[finalTone] || INSTRUCTION_TEMPLATES.professional;
     // P0修复：追加全局视觉隐喻（如果提供）
@@ -394,31 +369,32 @@ export async function POST(request: NextRequest) {
     // 如果已传入 additionalInstructions（省心模式），直接使用；否则生成
     const finalInstructions = additionalInstructions || (instructions + metaphorAppend);
 
-    // 构建最终的 additionalInstructions（根据模式追加不同指令）
+    // 🚨 V8.2: Gamma 固定使用 preserve 模式（大纲已由 outline API 预处理）
+    // 构建最终 additionalInstructions
     let finalAdditionalInstructions = finalInstructions + '\n\n【图标规范-统一风格】\n使用Gamma内置的图标系统(Icons),保持风格统一:简洁、线性、单色、与主题色一致。禁止混用不同风格的图标(不要同时使用emoji和线性图标)。每页2-4个图标,用于要点标记和视觉装饰。禁止出现无图标的页面。';
-    if (textMode === 'preserve') {
+    const isThemeAccentMode = finalImageOptions?.source === 'themeAccent';
+    if (normalized.textMode === 'preserve') {
       // 🚨 V6修复：追加CRITICAL强制指令，封锁Gamma的发散权限
       finalAdditionalInstructions += '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作、扩写或修改任何事实信息。严格按照提供的Markdown层级和\'---\'分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。保持所有 \'>\' 作为演讲者备注不做展示。';
-      if (imageMode === 'theme-img' || imageMode === 'theme') {
+      if (isThemeAccentMode) {
         finalAdditionalInstructions += '\n\n【视觉丰富度-强制规则】\n1. 每页必须使用Gamma内置的Emphasize卡片布局(主题强调布局图),每页不同的布局变体\n2. 每页必须有视觉元素(图片/插图/图标/装饰),禁止出现纯文字页\n3. 使用主题套图(themeAccent)作为配图来源,确保图片与内容主题匹配\n4. 封面页和结尾页必须使用大幅背景图/强调图\n5. 数据页使用卡片式布局展示指标,配合图标和色彩区分';
       }
-    } else if (imageMode === 'theme-img' || imageMode === 'theme') {
+    } else if (isThemeAccentMode) {
       finalAdditionalInstructions += '\n\n【视觉丰富度-强制规则】\n1. 每页必须配图:使用Pexels高质量照片,风格professional/clean/minimalist\n2. 每页使用Gamma内置的Emphasize强调布局,每页不同的布局变体\n3. 封面页和结尾页必须使用大幅背景图\n4. 禁止出现纯文字页,每页必须有视觉元素';
     }
 
-    // 🚨 V8.2：Gamma 固定使用 preserve 模式（大纲已由 outline API 预处理）
-    // 无论用户选什么模式（扩充/缩减/保持），Gamma 只接收 preserve
-    const gammaPayload: Record<string, any> = {
+    // 🚨 P0 Fix: 使用解构排除 slides，不使用 delete 语句
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { slides: _slides, ..._rest } = body as Record<string, unknown>;
+
+    const gammaPayload: Record<string, unknown> = {
       inputText: finalInputText,
       textMode: 'preserve', // 固定值！Gamma只负责排版渲染
       format,
       exportAs,
       themeId: finalThemeId,
       additionalInstructions: finalAdditionalInstructions,
-      // 🚨 V8.2：强制精确分页（preserve 模式必须）
       cardSplit: cardSplit || 'inputTextBreaks',
-      // textOptions 在 preserve 模式下会被 Gamma 忽略（根据API警告）
-      // 但仍保留以备将来 API 更新
       textOptions: textOptions || {
         amount: 'medium',
         tone: finalTone,
@@ -428,12 +404,8 @@ export async function POST(request: NextRequest) {
       cardOptions: cardOptions || {
         dimensions: '16x9',
       },
-      // 🚨 V8.6: 不传 slides 参数（Gamma API 不接受此参数，可能导致 400）
-      // P0 Fix: 明确删除 slides 字段，确保不被发送到 Gamma
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    }; delete (gammaPayload as any).slides;
-    // 🚨 D1: Use canonical pageCount (aliased from numCards) in Gamma payload
-    gammaPayload.numCards = pageCount;
+      numCards: pageCount,
+    };
 
     // 🔍 DEBUG: log key fields
     console.log('[Gamma] textMode: preserve (fixed) | imageOptions:', JSON.stringify(finalImageOptions), '| imageMode:', imageMode);
@@ -511,16 +483,16 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // GET查询可以使用任意key（generationId不依赖key）
-    const selectedKey = selectBestKey();
-    const apiKey = selectedKey.key;
-
     const { searchParams } = new URL(request.url);
     const generationId = searchParams.get('id');
 
     if (!generationId) {
       return NextResponse.json({ error: '缺少 generationId' }, { status: 400 });
     }
+
+    // GET查询可以使用任意key（generationId不依赖key）
+    const selectedKey = selectBestKey();
+    const apiKey = selectedKey.key;
 
     const response = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
       headers: {

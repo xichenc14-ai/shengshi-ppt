@@ -25,8 +25,7 @@ const TONES = [
 
 const IMAGE_MODES = [
   { id: 'noImages', name: '纯净无图', desc: '0 credits', color: '#64748B' },
-  { id: 'theme-img', name: '主题套图', desc: '0 credits', color: '#8B5CF6' },
-  { id: 'pictographic', name: '精选套图', desc: '0 credits', color: '#0EA5E9' },
+  { id: 'themeAccent', name: '主题套图', desc: '0 credits', color: '#8B5CF6' },
   { id: 'webFreeToUseCommercially', name: '定制网图', desc: '0 credits', color: '#10B981' },
   { id: 'aiGenerated', name: 'AI定制图', desc: '2/图', color: '#F59E0B' },
 ];
@@ -47,7 +46,7 @@ export default function ThemePickerModal({ open, currentThemeId, currentTone, cu
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in" onClick={onClose}>
-      <div className="bg-white rounded-3xl shadow-2xl w-[420px] max-w-[92vw] max-h-[85vh] overflow-y-auto animate-modal-in">
+      <div className="bg-white rounded-3xl shadow-2xl w-[420px] max-w-[92vw] max-h-[85vh] overflow-y-auto animate-modal-in" onClick={(e) => e.stopPropagation()}>
         {/* 顶部渐变装饰条 */}
         <div className="h-1.5 bg-gradient-to-r from-[#5B4FE9] via-[#7C3AED] to-[#8B5CF6]" />
 

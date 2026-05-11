@@ -53,5 +53,8 @@ class DOMMatrix {
   toJSON() { return { a: this.a, b: this.b, c: this.c, d: this.d, e: this.e, f: this.f }; }
 }
 
+// Register on globalThis for SSR/prerendering contexts
+globalThis.DOMMatrix = DOMMatrix;
+
 module.exports = DOMMatrix;
 module.exports.default = DOMMatrix;

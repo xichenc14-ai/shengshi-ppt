@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // 设置 PDF.js worker（仅客户端）
@@ -37,6 +37,39 @@ export default function PDFPreview({ generationId, exportUrl, gammaUrl, onClose 
   const [error, setError] = useState<string | null>(null);
   const [fallbackPptx, setFallbackPptx] = useState(false);
 
+  const openPptxFallback = useCallback(() => {
+    if (exportUrl) {
+      window.open(exportUrl, '_blank');
+      return;
+    }
+    window.open(`/api/export-pptx?generationId=${generationId}`, '_blank');
+  }, [exportUrl, generationId]);
+
+  // 渲染指定页
+  const renderPage = useCallback(async (pdf: PDFDocumentProxy, pageNum: number, renderScale: number) => {
+    if (!canvasRef.current) return;
+
+    try {
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale: renderScale });
+
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
+
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      await page.render({
+        canvasContext: context!,
+        viewport: viewport,
+        canvas: canvas,
+      } as any).promise;
+
+    } catch (err) {
+      console.error('[PDFPreview] 渲染失败:', err);
+    }
+  }, []);
+
   // 加载 PDF
   useEffect(() => {
     if (!generationId) return;
@@ -48,15 +81,7 @@ export default function PDFPreview({ generationId, exportUrl, gammaUrl, onClose 
       setFallbackPptx(false);
 
       try {
-        // D4: 格式检测 - 如果exportUrl存在且不是PDF，直接提示下载PPTX
-        if (exportUrl && !exportUrl.toLowerCase().includes('.pdf')) {
-          setLoading(false);
-          setFallbackPptx(true);
-          setError('当前文件为PPTX格式，建议直接下载查看');
-          return;
-        }
-
-        // 通过 API 获取 PDF
+        // 通过 API 动态请求 PDF 导出；即使 Gamma 已返回 PPTX exportUrl，也允许服务端二次导出 PDF。
         setLoadingProgress(20);
         const res = await fetch(`/api/export-pdf?generationId=${generationId}`);
         
@@ -95,11 +120,13 @@ export default function PDFPreview({ generationId, exportUrl, gammaUrl, onClose 
         
         setPdfDoc(pdf);
         setTotalPages(pdf.numPages);
+        setCurrentPage(1);
+        setScale(1.5);
         setLoadingProgress(100);
         setLoading(false);
 
         // 渲染第一页
-        renderPage(pdf, 1, scale);
+        renderPage(pdf, 1, 1.5);
 
       } catch (err: any) {
         console.error('[PDFPreview] 加载失败:', err);
@@ -110,32 +137,7 @@ export default function PDFPreview({ generationId, exportUrl, gammaUrl, onClose 
     };
 
     loadPDF();
-  }, [generationId]);
-
-  // 渲染指定页
-  const renderPage = useCallback(async (pdf: PDFDocumentProxy, pageNum: number, renderScale: number) => {
-    if (!canvasRef.current) return;
-
-    try {
-      const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale: renderScale });
-
-      const canvas = canvasRef.current;
-      const context = canvas.getContext('2d');
-      
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-
-      await page.render({
-        canvasContext: context!,
-        viewport: viewport,
-        canvas: canvas,
-      } as any).promise;
-
-    } catch (err) {
-      console.error('[PDFPreview] 渲染失败:', err);
-    }
-  }, []);
+  }, [generationId, renderPage]);
 
   // 切换页
   useEffect(() => {
@@ -220,11 +222,7 @@ export default function PDFPreview({ generationId, exportUrl, gammaUrl, onClose 
               </p>
               <div className="flex gap-2 mt-3 justify-center">
                 <button
-                  onClick={() => {
-                    if (exportUrl) {
-                      window.open(exportUrl, '_blank');
-                    }
-                  }}
+                  onClick={openPptxFallback}
                   className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors"
                 >
                   下载 PPTX

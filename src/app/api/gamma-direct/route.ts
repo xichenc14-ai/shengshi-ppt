@@ -3,8 +3,8 @@ import { getSession } from '@/lib/session';
 import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
 import { selectBestKey, updateKeyBalance, recordKeyFailure } from '@/lib/gamma-key-pool';
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
-import { normalizeUserInput, mapImageSource } from '@/lib/adapters/ppt-param-adapter';
-import { getPlan, checkPermission } from '@/lib/membership';
+import { buildGammaImageOptions, normalizeUserInput } from '@/lib/adapters/ppt-param-adapter';
+import { checkPermission } from '@/lib/membership';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -152,7 +152,6 @@ export async function POST(request: NextRequest) {
     const {
       inputText,
       themeId,
-      numCards,
       tone = 'professional',
       imageSource = 'webFreeToUseCommercially',
       exportAs = 'pptx',
@@ -162,13 +161,18 @@ export async function POST(request: NextRequest) {
     // 🚨 D1: Normalize aliased fields → canonical PptUserInput
     const normalized = normalizeUserInput(body as Record<string, unknown>);
     const pageCount = normalized.pageCount ?? 8;
+    const requestedImageSource = normalized.imageSource || imageSource;
+    const finalTone = normalized.tone || tone || 'professional';
 
     // Unified type narrowing: normalized.aiModel typed as unknown from Record cast
     // Only use non-empty strings; filter empty/whitespace strings to undefined
-    const aiModel: string | undefined =
+    let aiModel: string | undefined =
       typeof normalized.aiModel === 'string' && normalized.aiModel.trim().length > 0
         ? normalized.aiModel.trim()
         : undefined;
+    if (!aiModel && String(requestedImageSource).toLowerCase().trim() === 'ai-pro') {
+      aiModel = 'imagen-3-pro';
+    }
 
     // ===== Layer 3: Input Validation =====
     if (!inputText?.trim()) {
@@ -178,10 +182,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '页数必须在1-100之间' }, { status: 400 });
     }
 
+    // 🚨 V10.50: 先规范化 theme/image，再做权限与积分校验，避免 theme-img 等前端值被误判。
+    const rawThemeId = themeId || normalized.themeId || SCENE_CONFIGS.biz.themeId;
+    const finalThemeId = getGammaThemeId(rawThemeId);
+    if (finalThemeId !== rawThemeId) {
+      console.warn(`[Gamma Direct] ThemeId mapped: "${rawThemeId}" → "${finalThemeId}"`);
+    }
+
+    const imageOptions = buildGammaImageOptions(requestedImageSource, finalThemeId);
+    const finalImageSource = String(imageOptions.source || 'themeAccent');
+
     // ===== Layer 4: Membership/Permission Check =====
     const permissionCheck = checkPermission(userPlanType, {
       numPages: pageCount,
-      imageSource: imageSource,
+      imageSource: finalImageSource,
       aiModel: aiModel,
     });
     if (!permissionCheck.allowed) {
@@ -192,13 +206,13 @@ export async function POST(request: NextRequest) {
         requiredPlan: permissionCheck.requiredPlan,
       }, { status: 403 });
     }
-    console.log(`[GammaDirect] QUOTA_OK required=${pageCount} pages imageSource=${imageSource}`);
+    console.log(`[GammaDirect] QUOTA_OK required=${pageCount} pages imageSource=${finalImageSource}`);
 
     // ===== Layer 5: Credit Check (before Gamma call) =====
     // Estimate credits needed: 2 credits/page + AI image credits if applicable
     const BASE_CREDIT_PER_PAGE = 2;
     let totalCredit = pageCount * BASE_CREDIT_PER_PAGE;
-    if (imageSource === 'aiGenerated') {
+    if (finalImageSource === 'aiGenerated') {
       const HIGH_MODELS = ['imagen-3-pro', 'flux-1-pro', 'ideogram-v3-turbo', 'luma-photon-1', 'leonardo-phoenix', 'flux-kontext-pro', 'imagen-4-pro', 'ideogram-v3', 'gemini-2.5-flash-image'];
       const model = aiModel || 'imagen-3-flash';
       const imageCreditsPerImage = HIGH_MODELS.includes(model) ? 10 : 2;
@@ -223,13 +237,6 @@ export async function POST(request: NextRequest) {
     const apiKey = selectedKey.key;
     console.log('[Gamma Direct] 使用Key:', selectedKey.label, '| 余额:', selectedKey.remaining);
 
-    // 🚨 V10.14: 使用主题映射转换themeId
-    const rawThemeId = themeId || SCENE_CONFIGS.biz.themeId;
-    const finalThemeId = getGammaThemeId(rawThemeId);
-    if (finalThemeId !== rawThemeId) {
-      console.warn(`[Gamma Direct] ThemeId mapped: "${rawThemeId}" → "${finalThemeId}"`);
-    }
-
     // 构建最终文本
     let finalInputText = inputText.trim();
     if (finalInputText.length < 100) {
@@ -238,42 +245,13 @@ export async function POST(request: NextRequest) {
       finalInputText = finalInputText.split(/\n\n+/).filter((p: string) => p.trim()).join('\n\n---\n\n');
     }
 
-    // 图片选项(与gamma/route.ts保持一致，深色主题处理)
-    const darkThemes = new Set(['founder', 'aurora', 'electric', 'blues', 'gamma', 'luxe', 'aurum']);
-    let imageOptions: Record<string, any> = {};
-    if (imageSource === 'none' || imageSource === 'noImages') {
-      imageOptions = { source: 'noImages' }; // 纯文字
-    } else if (imageSource === 'theme' || imageSource === 'theme-img') {
-      // 🚨 V8.5.2: 深色主题下themeAccent显示占位符，改用网图
-      if (darkThemes.has(finalThemeId)) {
-        imageOptions = { source: 'webFreeToUseCommercially' };
-      } else {
-        imageOptions = { source: 'themeAccent' };
-      }
-    } else if (imageSource === 'pictographic') {
-      // 插图模式:深色主题用网图，浅色主题用themeAccent
-      if (darkThemes.has(finalThemeId)) {
-        imageOptions = { source: 'webFreeToUseCommercially' };
-      } else {
-        imageOptions = { source: 'themeAccent' };
-      }
-    } else if (imageSource === 'web') {
-      imageOptions = { source: 'webFreeToUseCommercially' };
-    } else if (imageSource === 'ai' || imageSource === 'aiGenerated') {
-      imageOptions = { source: 'aiGenerated', model: 'imagen-3-flash', style: 'flat illustration, minimalist, clean background, negative space' };
-    } else if (imageSource === 'ai-pro') {
-      imageOptions = { source: 'aiGenerated', model: 'imagen-3-pro', style: 'professional, high quality, cinematic, detailed' };
-    } else {
-      imageOptions = { source: 'themeAccent' };
-    }
-
-    const instructions = INSTRUCTION_TEMPLATES[tone] || INSTRUCTION_TEMPLATES.professional;
+    const instructions = INSTRUCTION_TEMPLATES[finalTone] || INSTRUCTION_TEMPLATES.professional;
     // 追加全局视觉隐喻
     const metaphorAppend = visualMetaphor
       ? `\n\n【全局视觉隐喻】\n贯穿全演示的统一意象:${visualMetaphor}。\n所有配图、图标、色块风格应与此意象一致,配图描述中必须体现该意象关键词。`
       : '';
     // 免费套图:追加强调布局图指令
-    const themeAppend = (imageSource === 'theme' || imageSource === 'theme-img')
+    const themeAppend = (finalImageSource === 'themeAccent')
       ? `\n\n【主题套图-Pexels高质量照片】\n请为每一页配Pexels高质量照片,照片风格:professional, clean, minimalist, business context。每页使用不同的照片和Gamma内置的Emphasize强调布局,保持视觉丰富度。`
       : '';
     const finalInstructions = instructions + metaphorAppend + themeAppend;
@@ -282,8 +260,13 @@ export async function POST(request: NextRequest) {
     // gamma-direct 的 inputText 已经是前端处理好的 markdown
     // （可能来自 buildPreserveMarkdown 或用户手动输入的结构化内容）
     // Gamma 只负责排版渲染，不做内容扩充/缩减
-    const textMode = 'preserve'; // 固定值！
-
+    //
+    // textMode 语义说明：
+    //   - generate: AI 扩写（我们的架构中由 outline API 处理）
+    //   - condense: AI 精简（我们的架构中由 outline API 处理）
+    //   - preserve: 保持原文（我们的架构中用于直通模式和确认后生成）
+    // 由于 outline API 已经在预处理阶段根据 textMode 生成不同风格的大纲，
+    // Gamma 在我们的架构中只承担排版渲染职责，因此固定为 'preserve'
     const criticalInstruction = '\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作或修改任何事实信息。严格按照提供的Markdown层级和---分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。';
 
     // 步骤1:创建 Gamma 生成任务(恢复技术部验证的完整参数)
@@ -297,7 +280,7 @@ export async function POST(request: NextRequest) {
       themeId: finalThemeId,
       cardSplit: undefined, // removed inputTextBreaks to avoid blank pages
       additionalInstructions: finalInstructions + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji代替web SVG图标。' + criticalInstruction,
-      textOptions: { amount: 'medium', tone, language: 'zh-cn' },
+      textOptions: { amount: 'medium', tone: finalTone, language: 'zh-cn' },
       imageOptions,
       cardOptions: { dimensions: '16x9' },
     };
@@ -344,7 +327,7 @@ export async function POST(request: NextRequest) {
           action: 'deduct',
           userId: userId,
           numPages: pageCount,
-          imageSource: imageSource,
+          imageSource: finalImageSource,
           imageModel: aiModel,
           estimatedImages: Math.ceil(pageCount / 2),
         }),
@@ -371,7 +354,7 @@ export async function POST(request: NextRequest) {
       artifact: {
         pollingUrl: `/api/gamma?id=${generationId}`,
       },
-      config: { themeId: finalThemeId, tone, pageCount },
+      config: { themeId: finalThemeId, tone: finalTone, pageCount },
       credits: createData.credits,
     });
   } catch (error: any) {

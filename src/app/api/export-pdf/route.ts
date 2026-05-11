@@ -4,6 +4,11 @@ import { selectBestKey } from '@/lib/gamma-key-pool';
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
+function isPdfUrl(url: string): boolean {
+  const lower = url.toLowerCase();
+  return lower.includes('.pdf') || lower.includes('/pdf/');
+}
+
 /**
  * PDF Export API - v10.15
  * 
@@ -71,7 +76,7 @@ export async function GET(req: NextRequest) {
     // exportUrl格式: https://assets.api.gamma.app/export/pdf/{id}/{hash}/{id}.pdf
     let pdfUrl = '';
     
-    if (statusData.exportUrl && statusData.exportUrl.toLowerCase().includes('.pdf')) {
+    if (statusData.exportUrl && isPdfUrl(statusData.exportUrl)) {
       pdfUrl = statusData.exportUrl;
       console.log('[ExportPDF] 已有PDF URL:', pdfUrl);
     }

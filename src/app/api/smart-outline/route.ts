@@ -11,40 +11,22 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
-import { callKimi } from '@/lib/kimi-client';
-import { callMiniMax } from '@/lib/minimax-client';
-import { callGLM } from '@/lib/glm-client';
+import { callWithFallback } from '@/lib/ai/fallback-orchestrator';
 import { buildSmartSystemPrompt } from '@/lib/gamma-expert-prompt';
 
-// ===== AI 调用链：Kimi K2.5 → MiniMax M2.7 → GLM-5 =====
+// ===== AI 调用链：统一使用 callWithFallback（MiniMax 重试） =====
 async function callAI(systemPrompt: string, userPrompt: string): Promise<string> {
-  // 1️⃣ Kimi K2.5（首选：多模态+长上下文，免费代理）
-  try {
-    const result = await callKimi(
-      [{ role: 'user', content: userPrompt }],
-      { system: systemPrompt, maxTokens: 8192, model: 'Kimi-K2.5', temperature: 0.7 }
-    );
-    return result.content;
-  } catch (e: any) {
-    console.warn('[SmartOutline] Kimi failed:', e.message);
+  const result = await callWithFallback({
+    systemPrompt,
+    userPrompt,
+    taskType: 'smart-outline',
+  });
+
+  if (!result.ok || !result.data) {
+    throw new Error(result.error?.message ?? 'AI 服务暂时繁忙，请稍后再试');
   }
 
-  // 2️⃣ MiniMax M2.7（备用）
-  try {
-    return await callMiniMax(
-      [{ role: 'user', content: userPrompt }],
-      { system: systemPrompt, maxTokens: 8192, temperature: 0.7 }
-    );
-  } catch (e2: any) {
-    console.warn('[SmartOutline] MiniMax failed:', e2.message);
-  }
-
-  // 3️⃣ GLM-5（兜底）
-  try {
-    return await callGLM(systemPrompt, userPrompt, 'outline');
-  } catch (e3: any) {
-    throw new Error(`AI 调用全部失败: ${e3.message}`);
-  }
+  return result.data;
 }
 
 // ===== 从 AI 输出中安全提取 JSON =====

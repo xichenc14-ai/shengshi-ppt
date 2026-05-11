@@ -102,8 +102,8 @@ function buildContentPage(
 export function buildMdV2(
   title: string,
   slides: SlideItem[],
-  _imageMode: string = 'noImages',
-  _allowEnhancement: boolean = false
+  imageMode: string = 'noImages',
+  allowEnhancement: boolean = false
 ): BuildMdV2Result {
   if (!slides || slides.length === 0) {
     return {

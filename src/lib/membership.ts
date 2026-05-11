@@ -166,11 +166,23 @@ export function checkPermission(planType: string, opts: {
  */
 export function mapImgModeToSource(imgMode: string): string {
   switch (imgMode) {
-    case 'none': return 'noImages';
-    case 'theme': return 'pictographic';
-    case 'web': return 'webFreeToUseCommercially';
-    case 'ai': return 'aiGenerated';
-    case 'ai-pro': return 'aiGenerated';
+    case 'auto':
+      return 'themeAccent';
+    case 'none':
+    case 'noImages':
+      return 'noImages';
+    case 'theme-img':
+    case 'theme':
+    case 'themeAccent':
+    case 'pictographic':
+      return 'themeAccent';
+    case 'web':
+    case 'webFreeToUseCommercially':
+      return 'webFreeToUseCommercially';
+    case 'ai':
+    case 'ai-pro':
+    case 'aiGenerated':
+      return 'aiGenerated';
     default: return 'noImages';
   }
 }

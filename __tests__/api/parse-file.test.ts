@@ -1,11 +1,19 @@
 import { describe, it, expect } from 'vitest';
+import type { NextRequest } from 'next/server';
 import { POST } from '@/app/api/parse-file/route';
 
 function mockFormData(fileName: string, content: string | Buffer, mimeType?: string) {
   const formData = new FormData();
-  const file = new File([content], fileName, { type: mimeType || 'text/plain' });
+  const fileContent = typeof content === 'string'
+    ? content
+    : new Uint8Array(content).buffer;
+  const file = new File([fileContent], fileName, { type: mimeType || 'text/plain' });
   formData.append('file', file);
   return formData;
+}
+
+function asNextRequest(request: Request): NextRequest {
+  return request as unknown as NextRequest;
 }
 
 describe('POST /api/parse-file', () => {
@@ -15,7 +23,7 @@ describe('POST /api/parse-file', () => {
       method: 'POST',
       body: formData,
     });
-    const res = await POST(req as any);
+    const res = await POST(asNextRequest(req));
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toContain('未提供文件');
@@ -29,7 +37,7 @@ describe('POST /api/parse-file', () => {
       method: 'POST',
       body: formData,
     });
-    const res = await POST(req as any);
+    const res = await POST(asNextRequest(req));
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toContain('50MB');
@@ -42,7 +50,7 @@ describe('POST /api/parse-file', () => {
       method: 'POST',
       body: formData,
     });
-    const res = await POST(req as any);
+    const res = await POST(asNextRequest(req));
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.text).toContain('这是一个测试文件');
@@ -57,7 +65,7 @@ describe('POST /api/parse-file', () => {
       method: 'POST',
       body: formData,
     });
-    const res = await POST(req as any);
+    const res = await POST(asNextRequest(req));
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.text).toContain('标题');
@@ -70,7 +78,7 @@ describe('POST /api/parse-file', () => {
       method: 'POST',
       body: formData,
     });
-    const res = await POST(req as any);
+    const res = await POST(asNextRequest(req));
     // Unsupported types return a generic text extraction
     expect(res.status).toBe(200);
     const data = await res.json();
@@ -84,7 +92,7 @@ describe('POST /api/parse-file', () => {
       method: 'POST',
       body: formData,
     });
-    const res = await POST(req as any);
+    const res = await POST(asNextRequest(req));
     const data = await res.json();
     expect(data.fileName).toBe('report.txt');
     expect(data.fileSize).toBeGreaterThan(0);

@@ -48,7 +48,9 @@ export function extractPreviewFromGamma(gammaData: Record<string, unknown>): Pre
 
   // gammaUrl
   let gammaUrl: string | null = null;
-  if (gammaData.webUrl && typeof gammaData.webUrl === 'string') {
+  if (gammaData.gammaUrl && typeof gammaData.gammaUrl === 'string') {
+    gammaUrl = gammaData.gammaUrl;
+  } else if (gammaData.webUrl && typeof gammaData.webUrl === 'string') {
     gammaUrl = gammaData.webUrl;
   } else if (gammaData.url && typeof gammaData.url === 'string') {
     gammaUrl = gammaData.url;
@@ -60,7 +62,17 @@ export function extractPreviewFromGamma(gammaData: Record<string, unknown>): Pre
   let exportUrl: string | null = null;
   let exportFormat: PreviewInfo['exportFormat'] = 'unknown';
 
-  if (status === 'ready') {
+  if (typeof gammaData.exportUrl === 'string' && gammaData.exportUrl) {
+    exportUrl = gammaData.exportUrl;
+    const lower = gammaData.exportUrl.toLowerCase();
+    if (lower.includes('.pptx') || lower.includes('/pptx/')) {
+      exportFormat = 'pptx';
+    } else if (lower.includes('.pdf') || lower.includes('/pdf/')) {
+      exportFormat = 'pdf';
+    }
+  }
+
+  if (status === 'ready' && !exportUrl) {
     const exports = gammaData.exports as Array<Record<string, unknown>> | undefined;
     if (Array.isArray(exports) && exports.length > 0) {
       const firstExport = exports[0];

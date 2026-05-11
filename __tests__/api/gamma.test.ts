@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
+import type { NextRequest } from 'next/server';
 import { POST, GET } from '@/app/api/gamma/route';
 import fs from 'fs';
 import path from 'path';
@@ -6,34 +7,40 @@ import path from 'path';
 // ===== 真实 Gamma API 端到端测试 =====
 // 不用 mock，直接调真实 API，验证完整生成链路
 
-const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
-// 从 .env.test 或环境变量读取 API Key
-const GAMMA_KEY = process.env.GAMMA_API_KEY || '';
+const hasGammaKeys = Boolean(process.env.GAMMA_API_KEYS || process.env.GAMMA_API_KEY);
 
-function mockPostRequest(body: Record<string, any> = {}) {
-  return new Request('http://localhost/api/gamma', {
+function asNextRequest(request: Request): NextRequest {
+  return request as unknown as NextRequest;
+}
+
+function mockPostRequest(body: Record<string, unknown> = {}) {
+  return asNextRequest(new Request('http://localhost/api/gamma', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '127.0.0.1' },
     body: JSON.stringify(body),
-  });
+  }));
 }
 
 function mockGetRequest(id: string) {
-  return new Request(`http://localhost/api/gamma?id=${id}`, {
+  return asNextRequest(new Request(`http://localhost/api/gamma?id=${id}`, {
     headers: { 'x-forwarded-for': '127.0.0.1' },
-  });
+  }));
+}
+
+function getStringField(data: Record<string, unknown>, key: string): string {
+  return typeof data[key] === 'string' ? data[key] : '';
 }
 
 /**
  * 轮询 Gamma 生成状态，直到完成或超时
  * Gamma PPT 生成通常需要 30-120 秒
  */
-async function pollUntilComplete(generationId: string, timeoutMs = 180000): Promise<any> {
+async function pollUntilComplete(generationId: string, timeoutMs = 180000): Promise<Record<string, unknown>> {
   const start = Date.now();
   let status = 'pending';
 
   while (status !== 'completed' && status !== 'failed' && Date.now() - start < timeoutMs) {
-    const res = await GET(mockGetRequest(generationId) as any);
+    const res = await GET(mockGetRequest(generationId));
     const data = await res.json();
 
     if (!res.ok) {
@@ -83,7 +90,15 @@ async function downloadAndVerify(url: string, expectedMinSize = 1024): Promise<{
 
 // ===== 测试套件 =====
 describe('Gamma API 真实端到端测试', () => {
-  it('完整链路：生成3页PPT → 轮询完成 → 下载验证', async () => {
+  beforeAll(() => {
+    if (!process.env.GAMMA_API_KEYS && process.env.GAMMA_API_KEY) {
+      process.env.GAMMA_API_KEYS = `test:3967:${process.env.GAMMA_API_KEY}`;
+    }
+  });
+
+  const runWhenGammaConfigured = hasGammaKeys ? it : it.skip;
+
+  runWhenGammaConfigured('完整链路：生成3页PPT → 轮询完成 → 下载验证', async () => {
     // Step 1: 创建生成任务（3页，主题图，导出PDF）
     const postRes = await POST(mockPostRequest({
       inputText: '# AI技术趋势报告\n\n## 机器学习\n\n- 监督学习\n- 无监督学习\n- 强化学习',
@@ -92,9 +107,9 @@ describe('Gamma API 真实端到端测试', () => {
     }));
 
     expect(postRes.status).toBe(200);
-    const postData = await postRes.json();
-    const generationId = postData.generationId;
-    expect(generationId).toBeDefined();
+    const postData = await postRes.json() as Record<string, unknown>;
+    const generationId = getStringField(postData, 'generationId');
+    expect(generationId).toBeTruthy();
 
     console.log(`[E2E] 生成任务已创建: ${generationId}`);
 
@@ -105,23 +120,26 @@ describe('Gamma API 真实端到端测试', () => {
 
     // Step 3: 验证返回的 URL
     // Gamma completed 状态通常返回 pptxUrl / pdfUrl / gammaUrl
-    const hasUrl = completed.pptxUrl || completed.pdfUrl || completed.gammaUrl;
+    const pptxUrl = getStringField(completed, 'pptxUrl');
+    const pdfUrl = getStringField(completed, 'pdfUrl');
+    const gammaUrl = getStringField(completed, 'gammaUrl');
+    const hasUrl = pptxUrl || pdfUrl || gammaUrl;
     expect(hasUrl).toBeDefined();
-    console.log(`[E2E] 获取到URL: ${hasUrl ? '有' : '无'} (pptx=${!!completed.pptxUrl}, pdf=${!!completed.pdfUrl}, gamma=${!!completed.gammaUrl})`);
+    console.log(`[E2E] 获取到URL: ${hasUrl ? '有' : '无'} (pptx=${!!pptxUrl}, pdf=${!!pdfUrl}, gamma=${!!gammaUrl})`);
 
     // Step 4: 如果有 pptx/pdf URL，下载并验证
-    if (completed.pptxUrl) {
-      const result = await downloadAndVerify(completed.pptxUrl, 5000);
+    if (pptxUrl) {
+      const result = await downloadAndVerify(pptxUrl, 5000);
       console.log(`[E2E] PPTX 下载: ${result.size} bytes, 保存至 ${result.path}`);
       expect(result.ok).toBe(true);
       expect(result.size).toBeGreaterThan(5000); // 真实PPT至少几KB
-    } else if (completed.pdfUrl) {
-      const result = await downloadAndVerify(completed.pdfUrl, 5000);
+    } else if (pdfUrl) {
+      const result = await downloadAndVerify(pdfUrl, 5000);
       console.log(`[E2E] PDF 下载: ${result.size} bytes, 保存至 ${result.path}`);
       expect(result.ok).toBe(true);
       expect(result.size).toBeGreaterThan(5000);
     } else {
-      console.log(`[E2E] ⚠️ 无 pptx/pdf 下载链接，仅有 gammaUrl: ${completed.gammaUrl}`);
+      console.log(`[E2E] ⚠️ 无 pptx/pdf 下载链接，仅有 gammaUrl: ${gammaUrl}`);
       console.log(`[E2E] Gamma 在线预览链接可用，跳过文件下载验证`);
     }
 
@@ -141,9 +159,9 @@ describe('Gamma API 真实端到端测试', () => {
   });
 
   it('查询状态：缺少id返回400', async () => {
-    const res = await GET(new Request('http://localhost/api/gamma', {
+    const res = await GET(asNextRequest(new Request('http://localhost/api/gamma', {
       headers: { 'x-forwarded-for': '127.0.0.1' },
-    }) as any);
+    })));
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toContain('generationId');

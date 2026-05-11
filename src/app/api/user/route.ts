@@ -12,6 +12,7 @@ import {
   isIPBlocked,
   rateLimit,
 } from '@/lib/rate-limit';
+import type { DeductCreditsResult, TypedSupabaseClient } from '@/lib/supabase-types';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -465,14 +466,19 @@ export async function POST(req: NextRequest) {
 
       let newBalance: number | null = null;
       let useFallback = false;
-
       try {
-        const { data: rpcResult, error: rpcErr } = await sb.rpc('deduct_credits_atomic', {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const typedSb: any = sb;
+        const { data: rpcResult, error: rpcErr } = await typedSb.rpc('deduct_credits_atomic', {
           p_user_id: userId,
           p_amount: totalCredit,
           p_description: `生成PPT-${numPages}页-${imageSource}${imageCreditsPerImage > 0 ? `-${imageCreditsPerImage}积分/图×${estimatedImageCount}张` : ''}-共${totalCredit}积分`,
-        }).single();
-        if (rpcErr) { useFallback = true; } else { newBalance = (rpcResult as any)?.new_balance ?? null; }
+        } as unknown as Record<string, unknown>);
+        if (rpcErr) {
+          useFallback = true;
+        } else {
+          newBalance = (rpcResult as DeductCreditsResult)?.new_balance ?? null;
+        }
       } catch { useFallback = true; }
 
       if (useFallback) {

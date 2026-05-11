@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
-import { callKimi, callKimiWithSearch } from '@/lib/kimi-client';
-import { callMiniMax, callMiniMaxWithRetry } from '@/lib/minimax-client';
-import { callGLM } from '@/lib/glm-client';
 import { callWithFallback } from '@/lib/ai/fallback-orchestrator';
 import { THEME_DATABASE } from '@/lib/theme-database';
-import { normalizeUserInput, parseMarkdownOutline, generateMinimalOutline } from '@/lib/ppt-param-adapter';
+import { normalizeUserInput, parseMarkdownOutline } from '@/lib/ppt-param-adapter';
 import type { OutlineSlide, OutlineMeta, OutlineResponse } from '@/lib/types/outline-response';
 
 // Serverless Runtime（v10.9在此模式下成功）
@@ -97,6 +94,36 @@ function tryParseJson(rawContent: string): any | null {
     }
   }
 
+  // ===== D3: 正则提取截断slides（截断发生在字符串内部时） =====
+  // 例如 {"title":"未完成的标... 时，lastIndexOf('}') 位置不对
+  // 通过正则提取所有完整的 { ... "title" ... } 对象
+  const slideMatches = cleaned.match(/\{[^{}]*"title"[^{}]*\}(?=\s*,|\s*\]|\s*\}|$)/g);
+  if (slideMatches && slideMatches.length > 0) {
+    const extractedSlides: any[] = [];
+    for (const match of slideMatches) {
+      try {
+        const slide = JSON.parse(match);
+        if (slide.title) {
+          extractedSlides.push(slide);
+        }
+      } catch { /* skip invalid */ }
+    }
+    if (extractedSlides.length > 0) {
+      console.log('[Outline] Recovered', extractedSlides.length, 'slides via regex extraction');
+      // 尝试从已解析的部分提取 title
+      let rootTitle = 'PPT';
+      try {
+        const titleMatch = cleaned.match(/"title"\s*:\s*"([^"]{1,100})"/);
+        if (titleMatch) rootTitle = titleMatch[1];
+      } catch { /* ignore */ }
+      return {
+        title: rootTitle,
+        slides: extractedSlides,
+        _partialRecovery: true,
+      };
+    }
+  }
+
   // ===== D2: Markdown fallback =====
   // 所有 JSON 解析失败后，尝试从 Markdown 中提取结构
   console.log('[Outline] JSON parse failed, trying Markdown fallback...');
@@ -128,7 +155,17 @@ export async function POST(request: NextRequest) {
     
     // ===== D2: 接入 normalizeUserInput =====
     const normalized = normalizeUserInput(rawBody);
-    const { topic, pageCount, contentStrategy, style, purpose, themeId: rawThemeId, imageMode: rawImageMode, auto } = normalized;
+    const {
+      topic,
+      pageCount,
+      contentStrategy,
+      style,
+      purpose,
+      themeId: rawThemeId,
+      imageMode: rawImageMode,
+      tone: rawTone,
+      auto,
+    } = normalized;
 
     if (!topic || topic.trim().length === 0) {
       return NextResponse.json({ error: '请输入内容' }, { status: 400 });
@@ -283,9 +320,6 @@ const systemPrompt = modePrompts[promptMode] || modePrompts.generate;
 ${topic}`
       : `请根据以下内容生成PPT大纲（${numCards}页）：\n\n${topic}`;
 
-    // ===== 联网搜索（暂不需要，AI 知识库足够） =====
-    const searchContext = '';
-
     // ===== 调用 AI（统一 fallback orchestrator） =====
     let parsed: any = null;
     let aiError = '';
@@ -312,34 +346,22 @@ ${topic}`
       console.warn('[Outline] Fallback orchestrator error:', aiError);
     }
 
-    // 所有模型都失败了 - D2: 使用最小可用大纲 fallback
+    // 🚨 P0 Fix: AI 失败时不返回假数据，直接报错让用户知道
     if (!parsed) {
-      console.warn('[Outline] All AI failed, using minimal outline fallback');
-      const fallback = generateMinimalOutline(topic, numCards);
-      parsed = {
-        title: fallback.title,
-        slides: fallback.slides.map(s => ({
-          title: s.title,
-          content: s.bullets,
-          notes: s.speakerNotes,
-        })),
-        _fallback: true,
-      };
+      console.error('[Outline] All AI providers failed:', aiError);
+      return NextResponse.json(
+        { error: aiError || 'AI服务暂时不可用，请稍后再试' },
+        { status: 503 }
+      );
     }
 
-    // ===== D2: 空/异常响应 Fallback =====
+    // 🚨 P0 Fix: 空/异常响应也不使用 fallback，直接报错
     if (!parsed.slides || !Array.isArray(parsed.slides) || parsed.slides.length === 0) {
-      console.warn('[Outline] Empty or invalid slides, using minimal outline fallback');
-      const fallback = generateMinimalOutline(topic, numCards);
-      parsed = {
-        title: parsed.title || fallback.title,
-        slides: fallback.slides.map(s => ({
-          title: s.title,
-          content: s.bullets,
-          notes: s.speakerNotes,
-        })),
-        _fallback: true,
-      };
+      console.error('[Outline] Empty or invalid slides from AI:', parsed);
+      return NextResponse.json(
+        { error: '大纲内容解析异常，请稍后再试' },
+        { status: 503 }
+      );
     }
 
     // ===== 构建返回结果（D2: 添加 meta 字段） =====
@@ -348,8 +370,14 @@ ${topic}`
     const sceneConfig = SCENE_THEME_MAP[detectedScene] || SCENE_THEME_MAP['通用'];
 
     // 验证 AI 返回的 themeId 是否有效，无效则用场景默认
-    const aiThemeId = parsed.themeId || rawThemeId;
-    const validThemeId = aiThemeId && THEME_DATABASE_IDS.has(aiThemeId) ? aiThemeId : sceneConfig.themeId;
+    // D2 Fix: 如果是 fallback（AI失败），优先使用用户传入的 rawThemeId，而不是场景默认
+    const requestedThemeId = typeof rawThemeId === 'string' && rawThemeId !== 'auto' ? rawThemeId : '';
+    const aiThemeId = typeof parsed.themeId === 'string' ? parsed.themeId : '';
+    const validThemeId = aiThemeId && THEME_DATABASE_IDS.has(aiThemeId)
+      ? aiThemeId
+      : requestedThemeId && THEME_DATABASE_IDS.has(requestedThemeId)
+        ? requestedThemeId
+        : sceneConfig.themeId;
 
     // D2: 构建 canonical slides（带 index/bullets 字段）
     const slides: OutlineSlide[] = (parsed.slides || []).map((s: any, i: number) => ({
@@ -365,9 +393,9 @@ ${topic}`
     const meta: OutlineMeta = {
       topic,
       pageCount: slides.length,
-      style: parsed.tone || style || sceneConfig.tone,
+      style: parsed.tone || rawTone || style || sceneConfig.tone,
       purpose: detectedScene || purpose,
-      imageMode: parsed.imageMode || rawImageMode || sceneConfig.imageMode,
+      imageMode: parsed.imageMode || rawImageMode || normalized.imageSource || sceneConfig.imageMode,
       contentStrategy: finalTextMode,
     };
 
@@ -389,8 +417,8 @@ ${topic}`
       meta,
       // 兼容旧字段
       themeId: validThemeId,
-      tone: parsed.tone || sceneConfig.tone,
-      imageMode: parsed.imageMode || sceneConfig.imageMode,
+      tone: parsed.tone || rawTone || style || sceneConfig.tone,
+      imageMode: parsed.imageMode || rawImageMode || normalized.imageSource || sceneConfig.imageMode,
       scene: detectedScene,
     };
 

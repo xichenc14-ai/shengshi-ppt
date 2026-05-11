@@ -6,6 +6,71 @@ const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/53
 const FORMAT = 'pptx' as const;
 const MIME_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
+function isPptxUrl(url: string): boolean {
+  const lower = url.toLowerCase();
+  return lower.includes('.pptx') || lower.includes('/pptx/');
+}
+
+function extractExportUrl(data: Record<string, any>): string {
+  return data.exportUrl || data.url || data.pptxUrl || data.downloadUrl || '';
+}
+
+async function pollExportUrl(generationId: string, exportId: string, apiKey: string): Promise<string> {
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+
+    const checkRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/exports/${exportId}`, {
+      headers: {
+        'X-API-KEY': apiKey,
+        'User-Agent': GAMMA_UA,
+      },
+    });
+
+    if (!checkRes.ok) continue;
+
+    const checkData = await checkRes.json();
+    const url = extractExportUrl(checkData);
+    if (url) return url;
+    if (checkData.status === 'failed' || checkData.error) {
+      throw new Error(checkData.error || 'PPTX导出失败');
+    }
+  }
+
+  throw new Error('PPTX导出超时');
+}
+
+async function createPptxExport(generationId: string, apiKey: string): Promise<string> {
+  const endpoints = ['exports', 'export'];
+
+  for (const endpoint of endpoints) {
+    const exportRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': apiKey,
+        'Content-Type': 'application/json',
+        'User-Agent': GAMMA_UA,
+      },
+      body: JSON.stringify({ format: FORMAT }),
+      signal: AbortSignal.timeout(60000),
+    });
+
+    if (!exportRes.ok) {
+      const errText = await exportRes.text().catch(() => '');
+      console.warn(`[ExportPPTX] /${endpoint} 失败:`, exportRes.status, errText.substring(0, 200));
+      continue;
+    }
+
+    const exportData = await exportRes.json();
+    const directUrl = extractExportUrl(exportData);
+    if (directUrl) return directUrl;
+
+    const exportId = exportData.id || exportData.exportId;
+    if (exportId) return pollExportUrl(generationId, exportId, apiKey);
+  }
+
+  throw new Error('未获取到PPTX下载链接');
+}
+
 /**
  * PPTX 下载代理 API (D5: 统一错误处理)
  * 
@@ -71,38 +136,21 @@ export async function GET(req: NextRequest) {
       }, { status: 500 });
     }
 
-    // Step 2: 调用 Gamma Export API 导出 PPTX
-    const exportRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/export`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'User-Agent': GAMMA_UA,
-      },
-      body: JSON.stringify({ format: FORMAT }),
-      signal: AbortSignal.timeout(60000),
-    });
-
-    if (!exportRes.ok) {
-      const errText = await exportRes.text().catch(() => '');
-      console.error('[ExportPPTX] Export失败:', exportRes.status, errText);
-      return NextResponse.json({
-        generationId,
-        status: 'failed',
-        error: { code: 'EXPORT_FAILED', message: `PPTX导出失败: ${exportRes.status}` },
-      }, { status: 502 });
-    }
-
-    const exportData = await exportRes.json();
-    const pptxUrl = exportData.exportUrl || exportData.url;
-
-    if (!pptxUrl) {
-      console.error('[ExportPPTX] 未获取到PPTX链接:', JSON.stringify(exportData).substring(0, 200));
-      return NextResponse.json({
-        generationId,
-        status: 'failed',
-        error: { code: 'FILE_NOT_AVAILABLE', message: '未获取到PPTX下载链接' },
-      }, { status: 500 });
+    // Step 2: 优先复用 completed 状态里的 PPTX URL，否则创建导出任务。
+    let pptxUrl = '';
+    if (typeof statusData.exportUrl === 'string' && isPptxUrl(statusData.exportUrl)) {
+      pptxUrl = statusData.exportUrl;
+    } else {
+      try {
+        pptxUrl = await createPptxExport(generationId, apiKey);
+      } catch (exportErr: any) {
+        console.error('[ExportPPTX] Export失败:', exportErr.message);
+        return NextResponse.json({
+          generationId,
+          status: 'failed',
+          error: { code: 'EXPORT_FAILED', message: exportErr.message || 'PPTX导出失败' },
+        }, { status: exportErr.message?.includes('超时') ? 504 : 502 });
+      }
     }
 
     console.log('[ExportPPTX] 获取到PPTX URL:', pptxUrl.substring(0, 80));

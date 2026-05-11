@@ -46,6 +46,51 @@ export interface PptUserInput {
   [key: string]: unknown;
 }
 
+export type GammaImageSource =
+  | 'noImages'
+  | 'themeAccent'
+  | 'webFreeToUseCommercially'
+  | 'aiGenerated';
+
+const DARK_THEME_IDS = new Set([
+  'founder',
+  'aurora',
+  'electric',
+  'blues',
+  'gamma',
+  'gamma-dark',
+  'default-dark',
+  'luxe',
+  'aurum',
+  'coal',
+  'noir',
+]);
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+  }
+  return undefined;
+}
+
+function firstBoolean(...values: unknown[]): boolean | undefined {
+  for (const value of values) {
+    if (typeof value === 'boolean') return value;
+  }
+  return undefined;
+}
+
 /**
  * 规范化用户输入字段别名 → canonical PptUserInput
  *
@@ -64,45 +109,19 @@ export interface PptUserInput {
 export function normalizeUserInput(raw: Record<string, unknown>): PptUserInput {
   const v = raw;
 
-  // topic
-  let topic = v.topic as string | undefined;
-  if (!topic) topic = v.inputText as string | undefined;
-  if (!topic) topic = v.text as string | undefined;
+  const topic = firstNonEmptyString(v.topic, v.inputText, v.text);
+  const pageCount = firstNumber(v.pageCount, v.slideCount, v.numCards, v.pages);
+  const textMode = firstNonEmptyString(v.textMode, v.contentStrategy);
+  const themeId = firstNonEmptyString(v.themeId, v.templateId);
+  const tone = firstNonEmptyString(v.tone, v.style);
+  const imageSource = firstNonEmptyString(v.imageSource, v.imgMode, v.imageMode, v.directImgMode);
+  const additionalInstructions = firstNonEmptyString(v.additionalInstructions, v.extraInstructions);
+  const exportAs = firstNonEmptyString(v.exportAs, v.format);
 
-  // pageCount
-  let pageCount = v.pageCount as number | undefined;
-  if (!pageCount) pageCount = v.slideCount as number | undefined;
-  if (!pageCount) pageCount = v.numCards as number | undefined;
-  if (!pageCount) pageCount = v.pages as number | undefined;
-
-  // textMode
-  let textMode = v.textMode as string | undefined;
-  if (!textMode) textMode = v.contentStrategy as string | undefined;
-
-  // themeId
-  let themeId = v.themeId as string | undefined;
-  if (!themeId) themeId = v.templateId as string | undefined;
-
-  // tone
-  let tone = v.tone as string | undefined;
-  if (!tone) tone = v.style as string | undefined;
-
-  // imageSource
-  let imageSource = v.imageSource as string | undefined;
-  if (!imageSource) imageSource = v.imgMode as string | undefined;
-  if (!imageSource) imageSource = v.imageMode as string | undefined;
-  if (!imageSource) imageSource = v.directImgMode as string | undefined;
-
-  // additionalInstructions
-  let additionalInstructions = v.additionalInstructions as string | undefined;
-  if (!additionalInstructions) additionalInstructions = v.extraInstructions as string | undefined;
-
-  // exportAs
-  let exportAs = v.exportAs as string | undefined;
-  if (!exportAs) exportAs = v.format as string | undefined;
-
+  // 原始字段先铺底，canonical 字段最后覆盖，避免 slideCount/numCards 等别名被反向覆盖。
   return {
     ...v,
+    // Canonical 字段（高优先级）
     topic,
     inputText: topic,
     pageCount,
@@ -115,7 +134,7 @@ export function normalizeUserInput(raw: Record<string, unknown>): PptUserInput {
     imageSource,
     additionalInstructions,
     exportAs,
-    auto: v.auto as boolean | undefined,
+    auto: firstBoolean(v.auto),
   } as PptUserInput;
 }
 
@@ -153,6 +172,12 @@ export function mapImageSource(
     case 'none':
       return { source: 'noImages' };
 
+    case 'weballimages':
+      return { source: 'webFreeToUseCommercially' };
+
+    case 'webfreetouse':
+      return { source: 'webFreeToUseCommercially' };
+
     case 'webfreetousecommercially':
     case 'web':
     case '网图':
@@ -178,6 +203,7 @@ export function mapImageSource(
 
     case 'theme':
     case 'theme-img':
+    case 'themeaccent':
     case 'pictographic':
     case '插图':
       return { source: 'themeAccent' };
@@ -185,6 +211,28 @@ export function mapImageSource(
     default:
       return { source: 'themeAccent' };
   }
+}
+
+export function buildGammaImageOptions(
+  imageSource: string | undefined,
+  themeId?: string,
+  existingOptions?: Record<string, unknown>
+): Record<string, unknown> {
+  const rawSource = typeof existingOptions?.source === 'string'
+    ? existingOptions.source
+    : imageSource;
+  const mapped = mapImageSource(rawSource, themeId);
+  const merged = {
+    ...mapped,
+    ...(existingOptions || {}),
+    source: mapped.source,
+  };
+
+  if (merged.source === 'themeAccent' && themeId && DARK_THEME_IDS.has(themeId)) {
+    return { source: 'webFreeToUseCommercially' };
+  }
+
+  return merged;
 }
 
 // ─────────────────────────────────────────────

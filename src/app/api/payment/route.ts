@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createHmac } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { isCallbackIPAllowed } from '@/lib/payment';
+import { verifyWechatPayCallback } from '@/lib/payment/wechat-verify';
+import { verifyAlipayCallback, normalizeAlipayPublicKey } from '@/lib/payment/alipay-verify';
+import type { TypedSupabaseClient, CreditTransactionInsert, UserRow } from '@/lib/supabase-types';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -20,32 +23,6 @@ const PLAN_PRICES: Record<string, { name: string; monthly: number; annual: numbe
 // ── IP 检查已在 @/lib/payment 中统一处理 ──
 
 /**
- * 验证微信支付回调签名
- * 微信支付 V3: Authorization = WXPayhmac SHA256=signature,serial=serial,nonce=nonce
- * 这里做简化处理，实际应按微信官方文档解析
- */
-function verifyWechatSignature(body: string, signature: string, key: string): boolean {
-  try {
-    const computed = createHmac('sha256', key)
-      .update(body)
-      .digest('hex');
-    return computed === signature;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * 验证支付宝回调签名
- * 支付宝 RSA2: sign=base64(rsa2(sign))
- */
-function verifyAlipaySignature(_body: string, _sign: string): boolean {
-  // 支付宝 RSA2 签名验证（TODO: 完善）
-  // 实际应使用 crypto.createVerify('RSA-SHA256') + 支付宝公钥
-  return true;
-}
-
-/**
  * 开通会员 + 增加积分（原子化事务）
  */
 async function activateSubscription(
@@ -62,20 +39,17 @@ async function activateSubscription(
   const planType = planId; // plan_type 直接用 planId
 
   // 更新用户会员类型 + 积分
-  const { data: currentUser, error: qErr } = await sb.from('users').select('credits').eq('id', userId).single();
+  // 🚨 P2 Fix: cast to any to bypass Supabase v2 typed-client Database schema type mismatch
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const typedSb: any = sb;
+  const { data: currentUser, error: qErr } = await typedSb.from('users').select('credits').eq('id', userId).single();
   if (qErr || !currentUser) return { success: false, error: '用户不存在' };
 
-  const currentCredits = Number(((currentUser as { credits?: number | null }).credits ?? 0));
+  const currentCredits = Number((currentUser as UserRow).credits ?? 0);
   const newCredits = currentCredits + credits;
   const newPlanType = planType; // 直接升级
 
-  const usersTable = sb.from('users') as unknown as {
-    update: (values: { plan_type: string; credits: number }) => {
-      eq: (column: string, value: unknown) => Promise<{ error: { message?: string } | null }>;
-    };
-  };
-
-  const { error: updErr } = await usersTable.update({
+  const { error: updErr } = await typedSb.from('users').update({
     plan_type: newPlanType,
     credits: newCredits,
   }).eq('id', userId);
@@ -84,22 +58,14 @@ async function activateSubscription(
 
   // 记录积分变动
   try {
-    const creditTransactionsTable = sb.from('credit_transactions') as unknown as {
-      insert: (values: {
-        user_id: string;
-        amount: number;
-        balance_after: number;
-        type: string;
-        description: string;
-      }) => Promise<{ error: unknown }>;
-    };
-    await creditTransactionsTable.insert({
+    const txInsert: CreditTransactionInsert = {
       user_id: userId,
       amount: credits,
       balance_after: newCredits,
       type: 'purchase',
       description: `购买${plan.name}（${isAnnual ? '年付' : '月付'}）- 获得${credits}积分`,
-    });
+    };
+    await typedSb.from('credit_transactions').insert(txInsert);
   } catch (e) {
     console.warn('[Payment] 积分记录失败:', e);
   }
@@ -211,20 +177,23 @@ export async function POST(req: NextRequest) {
       }
 
       // 4. 验证签名（防止伪造）
-      const wechatKey = process.env.WECHAT_PAY_API_KEY || '';
+      const wechatApiKey = process.env.WECHAT_PAY_API_KEY || '';
 
-      if (pay_method === 'wechat' && wechatKey && trade_no) {
-        // 微信支付签名验证
-        // 微信 V3: 应验证 HTTP头中的 Wechatpay-Signature
-        // 这里做基础验证：检查是否有 trade_no
-        if (!trade_no) {
-          console.warn(`[Payment] 微信回调缺少trade_no, order=${order_no}, ip=${clientIP}`);
+      if (pay_method === 'wechat' && wechatApiKey) {
+        // 🚨 P2 Fix: 使用微信 V3 签名验证（从 HTTP 头提取）
+        const verifyResult = await verifyWechatPayCallback(body, req.headers, wechatApiKey);
+        if (!verifyResult.valid) {
+          console.warn(`[Payment] 微信签名验证失败: ${verifyResult.reason}, order=${order_no}, ip=${clientIP}`);
           return NextResponse.json({ error: '签名验证失败' }, { status: 400 });
         }
       } else if (pay_method === 'alipay' && sign) {
-        // 支付宝签名验证（TODO: 完善）
-        // const verified = verifyAlipaySignature(JSON.stringify(body), sign);
-        // if (!verified) return NextResponse.json({ error: '签名验证失败' }, { status: 400 });
+        // 🚨 P2 Fix: 使用支付宝 RSA2 签名验证
+        const alipayPublicKey = normalizeAlipayPublicKey(process.env.ALIPAY_PUBLIC_KEY || '');
+        const verifyResult = verifyAlipayCallback(body as Record<string, unknown>, alipayPublicKey);
+        if (!verifyResult.valid) {
+          console.warn(`[Payment] 支付宝签名验证失败: ${verifyResult.reason}, order=${order_no}, ip=${clientIP}`);
+          return NextResponse.json({ error: '签名验证失败' }, { status: 400 });
+        }
       }
 
       // 5. 解析回调状态

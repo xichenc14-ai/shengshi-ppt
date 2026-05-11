@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import type { NextRequest } from 'next/server';
 
 // Mock data must be defined inside vi.mock factory for hoisting
 // Using vi.hoisted to share data between mock and tests
@@ -10,31 +11,25 @@ const { mockOutlineData } = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('@/lib/kimi-client', () => ({
-  callKimi: vi.fn().mockResolvedValue(mockOutlineData),
-  callKimiWithSearch: vi.fn().mockResolvedValue(mockOutlineData),
-}));
-
 vi.mock('@/lib/minimax-client', () => ({
   callMiniMax: vi.fn().mockResolvedValue(mockOutlineData),
   callMiniMaxWithRetry: vi.fn().mockResolvedValue(mockOutlineData),
 }));
 
-vi.mock('@/lib/glm-client', () => ({
-  callGLM: vi.fn().mockResolvedValue(mockOutlineData),
+vi.mock('@/lib/deepseek-client', () => ({
+  callDeepSeekWithRetry: vi.fn().mockRejectedValue(new Error('DeepSeek error')),
 }));
 
 import { POST } from '@/app/api/outline/route';
-import { callKimi } from '@/lib/kimi-client';
 import { callMiniMaxWithRetry } from '@/lib/minimax-client';
-import { callGLM } from '@/lib/glm-client';
+import { callDeepSeekWithRetry } from '@/lib/deepseek-client';
 
-function mockRequest(body: Record<string, any> = {}) {
+function mockRequest(body: Record<string, unknown> = {}) {
   return new Request('http://localhost/api/outline', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '127.0.0.1' },
     body: JSON.stringify(body),
-  });
+  }) as unknown as NextRequest;
 }
 
 describe('POST /api/outline', () => {
@@ -82,13 +77,32 @@ describe('POST /api/outline', () => {
     expect(data.slides.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('should preserve user tone/imageMode/theme when AI output misses or returns invalid values', async () => {
+    vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
+      title: '用户参数优先',
+      scene: '商务汇报',
+      themeId: 'not-a-real-theme',
+      slides: [{ title: '封面', content: ['测试'] }, { title: '结尾', content: ['完成'] }],
+    }));
+
+    const res = await POST(mockRequest({
+      inputText: '用户输入内容',
+      themeId: 'aurora',
+      tone: 'bold',
+      imageMode: 'web',
+    }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.themeId).toBe('aurora');
+    expect(data.tone).toBe('bold');
+    expect(data.imageMode).toBe('web');
+  });
+
   it('should return 500 when all LLM providers fail', async () => {
-    // Override mocks to throw errors
-    vi.mocked(callKimi).mockRejectedValueOnce(new Error('Kimi error'));
-    vi.mocked(callMiniMaxWithRetry).mockRejectedValueOnce(new Error('MiniMax error'));
-    vi.mocked(callGLM).mockRejectedValueOnce(new Error('GLM error'));
+    vi.mocked(callMiniMaxWithRetry).mockRejectedValue(new Error('MiniMax error'));
+    vi.mocked(callDeepSeekWithRetry).mockRejectedValue(new Error('DeepSeek error'));
 
     const res = await POST(mockRequest({ inputText: '测试内容' }));
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(503);
   });
 });

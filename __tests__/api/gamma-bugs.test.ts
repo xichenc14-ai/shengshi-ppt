@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { NextRequest } from 'next/server';
 import { POST, GET } from '@/app/api/gamma/route';
 
 // Mock the key pool module
@@ -28,18 +29,22 @@ vi.mock('@/lib/rate-limit', () => ({
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
-function mockPostRequest(body: Record<string, any> = {}) {
+function asNextRequest(request: Request): NextRequest {
+  return request as unknown as NextRequest;
+}
+
+function mockPostRequest(body: Record<string, unknown> = {}) {
   return new Request('http://localhost/api/gamma', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '127.0.0.1' },
     body: JSON.stringify(body),
-  });
+  }) as unknown as NextRequest;
 }
 
 function mockGetRequest(id: string) {
-  return new Request(`http://localhost/api/gamma?id=${id}`, {
+  return asNextRequest(new Request(`http://localhost/api/gamma?id=${id}`, {
     headers: { 'x-forwarded-for': '127.0.0.1' },
-  });
+  }));
 }
 
 describe('POST /api/gamma - Bug Verification Tests', () => {
@@ -216,9 +221,9 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
   // ===== GET endpoint tests =====
   describe('GET /api/gamma', () => {
     it('Should return 400 when generationId is missing', async () => {
-      const res = await GET(new Request('http://localhost/api/gamma', {
+      const res = await GET(asNextRequest(new Request('http://localhost/api/gamma', {
         headers: { 'x-forwarded-for': '127.0.0.1' },
-      }) as any);
+      })));
       expect(res.status).toBe(400);
     });
 
@@ -236,7 +241,7 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
       });
 
       // Act
-      const res = await GET(mockGetRequest('test-123') as any);
+      const res = await GET(mockGetRequest('test-123'));
 
       // Assert
       expect(res.status).toBe(200);

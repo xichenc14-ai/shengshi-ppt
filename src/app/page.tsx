@@ -44,8 +44,81 @@ const HOT_SCENES = [
   { label: '📋 年终总结', text: '2025年度工作总结，包含主要成绩、数据亮点和明年规划' },
 ];
 
+type GammaImageSource = 'noImages' | 'themeAccent' | 'webFreeToUseCommercially' | 'aiGenerated';
 type UploadedFile = { name: string; type: string; size: number; content?: string };
 type SlideItem = { id: string; title: string; content?: string[]; notes?: string };
+
+function toGammaImageSource(value?: string): GammaImageSource {
+  switch ((value || '').trim()) {
+    case 'none':
+    case 'noImages':
+      return 'noImages';
+    case 'web':
+    case 'webFreeToUseCommercially':
+      return 'webFreeToUseCommercially';
+    case 'ai':
+    case 'ai-pro':
+    case 'aiGenerated':
+      return 'aiGenerated';
+    case 'theme':
+    case 'theme-img':
+    case 'themeAccent':
+    case 'pictographic':
+    default:
+      return 'themeAccent';
+  }
+}
+
+function gammaSourceToAppMode(source?: string): string {
+  switch (toGammaImageSource(source)) {
+    case 'noImages':
+      return 'none';
+    case 'webFreeToUseCommercially':
+      return 'web';
+    case 'aiGenerated':
+      return 'ai';
+    case 'themeAccent':
+    default:
+      return 'theme-img';
+  }
+}
+
+function getAiModelFromImageMode(modeValue?: string): string | undefined {
+  return modeValue === 'ai-pro' ? 'imagen-3-pro' : undefined;
+}
+
+function buildClientImageOptions(source: GammaImageSource, aiModel?: string): Record<string, string> {
+  if (source !== 'aiGenerated') return { source };
+  return {
+    source,
+    model: aiModel || 'imagen-3-flash',
+    style: aiModel === 'imagen-3-pro'
+      ? 'professional, high quality, cinematic, detailed'
+      : 'flat illustration, minimalist, clean background, negative space',
+  };
+}
+
+function buildRenderSignature(
+  slides: SlideItem[],
+  mode: 'direct' | 'smart',
+  themeId: string,
+  tone: string,
+  imageSource: GammaImageSource,
+  textMode: 'generate' | 'condense' | 'preserve'
+): string {
+  const normalizedSlides = slides.map((s) => ({
+    title: s.title || '',
+    content: Array.isArray(s.content) ? s.content : [],
+  }));
+  return JSON.stringify({
+    mode,
+    themeId,
+    tone,
+    imageSource,
+    textMode,
+    slides: normalizedSlides,
+  });
+}
 
 // buildMd 已替换为 buildMdV2（lib/build-md-v2.ts）
 // 在 confirmAndGenerate 中直接传 slides 给 /api/gamma
@@ -99,7 +172,7 @@ export default function Home() {
   // Pro mode
   const [showPro, setShowPro] = useState(false);
 
-  const [genMode, setGenMode] = useState('generate');
+  const [genMode, setGenMode] = useState('preserve');
   const [theme, setTheme] = useState('auto');
   const [tone, setTone] = useState('professional');
   const [imgMode, setImgMode] = useState('theme-img');
@@ -130,7 +203,7 @@ export default function Home() {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Result
-  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; pptxUrl: string; gammaUrl?: string; actualPages?: number; generationId?: string } | null>(null);
+  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; pptxUrl: string; gammaUrl?: string; actualPages?: number; generationId?: string; renderSignature?: string } | null>(null);
   const [exporting, setExporting] = useState(false); // 导出中
   const [previewGammaUrl, setPreviewGammaUrl] = useState<string>(''); // v10.13: Gamma 在线预览链接
   const [previewInfo, setPreviewInfo] = useState<PreviewInfo | null>(null); // D4: 预览信息状态
@@ -311,7 +384,7 @@ export default function Home() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${user.id}`,
         },
-        body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: effectivePages, imageSource: directImgMode === 'none' ? 'noImages' : directImgMode === 'theme' ? 'pictographic' : directImgMode === 'theme-img' ? 'themeAccent' : directImgMode === 'web' ? 'webFreeToUseCommercially' : directImgMode === 'ai' ? 'aiGenerated' : directImgMode === 'ai-pro' ? 'aiGenerated' : 'pictographic' }),
+        body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: effectivePages, imageSource: mapImgModeToSource(directImgMode) }),
       });
       const deductData = await deductRes.json();
       if (!deductRes.ok || deductData.error) {
@@ -407,7 +480,22 @@ export default function Home() {
 
         await new Promise(r => setTimeout(r, 500));
         const topicText = inputText.split('\n')[0].replace(/^#\s*/, '').trim();
-        setResult({ title: topicText || 'PPT', slides: [], pptxUrl: finalExportUrl, gammaUrl: lastStatusData?.gammaUrl || '', actualPages: pageCount, generationId: gd.generationId });
+        setResult({
+          title: topicText || 'PPT',
+          slides: [],
+          pptxUrl: finalExportUrl,
+          gammaUrl: lastStatusData?.gammaUrl || '',
+          actualPages: pageCount,
+          generationId: gd.generationId,
+          renderSignature: buildRenderSignature(
+            [],
+            'direct',
+            directTheme,
+            directTone,
+            toGammaImageSource(directImgMode),
+            directTextMode
+          ),
+        });
         setGenProgress(100);
         setPhase('result');
 
@@ -489,12 +577,13 @@ export default function Home() {
       // · 专业模式缩减 (genMode='condense') → textMode='condense'
       // · 专业模式保持 (genMode='preserve') → textMode='preserve'
       // · 省心定制 (mode='smart')           → textMode='preserve' + auto=true
-      // 专业模式使用 directTextMode，省心模式固定 preserve
-      const effectiveTextMode = mode === 'direct' ? directTextMode : 'preserve';
-      let textMode: string = effectiveTextMode;
-      let auto = mode === 'smart';   // 省心模式自动确定
-      if (mode === 'smart') {
-        textMode = 'preserve';
+      // 专业模式使用 directTextMode；
+      // 省心模式默认 preserve + auto，若用户在高级参数中主动选了生成策略，则尊重用户选择并关闭 auto。
+      const smartSelectedMode = (GEN_MODES_MAP[genMode] || 'preserve') as 'generate' | 'condense' | 'preserve';
+      let textMode: string = mode === 'direct' ? directTextMode : smartSelectedMode;
+      let auto = mode === 'smart';
+      if (mode === 'smart' && smartSelectedMode !== 'preserve') {
+        auto = false;
       }
 
       // 省心模式：从用户输入中提取页数（如"6页"、"6 页"、"6"）
@@ -525,7 +614,15 @@ export default function Home() {
         oRes = await fetch('/api/outline', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ inputText, slideCount: effectivePages, textMode, auto }),
+          body: JSON.stringify({
+            inputText,
+            slideCount: effectivePages,
+            textMode,
+            auto,
+            themeId: mode === 'smart' ? theme : directTheme,
+            tone: mode === 'smart' ? tone : directTone,
+            imageMode: mode === 'smart' ? imgMode : directImgMode,
+          }),
           signal: outlineController.signal,
         });
       } catch (fetchErr: any) {
@@ -557,16 +654,10 @@ export default function Home() {
 
       if (mode === 'smart') {
         // 🚨 省心模式：设置 smartGammaPayload → 进入大纲确认页
-        const imageModeMap: Record<string, string> = {
-          'theme-img': 'themeAccent',
-          'theme': 'themeAccent',
-          'web': 'webFreeToUseCommercially',
-          'ai': 'aiGenerated',
-          'none': 'noImages',
-        };
-        const gammaImageSource = imageModeMap[od.imageMode || ''] || 'themeAccent';
+        const gammaImageSource = toGammaImageSource(od.imageMode || imgMode);
         setSmartGammaPayload({
-          themeId: od.themeId || 'consultant',
+          // D2 Fix: 优先使用 AI 返回的主题，否则用中性灰色系（ash），避免 fallback 到蓝色 consultant
+          themeId: od.themeId || 'ash',
           tone: od.tone || 'professional',
           imageOptions: { source: gammaImageSource },
         });
@@ -582,15 +673,7 @@ export default function Home() {
       } else {
         // 🚨 v10.7.1: 专业模式也进入大纲编辑页面
         // 同步 imgMode 状态，确保 confirmAndGenerate 使用正确的值
-        const directImgModeMap: Record<string, string> = {
-          'theme-img': 'themeAccent',
-          'theme': 'themeAccent',
-          'web': 'webFreeToUseCommercially',
-          'ai': 'aiGenerated',
-          'ai-pro': 'aiGenerated',
-          'none': 'noImages',
-        };
-        const gammaImageSource = directImgModeMap[directImgMode] || 'themeAccent';
+        const gammaImageSource = toGammaImageSource(directImgMode);
         setImgMode(directImgMode);
         setSmartGammaPayload({
           themeId: directTheme !== 'default-light' ? directTheme : (od.themeId || 'consultant'),
@@ -605,7 +688,23 @@ export default function Home() {
       setPhase('input');
     }
     setLoading(false);
-  }, [user, files, topic, showPro, genMode, pageCount, collectText, mode, directTextMode, directImgMode, directTheme, directTone]);
+  }, [
+    user,
+    files,
+    topic,
+    pageCount,
+    collectText,
+    mode,
+    genMode,
+    theme,
+    tone,
+    imgMode,
+    directTextMode,
+    directImgMode,
+    directTheme,
+    directTone,
+    openLogin,
+  ]);
 
   // 🚨 V6 简化：省心模式入口（权限检查 + 调用统一流程）
   // 🚨 v10.7.1: 所有模式统一走 outline → 大纲编辑 → 生成（专业模式不再跳过大纲编辑页面）
@@ -652,21 +751,41 @@ export default function Home() {
   const confirmAndGenerate = useCallback(async () => {
     if (!outlineResult || !user) return;
 
-    // 🚨 v10.6: 检测用户是否编辑了大纲，没改则跳过生成
+    const selectedImageMode = mode === 'smart'
+      ? (smartGammaPayload?.imageOptions?.source || outlineResult.imageMode || imgMode)
+      : directImgMode;
+    const finalImageSource = toGammaImageSource(selectedImageMode);
+    const finalAiModel = mode === 'direct' ? getAiModelFromImageMode(directImgMode) : undefined;
+    const finalImageOptions = buildClientImageOptions(finalImageSource, finalAiModel);
+    const finalThemeId = mode === 'smart'
+      ? (smartGammaPayload?.themeId || (theme !== 'auto' ? theme : outlineResult.themeId) || 'consultant')
+      : (directTheme || outlineResult.themeId || 'consultant');
+    const finalTone = mode === 'smart'
+      ? (smartGammaPayload?.tone || outlineResult.tone || tone || 'professional')
+      : (directTone || 'professional');
+    const finalTextMode: 'generate' | 'condense' | 'preserve' = mode === 'smart' ? 'preserve' : directTextMode;
+    const currentRenderSignature = buildRenderSignature(
+      editedSlidesRef.current,
+      mode,
+      finalThemeId,
+      finalTone,
+      finalImageSource,
+      finalTextMode
+    );
+
+    // 🚨 v10.6+: 仅在内容和渲染参数都未变化时复用已有结果
     const userEdited = hasUserEditedSlides();
-    if (!userEdited && result?.generationId) {
-      // 用户没改内容，直接显示已有结果
+    if (!userEdited && result?.generationId && result.renderSignature === currentRenderSignature) {
       setPhase('result');
       return;
     }
 
     // 🔐 会员权限检查
-    const userPlan = getPlan(user.plan_type || 'free');
-    const imageSource = imgMode === 'none' ? 'noImages' : imgMode === 'ai' ? 'aiGenerated' : imgMode === 'ai-pro' ? 'aiGenerated' : imgMode === 'web' ? 'webFreeToUseCommercially' : imgMode === 'theme-img' ? 'themeAccent' : 'pictographic';
-    const numPages = Math.min(editedSlides.length, userPlan.maxPages);
+    const numPages = editedSlides.length;
     const perm = checkPermission(user.plan_type || 'free', {
       numPages,
-      imageSource,
+      imageSource: finalImageSource,
+      aiModel: finalAiModel,
       mode: mode === 'smart' ? 'smart' : 'direct',
     });
     if (!perm.allowed) {
@@ -691,12 +810,12 @@ export default function Home() {
     setStepText('AI 正在准备渲染...');
 
     // 🚨 V6新增：计算待扣积分（用于回滚，提前声明避免catch作用域问题）
-    const imgCredits3 = imgMode === 'ai' || imgMode === 'ai-pro' ? IMG_CREDIT_PER_PAGE : 0;
+    const imgCredits3 = finalImageSource === 'aiGenerated' ? IMG_CREDIT_PER_PAGE : 0;
     const estImg3 = Math.ceil(editedSlides.length / 2);
     const creditsToDeduct3 = editedSlides.length * CREDIT_PER_PAGE + estImg3 * imgCredits3;
 
     try {
-      const tm = mode === 'smart' ? 'preserve' : directTextMode;
+      const tm = finalTextMode;
 
       // Step 0: Deduct credits
       setGenStep(0);
@@ -707,7 +826,13 @@ export default function Home() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${user.id}`,
         },
-        body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: editedSlides.length, imageSource: imgMode === 'none' ? 'noImages' : imgMode === 'ai' ? 'aiGenerated' : imgMode === 'web' ? 'webFreeToUseCommercially' : imgMode === 'theme-img' ? 'themeAccent' : 'pictographic' }),
+        body: JSON.stringify({
+          action: 'deduct',
+          userId: user.id,
+          numPages: editedSlides.length,
+          imageSource: finalImageSource,
+          imageModel: finalAiModel,
+        }),
       });
       const deductData = await deductRes.json();
       if (!deductRes.ok || deductData.error) {
@@ -728,8 +853,6 @@ export default function Home() {
         }
         throw new Error(deductData.error || '积分扣除失败');
       }
-      // Update credits locally
-      const updatedUser = { ...user, credits: deductData.balance };
       updateCredits(deductData.balance);
 
       // Step 1: Prepare
@@ -743,22 +866,19 @@ export default function Home() {
       setGenProgress(40);
       setStepText('AI 正在渲染 PPT 页面...');
 
-      // 🚨 V6 统一：所有模式（省心+专业）都用 buildMdV2 构建内容
-      const imgSrc = imgMode;
+      const imgSrc = finalImageSource;
       const { markdown: md, visualMetaphor } = buildMdV2(outlineResult.title, editedSlides, imgSrc, false);
-      // 🚨 V6.1 修复：themeId/tone 优先从 outlineResult 取（outline API 已匹配最佳配置）
-      const finalThemeId = (theme !== 'auto' ? theme : outlineResult.themeId) || 'consultant';
-      const finalTone = tone || outlineResult.tone || 'professional';
       // 🚨 V10.4: 传 originalTextMode 让 gamma/route.ts 选择对应渲染指令
       const gammaRequestBody: any = {
         inputText: md,
-        textMode: 'preserve',
+        textMode: tm,
         format: 'presentation',
         numCards: editedSlides.length,
         exportAs: 'pptx',
         themeId: finalThemeId,
         tone: finalTone,
-        imageMode: imgSrc,
+        imageMode: finalImageSource,
+        imageOptions: finalImageOptions,
         visualMetaphor,
         originalTextMode: mode === 'direct' ? directTextMode : undefined,
       };
@@ -819,7 +939,15 @@ export default function Home() {
         }
 
         await new Promise(r => setTimeout(r, 500));
-        setResult({ title: outlineResult.title, slides: editedSlides, pptxUrl: finalExportUrl, gammaUrl: lastStatusData?.gammaUrl || '', actualPages: editedSlides.length, generationId: gd.generationId });
+        setResult({
+          title: outlineResult.title,
+          slides: editedSlides,
+          pptxUrl: finalExportUrl,
+          gammaUrl: lastStatusData?.gammaUrl || '',
+          actualPages: editedSlides.length,
+          generationId: gd.generationId,
+          renderSignature: currentRenderSignature,
+        });
         setGenProgress(100);
         setPhase('result');
 
@@ -863,7 +991,25 @@ export default function Home() {
       setPhase('outline');
     }
     setLoading(false);
-  }, [user, outlineResult, editedSlides, originalSlides, showPro, genMode, theme, tone, imgMode, rollbackCredits, hasUserEditedSlides]);
+  }, [
+    user,
+    outlineResult,
+    editedSlides,
+    result?.generationId,
+    mode,
+    smartGammaPayload,
+    theme,
+    tone,
+    imgMode,
+    directImgMode,
+    directTheme,
+    directTone,
+    directTextMode,
+    openPayment,
+    updateCredits,
+    rollbackCredits,
+    hasUserEditedSlides,
+  ]);
 
   // 🚨 Fix: 使用 ref 保存最新 confirmAndGenerate 引用，避免 useCallback 闭包导致点击丢失
   const confirmAndGenerateRef = useRef(confirmAndGenerate);
@@ -877,11 +1023,14 @@ export default function Home() {
     setError('');
     setResult(null);
     setOutlineResult(null);
+    setSmartGammaPayload(null);
     setEditedSlides([]);
+    setOriginalSlides([]);
     setStreamingSlides([]);
     setFiles([]);
     setTopic('');
     setShowPro(false);
+    setGenMode('preserve');
     setPhase('landing');
     setGenProgress(0);
     setGenStep(0);
@@ -892,7 +1041,9 @@ export default function Home() {
   const backToLanding = () => {
     setPhase('landing');
     setOutlineResult(null);
+    setSmartGammaPayload(null);
     setEditedSlides([]);
+    setOriginalSlides([]);
     setStreamingSlides([]);
     setError('');
   };
@@ -931,61 +1082,57 @@ export default function Home() {
     setExporting(true);
     try {
       const totalPages = result.actualPages || pageCount;
-      const totalPrice = totalPages * 0.2; // ¥0.2/页
-      
-      if (user.plan_type && user.plan_type !== 'free') {
-        // 会员直接下载
-        try {
-          await fetch("/api/download", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "record", userId: user.id, pageCount: totalPages, format: "pptx" }),
-          });
-        } catch (err) { console.warn("[Download] 记录失败:", err); }
-        
-        const filename = result.title ? `${result.title}.pptx` : '省心PPT.pptx';
-        const res = await fetch(`/api/export-pptx?generationId=${result.generationId}&name=${encodeURIComponent(filename)}`);
-        
-        // 🚨 v10.11 修复：检查 Content-Type，确保下载的是文件不是 JSON 错误
-        const contentType = res.headers.get('Content-Type') || '';
-        if (!res.ok || contentType.includes('application/json')) {
-          const errData = await res.json().catch(() => ({ error: '导出失败' }));
-          alert(errData.error || '导出失败，请稍后重试');
+      let shouldRecordDownload = true;
+      const permissionRes = await fetch(
+        `/api/download?userId=${encodeURIComponent(user.id)}&pageCount=${totalPages}&format=pptx`
+      );
+      const permissionData = await permissionRes.json().catch(() => ({} as any));
+      if (!permissionRes.ok) {
+        if (user.plan_type && user.plan_type !== 'free') {
+          shouldRecordDownload = false;
+          console.warn('[Download] 权限接口不可用，会员走兜底下载:', permissionData.error || permissionRes.status);
+        } else {
+          alert(permissionData.error || '下载权限校验失败，请稍后重试');
           return;
         }
-        
-        const blob = await res.blob();
-        downloadBlob(blob, filename);
-      } else {
-        // 非会员：弹出支付确认
-        const choice = window.confirm(
-          `导出PPT需支付 \n\n📄 当前PPT共 ${totalPages} 页\n💰 单次付费：¥${totalPrice.toFixed(1)}元（¥0.2/页）\n⭐ 订阅会员：免费无限次\n\n付费后积分自动返还！\n\n点「确定」= 支付下载\n点「取消」= 查看订阅方案`
-        );
-        
-        if (choice) {
-          const filename = result.title ? `${result.title}.pptx` : '省心PPT.pptx';
-          const res = await fetch(`/api/export-pptx?generationId=${result.generationId}&name=${encodeURIComponent(filename)}`);
-          
-          // 🚨 v10.11 修复：检查 Content-Type
-          const contentType = res.headers.get('Content-Type') || '';
-          if (!res.ok || contentType.includes('application/json')) {
-            const errData = await res.json().catch(() => ({ error: '导出失败' }));
-            alert(errData.error || '导出失败，请稍后重试');
-            return;
-          }
-          
-          const blob = await res.blob();
-          downloadBlob(blob, filename);
-          // [D5] 非会员下载后弹出支付订阅提示，不再使用单纯的 alert
-          openPayment({
-            id: 'shengxin',
-            name: '省心会员 · ✨',
-            price: '¥19.9/月',
-            billing: 'monthly',
-            reason: `本次已免费下载，开通会员后可无限次下载`,
+      } else if (permissionData.needPayment) {
+        const cost = typeof permissionData.cost === 'number' ? permissionData.cost : totalPages * 0.2;
+        openPayment({
+          id: 'shengxin',
+          name: '省心会员',
+          price: '¥19.9/月',
+          billing: 'monthly',
+          reason: permissionData.reason || `当前下载需支付 ¥${cost.toFixed(2)}，开通会员可不限次下载`,
+        });
+        return;
+      }
+
+      const filename = result.title ? `${result.title}.pptx` : '省心PPT.pptx';
+      const res = await fetch(`/api/export-pptx?generationId=${result.generationId}&name=${encodeURIComponent(filename)}`);
+      const contentType = res.headers.get('Content-Type') || '';
+      if (!res.ok || contentType.includes('application/json')) {
+        const errData = await res.json().catch(() => ({ error: '导出失败' }));
+        alert(errData.error || '导出失败，请稍后重试');
+        return;
+      }
+
+      const blob = await res.blob();
+      downloadBlob(blob, filename);
+
+      if (shouldRecordDownload) {
+        try {
+          await fetch('/api/download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'record',
+              userId: user.id,
+              pageCount: totalPages,
+              format: 'pptx',
+            }),
           });
-        } else {
-          openPayment({ id: 'shengxin', name: '省心会员', price: '¥19.9', billing: 'monthly', reason: `订阅会员 · ${totalPages}页PPT免费下` });
+        } catch (recordErr) {
+          console.warn('[Download] 记录下载次数失败:', recordErr);
         }
       }
     } finally {
@@ -1410,6 +1557,17 @@ export default function Home() {
                     </button>
                   </div>
 
+                  {mode === 'smart' && (
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        onClick={() => setShowPro(true)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium text-[#5B4FE9] bg-[#F5F3FF] hover:bg-[#EDE9FE] transition-colors"
+                      >
+                        高级参数
+                      </button>
+                    </div>
+                  )}
+
                   {/* Direct mode: show ThemeSelector + params */}
                   {mode === 'direct' && (
                     <div className="mt-4 pt-4 border-t border-gray-100 space-y-5 max-h-[55vh] overflow-y-auto -mx-1 px-1">
@@ -1518,9 +1676,6 @@ export default function Home() {
                                 }
                                 setDirectImgMode(val);
                                 // 同步 imgMode 状态，确保 confirmAndGenerate 使用正确的值
-                                setImgMode(val);
-                                setImgMode(val); // 🚨 修复：同步 imgMode 状态，确保 confirmAndGenerate 使用正确的值
-                                // 🚨 同步 imgMode 状态，确保 confirmAndGenerate 使用正确的值
                                 setImgMode(val);
                               }}
                               className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-white focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] outline-none transition-all appearance-none cursor-pointer"
@@ -1665,6 +1820,7 @@ export default function Home() {
                                 <button
                                   key={t}
                                   onClick={() => {
+                                    setTone(t);
                                     setSmartGammaPayload((prev: any) => prev ? {
                                       ...prev,
                                       tone: t,
@@ -1686,10 +1842,11 @@ export default function Home() {
                           <div className="bg-white/70 rounded-lg px-3 py-2">
                             <p className="text-[10px] text-gray-400 mb-1">🖼️ 配图</p>
                             <div className="flex flex-wrap gap-1">
-                              {(['themeAccent','webFreeToUseCommercially','aiGenerated'] as const).map(src => (
+                              {(['themeAccent','webFreeToUseCommercially','aiGenerated','noImages'] as const).map(src => (
                                 <button
                                   key={src}
                                   onClick={() => {
+                                    setImgMode(gammaSourceToAppMode(src));
                                     setSmartGammaPayload((prev: any) => prev ? {
                                       ...prev,
                                       imageOptions: { ...prev.imageOptions, source: src },
@@ -1702,7 +1859,7 @@ export default function Home() {
                                       : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                                   }`}
                                 >
-                                  {{ themeAccent:'主题套图', webFreeToUseCommercially:'网图', aiGenerated:'AI图' }[src]}
+                                  {{ themeAccent:'主题套图', webFreeToUseCommercially:'网图', aiGenerated:'AI图', noImages:'无图' }[src]}
                                 </button>
                               ))}
                             </div>
@@ -1919,8 +2076,9 @@ export default function Home() {
         open={showThemePicker}
         currentThemeId={smartGammaPayload?.themeId || 'consultant'}
         currentTone={smartGammaPayload?.tone || 'professional'}
-        currentImgSrc={smartGammaPayload?.imageOptions?.source || 'theme-img'}
+        currentImgSrc={smartGammaPayload?.imageOptions?.source || 'themeAccent'}
         onThemeChange={(themeId) => {
+          setTheme(themeId);
           setSmartGammaPayload((prev: any) => prev ? {
             ...prev,
             themeId,
@@ -1928,6 +2086,7 @@ export default function Home() {
           } : prev);
         }}
         onToneChange={(tone) => {
+          setTone(tone);
           setSmartGammaPayload((prev: any) => prev ? {
             ...prev,
             tone,
@@ -1935,20 +2094,13 @@ export default function Home() {
           } : prev);
         }}
         onImgChange={(imgSrc) => {
-          // ✅ Gamma API 直接支持，不需要映射
+          const normalizedSource = toGammaImageSource(imgSrc);
           setSmartGammaPayload((prev: any) => prev ? {
             ...prev,
-            imageOptions: { ...prev.imageOptions, source: imgSrc },
-            gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, imageOptions: { ...prev.gammaPayload.imageOptions, source: imgSrc } } : undefined,
+            imageOptions: { ...prev.imageOptions, source: normalizedSource },
+            gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, imageOptions: { ...prev.gammaPayload.imageOptions, source: normalizedSource } } : undefined,
           } : prev);
-          // 同步 imgMode 状态，确保 confirmAndGenerate 使用正确的值
-          const reverseMap: Record<string, string> = {
-            'themeAccent': 'theme-img',
-            'noImages': 'none',
-            'webFreeToUseCommercially': 'web',
-            'aiGenerated': 'ai',
-          };
-          setImgMode(reverseMap[imgSrc] || 'theme-img');
+          setImgMode(gammaSourceToAppMode(normalizedSource));
         }}
         onClose={() => setShowThemePicker(false)}
       />
