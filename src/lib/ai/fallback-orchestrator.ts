@@ -7,6 +7,7 @@
 
 import { callMiniMaxWithRetry } from '@/lib/minimax-client';
 import { callDeepSeekWithRetry } from '@/lib/deepseek-client';
+import { hasProviderKey, normalizeProviderKey, parseProviderKeyPool } from '@/lib/ai/provider-key';
 
 // Minimal message type — matches OpenAI ChatCompletionMessageParam shape
 type OpenAIMessage = {
@@ -90,12 +91,9 @@ function normalizeProvider(raw: string | undefined): FallbackProvider | null {
 
 function isProviderConfigured(provider: FallbackProvider): boolean {
   if (process.env.NODE_ENV === 'test' || process.env.VITEST) return true;
-  if (provider === 'minimax') return Boolean((process.env.MINIMAX_API_KEY || '').trim());
-  const singleDeepSeek = (process.env.DEEPSEEK_API_KEY || '').trim();
-  const deepSeekPool = (process.env.DEEPSEEK_API_KEYS || '')
-    .split(',')
-    .map((k) => k.trim())
-    .filter(Boolean);
+  if (provider === 'minimax') return hasProviderKey(process.env.MINIMAX_API_KEY);
+  const singleDeepSeek = normalizeProviderKey(process.env.DEEPSEEK_API_KEY);
+  const deepSeekPool = parseProviderKeyPool(process.env.DEEPSEEK_API_KEYS);
   return Boolean(singleDeepSeek || deepSeekPool[0]);
 }
 

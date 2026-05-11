@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
 import { callWithFallback } from '@/lib/ai/fallback-orchestrator';
 import { THEME_DATABASE } from '@/lib/theme-database';
-import { normalizeUserInput, parseMarkdownOutline } from '@/lib/ppt-param-adapter';
+import { generateMinimalOutline, normalizeUserInput, parseMarkdownOutline } from '@/lib/ppt-param-adapter';
 import type { OutlineSlide, OutlineMeta, OutlineResponse } from '@/lib/types/outline-response';
 
 // Serverless Runtime（v10.9在此模式下成功）
@@ -354,16 +354,29 @@ ${topic}`
       console.warn('[Outline] Fallback orchestrator error:', aiError);
     }
 
-    // 🚨 P0 Fix: AI 失败时不返回假数据，直接报错让用户知道
     if (!parsed) {
-      console.error('[Outline] All AI providers failed:', aiError);
-      return NextResponse.json(
-        { error: aiError || 'AI服务暂时不可用，请稍后再试' },
-        { status: 503 }
-      );
+      console.error('[Outline] All AI providers failed, fallback to minimal outline:', aiError);
+      const minimal = generateMinimalOutline(topic, numCards);
+      const fallbackImageMode =
+        rawImageMode ||
+        normalized.imageSource ||
+        'theme-img';
+      parsed = {
+        title: minimal.title,
+        scene: detectScene(topic.toLowerCase()),
+        themeId: rawThemeId,
+        tone: rawTone || style || 'professional',
+        imageMode: fallbackImageMode,
+        slides: minimal.slides.map((slide) => ({
+          title: slide.title,
+          content: slide.bullets,
+          notes: slide.notes,
+        })),
+        _fallback: true,
+        _fallbackReason: aiError || 'all providers unavailable',
+      };
     }
 
-    // 🚨 P0 Fix: 空/异常响应也不使用 fallback，直接报错
     if (!parsed.slides || !Array.isArray(parsed.slides) || parsed.slides.length === 0) {
       console.error('[Outline] Empty or invalid slides from AI:', parsed);
       return NextResponse.json(

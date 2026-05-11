@@ -1,13 +1,11 @@
 // DeepSeek API 客户端 - 备用方案
+import { normalizeProviderKey, parseProviderKeyPool } from '@/lib/ai/provider-key';
 
 function resolveDeepSeekApiKey(): string {
-  const single = (process.env.DEEPSEEK_API_KEY || '').trim();
+  const single = normalizeProviderKey(process.env.DEEPSEEK_API_KEY);
   if (single) return single;
 
-  const pool = (process.env.DEEPSEEK_API_KEYS || '')
-    .split(',')
-    .map((k) => k.trim())
-    .filter(Boolean);
+  const pool = parseProviderKeyPool(process.env.DEEPSEEK_API_KEYS);
   return pool[0] || '';
 }
 

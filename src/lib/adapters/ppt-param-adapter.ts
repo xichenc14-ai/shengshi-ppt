@@ -410,34 +410,119 @@ export function parseMarkdownOutline(raw: string): {
  * @param topic 用户输入的主题
  * @param numCards 请求的页数（默认 8，范围 3-20）
  */
+const FALLBACK_SECTION_TITLES = [
+  '背景与目标',
+  '现状洞察',
+  '关键问题',
+  '方案设计',
+  '实施路径',
+  '资源与协同',
+  '风险与应对',
+  '阶段成果',
+  '总结与行动',
+];
+
+function truncateZh(text: string, max = 24): string {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed;
+}
+
+function extractFallbackTitle(topic: string): string {
+  const firstLine = topic
+    .split('\n')
+    .map((line) => line.replace(/^#+\s*/, '').trim())
+    .find(Boolean);
+  return truncateZh(firstLine || topic || 'PPT', 28) || 'PPT';
+}
+
+function extractTopicPhrases(topic: string): string[] {
+  const cleaned = topic
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+  if (!cleaned) return [];
+
+  const segments = cleaned
+    .split(/[\n。！？!?；;，,、:：|/（）()【】\[\]<>《》]/)
+    .map((item) => item.replace(/^[-*]\s*/, '').replace(/^\d+\.\s*/, '').trim())
+    .filter((item) => item.length >= 3 && item.length <= 28);
+
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const s of segments) {
+    const key = s.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(s);
+  }
+  return deduped;
+}
+
+function extractSentencePool(topic: string): string[] {
+  const parts = topic
+    .replace(/\r/g, '\n')
+    .split(/[\n。！？!?]/)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 6);
+  return parts.length > 0 ? parts : [topic.trim()];
+}
+
 export function generateMinimalOutline(
   topic: string,
   numCards: number = 8
 ): { title: string; slides: OutlineSlide[] } {
   const safeTopic = topic?.trim() || 'PPT';
   const safeCount = Math.max(3, Math.min(numCards || 8, 20));
+  const title = extractFallbackTitle(safeTopic);
+  const phrasePool = extractTopicPhrases(safeTopic);
+  const sentencePool = extractSentencePool(safeTopic);
+  const pickPhrase = (idx: number): string =>
+    phrasePool[idx % phrasePool.length] || title;
+  const pickSentence = (idx: number): string =>
+    sentencePool[idx % sentencePool.length] || safeTopic;
 
   const slides: OutlineSlide[] = [];
 
   // 封面（index = 1）
   slides.push({
     index: 1,
-    title: safeTopic,
-    bullets: ['概括主题的封面'],
-    content: ['概括主题的封面'],
+    title,
+    bullets: [
+      `主题聚焦：${truncateZh(pickPhrase(0), 20)}`,
+      '输出目标：形成可展示的完整方案',
+      '演示方式：结构化表达 + 关键结论',
+    ],
+    content: [
+      `主题聚焦：${truncateZh(pickPhrase(0), 20)}`,
+      '输出目标：形成可展示的完整方案',
+      '演示方式：结构化表达 + 关键结论',
+    ],
     speakerNotes: undefined,
-    notes: '封面金句：简洁有力',
+    notes: `封面金句：围绕“${truncateZh(title, 12)}”统一叙事主线。`,
   });
 
   // 内容页
   for (let i = 2; i < safeCount; i++) {
+    const poolIndex = i - 2;
+    const section = FALLBACK_SECTION_TITLES[poolIndex % FALLBACK_SECTION_TITLES.length];
+    const phrase = truncateZh(pickPhrase(poolIndex + 1), 12);
+    const sentence = truncateZh(pickSentence(poolIndex), 22);
+    const slideTitle = phrase && phrase !== section
+      ? `${section}：${phrase}`
+      : section;
+    const bullets = [
+      `核心点：${phrase}`,
+      `关键信息：${sentence}`,
+      '行动建议：明确负责人、节奏和里程碑',
+    ];
     slides.push({
       index: i,
-      title: `核心要点 ${i - 1}`,
-      bullets: ['要点1', '要点2', '要点3'],
-      content: ['要点1', '要点2', '要点3'],
+      title: slideTitle,
+      bullets,
+      content: [...bullets],
       speakerNotes: undefined,
-      notes: '数据页标注：📊 柱状图',
+      notes: '可视化建议：对比用柱状图，趋势用折线图。',
     });
   }
 
@@ -445,11 +530,19 @@ export function generateMinimalOutline(
   slides.push({
     index: safeCount,
     title: '总结与展望',
-    bullets: ['关键收获', '下一步行动', '感谢观看'],
-    content: ['关键收获', '下一步行动', '感谢观看'],
+    bullets: [
+      `核心结论：${truncateZh(pickPhrase(safeCount), 18)}`,
+      '下一步：拆解任务并推进落地',
+      '收尾：对齐目标，持续复盘优化',
+    ],
+    content: [
+      `核心结论：${truncateZh(pickPhrase(safeCount), 18)}`,
+      '下一步：拆解任务并推进落地',
+      '收尾：对齐目标，持续复盘优化',
+    ],
     speakerNotes: undefined,
-    notes: '结尾金句：总结全文核心观点',
+    notes: '结尾金句：用清晰行动把想法变成结果。',
   });
 
-  return { title: safeTopic, slides };
+  return { title, slides };
 }

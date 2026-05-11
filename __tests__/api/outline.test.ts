@@ -98,11 +98,15 @@ describe('POST /api/outline', () => {
     expect(data.imageMode).toBe('web');
   });
 
-  it('should return 500 when all LLM providers fail', async () => {
+  it('should return fallback outline when all LLM providers fail', async () => {
     vi.mocked(callMiniMaxWithRetry).mockRejectedValue(new Error('MiniMax error'));
     vi.mocked(callDeepSeekWithRetry).mockRejectedValue(new Error('DeepSeek error'));
 
     const res = await POST(mockRequest({ inputText: '测试内容' }));
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data._fallback).toBe(true);
+    expect(Array.isArray(data.slides)).toBe(true);
+    expect(data.slides.length).toBeGreaterThanOrEqual(3);
   });
 });
