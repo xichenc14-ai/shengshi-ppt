@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { selectBestKey } from '@/lib/gamma-key-pool';
 
+export const runtime = 'nodejs';
+
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 

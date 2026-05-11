@@ -22,7 +22,7 @@ export type PreviewErrorCode =
 export interface PreviewError {
   code: PreviewErrorCode;
   message: string;
-  fallbackAction?: 'download_pptx' | 'download_pdf' | 'open_gamma';
+  fallbackAction?: 'download_pptx' | 'download_pdf' | 'open_external';
 }
 
 export interface PreviewInfo {

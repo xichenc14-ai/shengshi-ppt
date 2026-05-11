@@ -33,8 +33,8 @@ export const LIMITS = {
   MAX_IMAGE_SIZE: 20 * 1024 * 1024,    // 20MB 单张图片
   MAX_TOTAL_FILE_SIZE: 100 * 1024 * 1024, // 100MB 总文件
   MAX_FILE_COUNT: 9,                    // 最多9个文件
-  MAX_TEXT_LENGTH: 10000,              // 10000字总文本
-  MAX_TOPIC_LENGTH: 5000,              // 5000字纯文本输入
+  MAX_TEXT_LENGTH: 60000,              // 60000字总文本
+  MAX_TOPIC_LENGTH: 20000,             // 20000字纯文本输入
 } as const;
 
 /**
@@ -117,7 +117,7 @@ export function validateText(topic: string, fileContents: string[]): ValidationR
   }
 
   // 警告
-  if (totalLength > 8000 && totalLength <= LIMITS.MAX_TEXT_LENGTH) {
+  if (totalLength > 30000 && totalLength <= LIMITS.MAX_TEXT_LENGTH) {
     warnings.push(`内容较多（${totalLength}字），AI处理可能较慢`);
   }
 

@@ -3,124 +3,72 @@ import { getClientIP, rateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 
-// ===== Node.js polyfills for pdfjs-dist v5.x =====
-if (typeof globalThis !== 'undefined') {
-  // DOMMatrix
-  if (!(globalThis as any).DOMMatrix) {
-    (globalThis as any).DOMMatrix = class DOMMatrix {
-      a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
-      m11 = 1; m12 = 0; m13 = 0; m14 = 0;
-      m21 = 0; m22 = 1; m23 = 0; m24 = 0;
-      m31 = 0; m32 = 0; m33 = 1; m34 = 0;
-      m41 = 0; m42 = 0; m43 = 0; m44 = 1;
-      is2D = true; isIdentity = true;
-      constructor(init?: any) {}
-      scale() { return this; }
-      translate() { return this; }
-      rotate() { return this; }
-      multiply() { return this; }
-      inverse() { return new (globalThis as any).DOMMatrix(); }
-      transformPoint() { return { x: 0, y: 0, z: 0, w: 1 }; }
-      setMatrixValue() { return this; }
-      toString() { return 'matrix(1, 0, 0, 1, 0, 0)'; }
-      toJSON() { return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }; }
-    };
-  }
-  // OffscreenCanvas（pdfjs v5可能需要）
-  if (!(globalThis as any).OffscreenCanvas) {
-    (globalThis as any).OffscreenCanvas = class OffscreenCanvas {
-      width = 0; height = 0;
-      constructor(w: number, h: number) { this.width = w; this.height = h; }
-      getContext() { return null; }
-      transferToImageBitmap() { return {}; }
-    };
-  }
-  // Path2D
-  if (!(globalThis as any).Path2D) {
-    (globalThis as any).Path2D = class Path2D {
-      constructor(path?: any) {}
-      moveTo() {}
-      lineTo() {}
-      closePath() {}
-      addPath() {}
-    };
-  }
-  // ImageData
-  if (!(globalThis as any).ImageData) {
-    (globalThis as any).ImageData = class ImageData {
-      data: Uint8ClampedArray;
-      width: number; height: number;
-      constructor(w: number, h: number) {
-        this.width = w; this.height = h;
-        this.data = new Uint8ClampedArray(w * h * 4);
-      }
-    };
-  }
-  // ImageBitmap
-  if (!(globalThis as any).ImageBitmap) {
-    (globalThis as any).ImageBitmap = class ImageBitmap {
-      width = 0; height = 0;
-      close() {}
-    };
-  }
-  // structuredClone
-  if (!(globalThis as any).structuredClone) {
-    (globalThis as any).structuredClone = (obj: any) => JSON.parse(JSON.stringify(obj));
-  }
+function normalizeExtractedText(raw: string): string {
+  return (raw || '')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
-/**
- * PDF文本提取 - 使用pdfjs-dist v5.x legacy模式
- */
-async function parsePdf(buffer: Buffer): Promise<string> {
+async function parsePdfWithPdfParse(buffer: Buffer): Promise<string> {
   try {
-    // 使用pdfjs-dist/legacy（纯JS，不需要web worker）
-    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-    const { getDocument, GlobalWorkerOptions } = pdfjsLib;
-    
-    // 设置workerSrc — 使用Next.js webpack asset机制
-    // @ts-ignore
-    const workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href;
-    GlobalWorkerOptions.workerSrc = workerSrc;
-    console.log('[Parse] pdfjs workerSrc:', workerSrc?.substring(0, 80));
-    
-    const loadingTask = getDocument({
-      data: new Uint8Array(buffer),
-      useSystemFonts: true,
-      disableFontFace: true,
-      useWorkerFetch: false,
-      isEvalSupported: false,
-    });
-
-    const doc = await loadingTask.promise;
-    let text = '';
-
-    for (let i = 1; i <= doc.numPages; i++) {
-      const page = await doc.getPage(i);
-      const content = await page.getTextContent();
-      let lastY = -1;
-      for (const item of content.items) {
-        const str = (item as any).str || '';
-        if (!str) continue;
-        const y = (item as any).transform?.[5] ?? -1;
-        if (lastY >= 0 && Math.abs(y - lastY) > 2) {
-          text += '\n';
-        }
-        text += str;
-        lastY = y;
-      }
-      if (i < doc.numPages) text += '\n\n';
-    }
-
-    doc.destroy();
-    return text.trim();
+    const pdfParseModule = await import('pdf-parse');
+    const pdfParseFn = (pdfParseModule.default ?? pdfParseModule) as (dataBuffer: Buffer) => Promise<{ text?: string }>;
+    const parsed = await pdfParseFn(buffer);
+    return normalizeExtractedText(parsed?.text || '');
   } catch (e: any) {
-    console.error('[Parse] pdfjs-dist失败:', e.message);
+    console.error('[Parse] pdf-parse失败:', e.message);
     throw e;
   }
 }
 
-// ===== 主处理函数 =====
+async function parsePdfWithPdfJs(buffer: Buffer): Promise<string> {
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const { getDocument } = pdfjsLib;
+  const loadingTask = getDocument({
+    data: new Uint8Array(buffer),
+    disableWorker: true,
+    useSystemFonts: true,
+    disableFontFace: true,
+    useWorkerFetch: false,
+    isEvalSupported: false,
+  } as any);
+
+  const doc = await loadingTask.promise;
+  let text = '';
+
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    const content = await page.getTextContent();
+    let lastY = -1;
+    for (const item of content.items) {
+      const str = (item as any).str || '';
+      if (!str) continue;
+      const y = (item as any).transform?.[5] ?? -1;
+      if (lastY >= 0 && Math.abs(y - lastY) > 2) text += '\n';
+      text += str;
+      lastY = y;
+    }
+    if (i < doc.numPages) text += '\n\n';
+  }
+
+  await doc.destroy();
+  return normalizeExtractedText(text);
+}
+
+async function parsePdf(buffer: Buffer): Promise<string> {
+  const byPdfParse = await parsePdfWithPdfParse(buffer).catch(() => '');
+  if (byPdfParse) return byPdfParse;
+
+  const byPdfJs = await parsePdfWithPdfJs(buffer).catch((e: any) => {
+    console.error('[Parse] pdfjs fallback失败:', e?.message || String(e));
+    return '';
+  });
+  if (byPdfJs) return byPdfJs;
+
+  return '';
+}
 
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request);
@@ -139,16 +87,14 @@ export async function POST(request: NextRequest) {
     const fileName = file.name.toLowerCase();
     const buffer = Buffer.from(await file.arrayBuffer());
     let text = '';
+    let failed = false;
+    let error = '';
 
     if (fileName.endsWith('.pdf')) {
-      try {
-        text = await parsePdf(buffer);
-        if (!text) {
-          text = `[PDF: ${file.name}, ${buffer.length} bytes, 扫描件/无文字内容]`;
-        }
-      } catch (e1: any) {
-        console.error('[Parse] PDF解析失败:', e1.message, e1.stack?.substring(0, 200));
-        text = `[PDF: ${file.name}, 解析失败(${e1.message})，请复制文字后直接粘贴]`;
+      text = await parsePdf(buffer);
+      if (!text) {
+        failed = true;
+        error = 'PDF 未提取到可用文字（可能是扫描件）';
       }
     } else if (fileName.endsWith('.csv')) {
       text = buffer.toString('utf-8').trim() || `[CSV: ${file.name}，内容为空]`;
@@ -162,14 +108,18 @@ export async function POST(request: NextRequest) {
           if (csv.trim()) sheets.push(`【${name}】\n${csv}`);
         }
         text = sheets.join('\n\n') || `[Excel: ${file.name}，无数据]`;
-      } catch (e: any) { text = `[Excel: ${file.name}，解析失败]`; }
+      } catch (e: any) {
+        failed = true;
+        error = `Excel解析失败: ${e.message || '未知错误'}`;
+      }
     } else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
       try {
         const mammoth = await import('mammoth');
         const result = await mammoth.extractRawText({ buffer });
         text = result.value.trim() || `[Word: ${file.name}，内容为空]`;
       } catch (e: any) {
-        return NextResponse.json({ error: `Word解析失败: ${e.message}` }, { status: 422 });
+        failed = true;
+        error = `Word解析失败: ${e.message || '未知错误'}`;
       }
     } else if (fileName.endsWith('.pptx') || fileName.endsWith('.ppt')) {
       try {
@@ -187,17 +137,41 @@ export async function POST(request: NextRequest) {
           }
         }
         text = slides.join('\n\n---\n\n') || `[PPT: ${file.name}，无文本内容]`;
-      } catch (e: any) { text = `[PPT: ${file.name}，解析失败]`; }
+      } catch (e: any) {
+        failed = true;
+        error = `PPT解析失败: ${e.message || '未知错误'}`;
+      }
     } else if (fileName.endsWith('.txt') || fileName.endsWith('.md')) {
       text = buffer.toString('utf-8').trim() || `[文件: ${file.name}，内容为空]`;
     } else {
       text = `[文件: ${file.name}]`;
     }
 
+    if (failed) {
+      return NextResponse.json({
+        text: '',
+        fileName: file.name,
+        fileSize: file.size,
+        charCount: 0,
+        failed: true,
+        error,
+      });
+    }
+
     if (text.length > 80000) text = text.substring(0, 80000) + '\n\n[...内容已截断...]';
 
-    return NextResponse.json({ text, fileName: file.name, fileSize: file.size, charCount: text.length });
+    return NextResponse.json({
+      text,
+      fileName: file.name,
+      fileSize: file.size,
+      charCount: text.length,
+      failed: false,
+    });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({
+      text: '',
+      failed: true,
+      error: e?.message || '文件解析失败',
+    });
   }
 }

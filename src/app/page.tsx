@@ -21,7 +21,6 @@ import GenerationProgress from '@/components/GenerationProgress';
 import SkeletonCard from '@/components/SkeletonCard';
 import ThemeSelector from '@/components/ThemeSelector';
 import PDFPreview from '@/components/PDFPreview';
-import dynamicImport from 'next/dynamic';
 
 import ScrollingBanner from '@/components/ScrollingBanner';
 import { buildMdV2, buildAdditionalInstructions } from '@/lib/build-md-v2';
@@ -29,7 +28,6 @@ import { validateInput, LIMITS } from '@/lib/input-validation';
 import { getThemeById } from '@/lib/theme-database';
 import { checkPermission, mapImgModeToSource, getPlan, PLAN_LIST } from '@/lib/membership';
 import { CREDIT_PER_PAGE, IMG_CREDIT_PER_PAGE } from '@/lib/credits';
-import { PreviewInfo } from '@/types/preview';
 
 /* ==================== Config ==================== */
 
@@ -47,6 +45,7 @@ const HOT_SCENES = [
 type GammaImageSource = 'noImages' | 'themeAccent' | 'webFreeToUseCommercially' | 'aiGenerated';
 type UploadedFile = { name: string; type: string; size: number; content?: string };
 type SlideItem = { id: string; title: string; content?: string[]; notes?: string };
+type ExportFormat = 'pdf' | 'png' | 'pptx';
 
 function toGammaImageSource(value?: string): GammaImageSource {
   switch ((value || '').trim()) {
@@ -204,9 +203,7 @@ export default function Home() {
 
   // Result
   const [result, setResult] = useState<{ title: string; slides: SlideItem[]; pptxUrl: string; gammaUrl?: string; actualPages?: number; generationId?: string; renderSignature?: string } | null>(null);
-  const [exporting, setExporting] = useState(false); // 导出中
-  const [previewGammaUrl, setPreviewGammaUrl] = useState<string>(''); // v10.13: Gamma 在线预览链接
-  const [previewInfo, setPreviewInfo] = useState<PreviewInfo | null>(null); // D4: 预览信息状态
+  const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null); // 导出中
   const [showPdfPreview, setShowPdfPreview] = useState(false); // v10.47: PDF预览弹窗
 
   const fileRef = useRef<HTMLInputElement>(null);
@@ -499,27 +496,6 @@ export default function Home() {
         setGenProgress(100);
         setPhase('result');
 
-        // D4: 使用新的 /api/preview 获取规范化预览信息
-        if (gd.generationId) {
-          // 优先使用轮询已获取的 gammaUrl
-          if (lastStatusData?.gammaUrl) {
-            setPreviewGammaUrl(lastStatusData.gammaUrl);
-          }
-          // 异步获取完整预览信息
-          fetch(`/api/preview?id=${gd.generationId}`)
-            .then(res => res.json())
-            .then((data: PreviewInfo) => {
-              setPreviewInfo(data);
-              if (data.gammaUrl && !previewGammaUrl) {
-                setPreviewGammaUrl(data.gammaUrl);
-              }
-              if (data.error) {
-                console.warn('[Preview] Error:', data.error.message);
-              }
-            })
-            .catch(e => console.warn('[Preview] Failed:', e));
-        }
-
         // 🆕 保存生成历史
         try {
           await fetch('/api/history', {
@@ -547,11 +523,11 @@ export default function Home() {
     if (!inputText.trim()) { setLoading(false); return; }
     if (!user) { setLoading(false); openLogin(); return; }
 
-    // 🚨 总字数校验：超过 10000 字时提示精简
-    if (inputText.length > 10000) {
+    // 🚨 总字数校验：超过上限时提示精简
+    if (inputText.length > LIMITS.MAX_TEXT_LENGTH) {
       setLoading(false);
       setPhase('input');
-      setError(`内容过长（${inputText.length}字），请精简到 10000 字以内，或分段处理。`);
+      setError(`内容过长（${inputText.length}字），请精简到 ${LIMITS.MAX_TEXT_LENGTH} 字以内，或分段处理。`);
       return;
     }
 
@@ -580,11 +556,8 @@ export default function Home() {
       // 专业模式使用 directTextMode；
       // 省心模式默认 preserve + auto，若用户在高级参数中主动选了生成策略，则尊重用户选择并关闭 auto。
       const smartSelectedMode = (GEN_MODES_MAP[genMode] || 'preserve') as 'generate' | 'condense' | 'preserve';
-      let textMode: string = mode === 'direct' ? directTextMode : smartSelectedMode;
-      let auto = mode === 'smart';
-      if (mode === 'smart' && smartSelectedMode !== 'preserve') {
-        auto = false;
-      }
+      const textMode: string = mode === 'direct' ? directTextMode : smartSelectedMode;
+      const auto = mode === 'smart';
 
       // 省心模式：从用户输入中提取页数（如"6页"、"6 页"、"6"）
       let effectivePages = pageCount;
@@ -606,42 +579,129 @@ export default function Home() {
       setGenProgress(30);
       setStepText('AI 正在生成大纲...');
 
+      const outlinePayload = {
+        inputText,
+        slideCount: effectivePages,
+        textMode,
+        auto,
+        themeId: mode === 'smart' ? theme : directTheme,
+        tone: mode === 'smart' ? tone : directTone,
+        imageMode: mode === 'smart' ? imgMode : directImgMode,
+      };
+
       // 🚨 Fix: 添加 AbortController 超时保护，避免无限等待
       const outlineController = new AbortController();
       const outlineTimeout = setTimeout(() => outlineController.abort(), 120000); // 2分钟超时
-      let oRes: Response;
+      let od: any = null;
       try {
-        oRes = await fetch('/api/outline', {
+        const streamRes = await fetch('/api/outline/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            inputText,
-            slideCount: effectivePages,
-            textMode,
-            auto,
-            themeId: mode === 'smart' ? theme : directTheme,
-            tone: mode === 'smart' ? tone : directTone,
-            imageMode: mode === 'smart' ? imgMode : directImgMode,
-          }),
+          body: JSON.stringify(outlinePayload),
           signal: outlineController.signal,
         });
-      } catch (fetchErr: any) {
-        clearTimeout(outlineTimeout);
-        if (fetchErr.name === 'AbortError') {
-          throw new Error('大纲生成超时（2分钟），PDF内容较长，建议精简后重试，或选择"提炼"模式');
+
+        if (!streamRes.ok || !streamRes.body) {
+          throw new Error('STREAM_FALLBACK');
         }
-        throw new Error('网络错误，请检查网络连接后重试');
+
+        const reader = streamRes.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          let newlineIdx = buffer.indexOf('\n');
+          while (newlineIdx >= 0) {
+            const line = buffer.slice(0, newlineIdx).trim();
+            buffer = buffer.slice(newlineIdx + 1);
+            newlineIdx = buffer.indexOf('\n');
+
+            if (!line) continue;
+
+            let evt: any;
+            try {
+              evt = JSON.parse(line);
+            } catch {
+              continue;
+            }
+
+            if (evt.type === 'stage') {
+              const fallbackMsgByStage: Record<string, string> = {
+                analyzing: '正在识别用户需求与素材结构...',
+                planning: '正在规划故事线与章节结构...',
+                generating: '正在生成每页标题与要点...',
+                polishing: '正在做最终校验...',
+              };
+              const stageMsg = evt.message || fallbackMsgByStage[evt.stage] || '正在处理中...';
+              if (evt.stage === 'analyzing') {
+                setGenProgress(20);
+              } else if (evt.stage === 'planning') {
+                setGenProgress(30);
+              } else if (evt.stage === 'generating') {
+                setGenProgress(45);
+              } else if (evt.stage === 'polishing') {
+                setGenProgress(58);
+              }
+              setStepText(stageMsg);
+              continue;
+            }
+
+            if (evt.type === 'slides' && Array.isArray(evt.slides)) {
+              setStreamingSlides(evt.slides);
+              const total = Math.max(1, Number(evt.total) || evt.slides.length || 1);
+              const current = Math.min(total, Math.max(0, Number(evt.current) || evt.slides.length || 0));
+              const stageProgress = 60 + Math.round((current / total) * 25);
+              setGenProgress(stageProgress);
+              setStepText(`已生成 ${current}/${total} 页大纲...`);
+              continue;
+            }
+
+            if (evt.type === 'error') {
+              throw new Error(evt.message || '大纲生成失败');
+            }
+
+            if (evt.type === 'complete' && evt.data) {
+              od = evt.data;
+            }
+          }
+        }
+
+        if (!od) {
+          throw new Error('大纲流式响应中断，请重试');
+        }
+      } catch (fetchErr: any) {
+        if (fetchErr?.message === 'STREAM_FALLBACK') {
+          const oRes = await fetch('/api/outline', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(outlinePayload),
+            signal: outlineController.signal,
+          });
+          const oText = await oRes.text();
+          if (!oRes.ok) {
+            let errMsg = '大纲生成失败';
+            try { const d = JSON.parse(oText); errMsg = d.error || errMsg; } catch {}
+            throw new Error(errMsg);
+          }
+          try {
+            od = JSON.parse(oText);
+          } catch {
+            throw new Error('大纲响应格式错误，请重试');
+          }
+        } else {
+          if (fetchErr.name === 'AbortError') {
+            throw new Error('大纲生成超时（2分钟），PDF内容较长，建议精简后重试，或选择"提炼"模式');
+          }
+          throw new Error(fetchErr?.message || '网络错误，请检查网络连接后重试');
+        }
+      } finally {
+        clearTimeout(outlineTimeout);
       }
-      clearTimeout(outlineTimeout);
-      // 先读取响应文本，再尝试解析 JSON（避免非 JSON 响应导致的解析错误）
-      const oText = await oRes.text();
-      if (!oRes.ok) {
-        let errMsg = '大纲生成失败';
-        try { const d = JSON.parse(oText); errMsg = d.error || errMsg; } catch {}
-        throw new Error(errMsg);
-      }
-      let od;
-      try { od = JSON.parse(oText); } catch { throw new Error('大纲响应格式错误，请重试'); }
 
       // Step 2: 专业模式跳过大纲确认 → 直接生成 | 省心模式 → 大纲确认页
       setGenProgress(60);
@@ -722,18 +782,6 @@ export default function Home() {
     generateOutline();
   }, [user, hasInput, generateOutline]);
 
-
-  const generateSmartOutline = useCallback(async () => {
-    if (!user) { openLogin(); return; }
-    const smartPerm = checkPermission(user.plan_type || 'free', { numPages: 8, imageSource: 'noImages', mode: 'smart' });
-    if (!smartPerm.allowed) {
-      const reqPlan = smartPerm.requiredPlan || 'basic';
-      const planInfo = getPlan(reqPlan);
-      openPayment({ id: reqPlan, name: `${planInfo.name} · ${planInfo.emoji}`, price: planInfo.priceMonthly > 0 ? `¥${planInfo.priceMonthly}/月` : '免费', billing: 'monthly', reason: smartPerm.reason || '省心定制为会员专属功能' });
-      return;
-    }
-    return generateOutline();
-  }, [user, generateOutline]);
 
   // 🚨 v10.6: 检测用户是否编辑了大纲
   const hasUserEditedSlides = useCallback(() => {
@@ -951,27 +999,6 @@ export default function Home() {
         setGenProgress(100);
         setPhase('result');
 
-        // D4: 使用新的 /api/preview 获取规范化预览信息
-        if (gd.generationId) {
-          // 优先使用轮询已获取的 gammaUrl
-          if (lastStatusData?.gammaUrl) {
-            setPreviewGammaUrl(lastStatusData.gammaUrl);
-          }
-          // 异步获取完整预览信息
-          fetch(`/api/preview?id=${gd.generationId}`)
-            .then(res => res.json())
-            .then((data: PreviewInfo) => {
-              setPreviewInfo(data);
-              if (data.gammaUrl && !previewGammaUrl) {
-                setPreviewGammaUrl(data.gammaUrl);
-              }
-              if (data.error) {
-                console.warn('[Preview] Error:', data.error.message);
-              }
-            })
-            .catch(e => console.warn('[Preview] Failed:', e));
-        }
-
         // 🆕 保存生成历史
         try {
           await fetch('/api/history', {
@@ -1034,8 +1061,6 @@ export default function Home() {
     setPhase('landing');
     setGenProgress(0);
     setGenStep(0);
-    setPreviewInfo(null); // D4: 重置预览信息
-    setPreviewGammaUrl(''); // D4: 重置预览URL
   };
 
   const backToLanding = () => {
@@ -1074,19 +1099,35 @@ export default function Home() {
     setError('');
   };
 
-  // 🚨 v10.6: 统一导出处理函数
-  const handleExportPPT = async () => {
+  const resolveDownloadFilename = (headers: Headers, fallbackName: string) => {
+    const contentDisposition = headers.get('content-disposition') || headers.get('Content-Disposition') || '';
+    const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match?.[1]) {
+      try {
+        return decodeURIComponent(utf8Match[1]);
+      } catch {
+        return utf8Match[1];
+      }
+    }
+    const basicMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+    if (basicMatch?.[1]) return basicMatch[1];
+    return fallbackName;
+  };
+
+  // 🚨 v10.6+: 统一导出处理函数（PDF / PNG / PPTX）
+  const handleExport = async (format: ExportFormat) => {
     if (!user) { openLogin(); return; }
     if (!result?.generationId) return;
-    
-    setExporting(true);
+
+    setExportingFormat(format);
     try {
       const totalPages = result.actualPages || pageCount;
       let shouldRecordDownload = true;
       const permissionRes = await fetch(
-        `/api/download?userId=${encodeURIComponent(user.id)}&pageCount=${totalPages}&format=pptx`
+        `/api/download?userId=${encodeURIComponent(user.id)}&pageCount=${totalPages}&format=${format}`
       );
       const permissionData = await permissionRes.json().catch(() => ({} as any));
+
       if (!permissionRes.ok) {
         if (user.plan_type && user.plan_type !== 'free') {
           shouldRecordDownload = false;
@@ -1107,9 +1148,24 @@ export default function Home() {
         return;
       }
 
-      const filename = result.title ? `${result.title}.pptx` : '省心PPT.pptx';
-      const res = await fetch(`/api/export-pptx?generationId=${result.generationId}&name=${encodeURIComponent(filename)}`);
-      const contentType = res.headers.get('Content-Type') || '';
+      const routeMap: Record<ExportFormat, string> = {
+        pdf: '/api/export-pdf',
+        png: '/api/export-png',
+        pptx: '/api/export-pptx',
+      };
+      const extMap: Record<ExportFormat, string> = {
+        pdf: '.pdf',
+        png: '.png',
+        pptx: '.pptx',
+      };
+
+      const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
+      const fallbackFilename = `${safeTitle}${extMap[format]}`;
+      const res = await fetch(
+        `${routeMap[format]}?generationId=${result.generationId}&name=${encodeURIComponent(fallbackFilename)}`
+      );
+      const contentType = (res.headers.get('Content-Type') || '').toLowerCase();
+
       if (!res.ok || contentType.includes('application/json')) {
         const errData = await res.json().catch(() => ({ error: '导出失败' }));
         alert(errData.error || '导出失败，请稍后重试');
@@ -1117,7 +1173,8 @@ export default function Home() {
       }
 
       const blob = await res.blob();
-      downloadBlob(blob, filename);
+      const finalFilename = resolveDownloadFilename(res.headers, fallbackFilename);
+      downloadBlob(blob, finalFilename);
 
       if (shouldRecordDownload) {
         try {
@@ -1128,7 +1185,7 @@ export default function Home() {
               action: 'record',
               userId: user.id,
               pageCount: totalPages,
-              format: 'pptx',
+              format,
             }),
           });
         } catch (recordErr) {
@@ -1136,7 +1193,7 @@ export default function Home() {
         }
       }
     } finally {
-      setExporting(false);
+      setExportingFormat(null);
     }
   };
 
@@ -1249,7 +1306,7 @@ export default function Home() {
           if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
             alert(`文件 "${f.name}" 解析失败: ${errData.error || res.statusText}`);
-            item.content = `[文件: ${f.name}, 解析失败]`;
+            continue;
           } else {
             const data = await res.json();
             // 🚨 解析明确失败时（failed=true），不设置 content，阻止垃圾文本进入 outline
@@ -1266,7 +1323,8 @@ export default function Home() {
           }
         } catch (e) {
           console.warn('[FileProcess] 解析失败:', e);
-          item.content = `[文件: ${f.name}]`;
+          alert(`文件 "${f.name}" 解析失败，请重试或直接粘贴文字内容。`);
+          continue;
         }
       }
       else {
@@ -1912,9 +1970,9 @@ export default function Home() {
                 AI 正在生成大纲...
               </h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                {streamingSlides.length > 0
+                {stepText || (streamingSlides.length > 0
                   ? `已生成 ${streamingSlides.length} 页...`
-                  : '深度分析需求中，请稍候'}
+                  : '深度分析需求中，请稍候')}
               </p>
             </div>
 
@@ -1972,62 +2030,61 @@ export default function Home() {
               <p className="text-sm text-gray-500">{result.title || '演示文稿'} · {result.actualPages || pageCount} 页</p>
             </div>
 
-            {/* v10.47: 恢复PDF预览和PPTX下载 */}
+            {/* 导出与预览 */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden mb-6">
-              {/* 预览标题栏 */}
               <div className="bg-gradient-to-r from-purple-50 to-indigo-50 px-4 py-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-green-500">✓</span>
-                  <span className="text-xs text-gray-600">PPT 已生成 · {result.actualPages || pageCount} 页</span>
+                  <span className="text-xs text-gray-600">文稿已生成 · {result.actualPages || pageCount} 页</span>
                 </div>
                 <button
                   onClick={() => setShowPdfPreview(true)}
-                  className="px-3 py-1 text-xs text-purple-600 hover:text-purple-800 hover:bg-purple-100 rounded-lg transition-all"
+                  className="px-3 py-1 text-xs text-purple-600 hover:text-purple-800 hover:bg-purple-100 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={!result.generationId || exportingFormat !== null}
                 >
                   🔍 PDF预览
                 </button>
               </div>
 
-              {/* 预览区域 */}
               <div className="p-6">
                 <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-8 text-center">
-                  <div className="text-5xl mb-4">📄</div>
+                  <div className="text-5xl mb-4">✅</div>
                   <p className="text-white font-bold text-lg mb-2">PPT 已就绪</p>
-                  <p className="text-gray-400 text-sm mb-4">点击下方按钮下载PPTX文件</p>
-                  <div className="flex justify-center gap-3">
+                  <p className="text-gray-400 text-sm mb-5">可直接导出 PDF / PNG / PPTX</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <button
-                      onClick={handleExportPPT}
-                      disabled={!result.generationId || exporting}
-                      className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-orange-200/40 hover:shadow-xl active:scale-[0.98] transition-all flex items-center gap-2 disabled:opacity-50"
+                      onClick={() => handleExport('pdf')}
+                      disabled={!result.generationId || exportingFormat !== null}
+                      className="px-4 py-2.5 bg-white/10 text-white rounded-xl text-sm font-bold hover:bg-white/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {exporting ? (
+                      {exportingFormat === 'pdf' ? (
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      ) : '📄'} 下载 PPTX
+                      ) : '📕'}
+                      下载 PDF
+                    </button>
+                    <button
+                      onClick={() => handleExport('png')}
+                      disabled={!result.generationId || exportingFormat !== null}
+                      className="px-4 py-2.5 bg-white/10 text-white rounded-xl text-sm font-bold hover:bg-white/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {exportingFormat === 'png' ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      ) : '🖼️'}
+                      下载 PNG
+                    </button>
+                    <button
+                      onClick={() => handleExport('pptx')}
+                      disabled={!result.generationId || exportingFormat !== null}
+                      className="px-4 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-orange-200/40 hover:shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {exportingFormat === 'pptx' ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      ) : '📄'}
+                      下载 PPTX
                     </button>
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* v10.47: 仅保留PPTX下载按钮 */}
-            <div className="mb-6">
-              <button
-                onClick={handleExportPPT}
-                disabled={!result.generationId || exporting}
-                className="w-full py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-2xl text-base font-bold shadow-lg shadow-orange-200/40 hover:shadow-xl hover:shadow-orange-300/50 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {exporting ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    下载中...
-                  </>
-                ) : (
-                  <>
-                    <span className="text-xl">📄</span>
-                    下载 PPTX
-                  </>
-                )}
-              </button>
             </div>
 
             {/* 底部操作按钮 */}
@@ -2053,8 +2110,6 @@ export default function Home() {
       {showPdfPreview && result?.generationId && (
         <PDFPreview
           generationId={result.generationId}
-          exportUrl={result.pptxUrl}
-          gammaUrl={result.gammaUrl}
           onClose={() => setShowPdfPreview(false)}
         />
       )}

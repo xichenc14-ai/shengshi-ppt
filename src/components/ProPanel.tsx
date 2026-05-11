@@ -3,9 +3,9 @@
 import React, { useState } from 'react';
 
 const GEN_MODES = [
-  { id: 'generate', name: 'AI创作', icon: '🤖', desc: '从零生成' },
-  { id: 'condense', name: '智能摘要', icon: '📝', desc: '提炼要点' },
-  { id: 'preserve', name: '原文排版', icon: '📄', desc: '美化原文' },
+  { id: 'generate', name: '扩充文本', icon: '🤖', desc: '补充丰富内容' },
+  { id: 'condense', name: '提炼文本', icon: '📝', desc: '保留核心要点' },
+  { id: 'preserve', name: '保持原样', icon: '📄', desc: '忠实原文结构' },
 ];
 
 const COLOR_THEMES = [

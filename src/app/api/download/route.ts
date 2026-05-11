@@ -22,7 +22,8 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get('userId');
   const pageCount = parseInt(searchParams.get('pageCount') || '0');
-  const format = (searchParams.get('format') || 'pdf') as 'pptx' | 'pdf';
+  const rawFormat = (searchParams.get('format') || 'pdf').toLowerCase();
+  const format: 'pptx' | 'pdf' | 'png' = rawFormat === 'pptx' || rawFormat === 'png' ? rawFormat : 'pdf';
 
   if (!userId) return NextResponse.json({ error: '缺少用户ID' }, { status: 400 });
 
@@ -60,7 +61,9 @@ export async function POST(request: NextRequest) {
   if (!sb) return NextResponse.json({ error: '服务未配置' }, { status: 503 });
 
   try {
-    const { action, userId, pageCount, format } = await request.json();
+    const { action, userId, pageCount, format: rawFormat } = await request.json();
+    const format: 'pptx' | 'pdf' | 'png' =
+      rawFormat === 'pptx' || rawFormat === 'png' ? rawFormat : 'pdf';
 
     if (action === 'record') {
       if (!userId) return NextResponse.json({ error: '缺少用户ID' }, { status: 400 });
@@ -105,7 +108,7 @@ export async function POST(request: NextRequest) {
 
       // 更新计数
       const updates: any = {};
-      if (format === 'pdf') {
+      if (format === 'pdf' || format === 'png') {
         updates.download_count_month = (user.download_count_month || 0) + 1;
       } else if (format === 'pptx') {
         updates.ppt_trial_count_month = (user.ppt_trial_count_month || 0) + 1;

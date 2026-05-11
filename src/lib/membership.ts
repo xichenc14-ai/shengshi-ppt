@@ -193,7 +193,7 @@ export function mapImgModeToSource(imgMode: string): string {
  * 超出后按页数付费（¥0.2/页）
  * 付费会员：无限制免费下载
  */
-export function checkDownloadPermission(user: UserDownloadInfo, pageCount: number, format: 'pptx' | 'pdf'): {
+export function checkDownloadPermission(user: UserDownloadInfo, pageCount: number, format: 'pptx' | 'pdf' | 'png'): {
   allowed: boolean;
   needPayment?: boolean;
   cost?: number;
@@ -221,17 +221,17 @@ export function checkDownloadPermission(user: UserDownloadInfo, pageCount: numbe
       allowed: true,
       isFreeDownload: true,
       isTrial: format === 'pptx',
-      watermarked: format === 'pdf',
+      watermarked: format === 'pdf' || format === 'png',
     }; // 需要在 API 层更新 download_reset_month
   }
 
-  // 3. PDF下载：每月3次免费
-  if (format === 'pdf' && user.download_count_month < monthlyFreeDownloads) {
+  // 3. PDF/PNG 下载：每月3次免费
+  if ((format === 'pdf' || format === 'png') && user.download_count_month < monthlyFreeDownloads) {
     return {
       allowed: true,
       cost: 0,
-      watermarked: true,
-      reason: `本月免费下载第${user.download_count_month + 1}/${monthlyFreeDownloads}次（带水印PDF）`,
+      watermarked: format === 'pdf' || format === 'png',
+      reason: `本月免费下载第${user.download_count_month + 1}/${monthlyFreeDownloads}次（导出文件）`,
     }; // 需要在 API 层更新 download_count_month
   }
 

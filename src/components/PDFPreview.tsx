@@ -11,8 +11,6 @@ if (typeof window !== 'undefined') {
 
 interface PDFPreviewProps {
   generationId: string;
-  exportUrl?: string | null;  // D4: 可选的导出URL，用于格式检测
-  gammaUrl?: string | null;   // D4: 可选的Gamma链接，用于fallback
   onClose?: () => void;
 }
 
@@ -26,7 +24,7 @@ interface PDFPreviewProps {
  * - 加载进度提示
  * - 错误处理 + fallback提示
  */
-export default function PDFPreview({ generationId, exportUrl, gammaUrl, onClose }: PDFPreviewProps) {
+export default function PDFPreview({ generationId, onClose }: PDFPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -36,14 +34,11 @@ export default function PDFPreview({ generationId, exportUrl, gammaUrl, onClose 
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [fallbackPptx, setFallbackPptx] = useState(false);
+  const sanitizeErrorMessage = useCallback((msg: string) => msg.replace(/gamma/gi, '文稿'), []);
 
   const openPptxFallback = useCallback(() => {
-    if (exportUrl) {
-      window.open(exportUrl, '_blank');
-      return;
-    }
     window.open(`/api/export-pptx?generationId=${generationId}`, '_blank');
-  }, [exportUrl, generationId]);
+  }, [generationId]);
 
   // 渲染指定页
   const renderPage = useCallback(async (pdf: PDFDocumentProxy, pageNum: number, renderScale: number) => {
@@ -92,10 +87,10 @@ export default function PDFPreview({ generationId, exportUrl, gammaUrl, onClose 
           if (data.fallbackPptx) {
             setLoading(false);
             setFallbackPptx(true);
-            setError(data.error || 'PDF暂不可用，建议下载PPTX');
+            setError(sanitizeErrorMessage(data.error || 'PDF暂不可用，建议下载PPTX'));
             return;
           }
-          throw new Error(data.error || `PDF获取失败: ${res.status}`);
+          throw new Error(sanitizeErrorMessage(data.error || `PDF获取失败: ${res.status}`));
         }
 
         // 检查 Content-Type
@@ -131,13 +126,13 @@ export default function PDFPreview({ generationId, exportUrl, gammaUrl, onClose 
       } catch (err: any) {
         console.error('[PDFPreview] 加载失败:', err);
         setLoading(false);
-        setError(err.message || 'PDF加载失败');
+        setError(sanitizeErrorMessage(err.message || 'PDF加载失败'));
         setFallbackPptx(true);
       }
     };
 
     loadPDF();
-  }, [generationId, renderPage]);
+  }, [generationId, renderPage, sanitizeErrorMessage]);
 
   // 切换页
   useEffect(() => {
@@ -183,7 +178,7 @@ export default function PDFPreview({ generationId, exportUrl, gammaUrl, onClose 
           </div>
           <h3 className="text-lg font-bold text-gray-900 mb-2">正在生成PDF预览...</h3>
           <p className="text-sm text-gray-500 mb-4">
-            Gamma需要导出PDF（可能需要40秒）
+            正在准备文稿预览文件（可能需要40秒）
           </p>
           {/* 进度条 */}
           <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
@@ -220,21 +215,13 @@ export default function PDFPreview({ generationId, exportUrl, gammaUrl, onClose 
               <p className="text-sm text-orange-700">
                 💡 建议：下载PPTX文件后，用 Keynote/PowerPoint/WPS 打开即可预览
               </p>
-              <div className="flex gap-2 mt-3 justify-center">
+              <div className="flex gap-2 mt-3 justify-center flex-wrap">
                 <button
                   onClick={openPptxFallback}
                   className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors"
                 >
                   下载 PPTX
                 </button>
-                {gammaUrl && (
-                  <button
-                    onClick={() => window.open(gammaUrl, '_blank')}
-                    className="px-4 py-2 bg-purple-500 text-white rounded-lg text-sm font-medium hover:bg-purple-600 transition-colors"
-                  >
-                    打开Gamma在线预览
-                  </button>
-                )}
               </div>
             </div>
           )}

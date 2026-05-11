@@ -39,6 +39,10 @@ const SCENE_THEME_MAP: Record<string, { themeId: string; tone: string; imageMode
   '通用': { themeId: 'consultant', tone: 'professional', imageMode: 'theme-img' },
 };
 
+const MAX_OUTLINE_INPUT_CHARS = 60000;
+const AUTO_LONG_DOC_CONDENSE_THRESHOLD = 12000;
+const SMART_PROMPT_INPUT_CHARS = 18000;
+
 // ===== JSON 解析函数（带多层修复 + Markdown fallback） =====
 function tryParseJson(rawContent: string): any | null {
   if (!rawContent || typeof rawContent !== 'string') return null;
@@ -172,8 +176,8 @@ export async function POST(request: NextRequest) {
     }
 
     // V7 输入校验：只限制上限，不限制下限（"咖啡" "5页" 都要能处理）
-    if (topic.length > 10000) {
-      return NextResponse.json({ error: '内容过长，请精简到10000字以内' }, { status: 400 });
+    if (topic.length > MAX_OUTLINE_INPUT_CHARS) {
+      return NextResponse.json({ error: `内容过长，请精简到${MAX_OUTLINE_INPUT_CHARS}字以内` }, { status: 400 });
     }
 
     // Rate limiting
@@ -188,10 +192,20 @@ export async function POST(request: NextRequest) {
     // ===== 省心模式智能判断：分析输入类型 =====
     const smartModeAnalysis = analyzeInputType(topic);
     let finalTextMode = contentStrategy;
+    const preferredMode = contentStrategy === 'generate' || contentStrategy === 'condense' || contentStrategy === 'preserve'
+      ? contentStrategy
+      : undefined;
 
     // 如果是 auto 模式（省心模式），根据分析结果自动选择 textMode
     if (auto) {
       finalTextMode = smartModeAnalysis.recommendedMode;
+      // 用户在省心模式中明确选择“扩充/提炼”时，保留该偏好，但仍走省心预处理管线
+      if (preferredMode && preferredMode !== 'preserve') {
+        finalTextMode = preferredMode;
+      }
+      if (finalTextMode === 'preserve' && topic.length > AUTO_LONG_DOC_CONDENSE_THRESHOLD) {
+        finalTextMode = 'condense';
+      }
       console.log('[SmartMode] 输入分析:', {
         type: smartModeAnalysis.type,
         length: smartModeAnalysis.length,
@@ -200,6 +214,11 @@ export async function POST(request: NextRequest) {
         reason: smartModeAnalysis.reason
       });
     }
+
+    const smartInput = auto
+      ? preprocessSmartInput(topic, SMART_PROMPT_INPUT_CHARS)
+      : { prepared: topic, truncated: false };
+    const promptInputText = smartInput.prepared;
 
     // ===== 构建 prompts =====
     const modePrompts: Record<string, string> = {
@@ -317,8 +336,8 @@ const systemPrompt = modePrompts[promptMode] || modePrompts.generate;
 请根据以上分析，${smartModeAnalysis.processInstruction}
 
 素材内容：
-${topic}`
-      : `请根据以下内容生成PPT大纲（${numCards}页）：\n\n${topic}`;
+${promptInputText}`
+      : `请根据以下内容生成PPT大纲（${numCards}页）：\n\n${promptInputText}`;
 
     // ===== 调用 AI（统一 fallback orchestrator） =====
     let parsed: any = null;
@@ -418,6 +437,8 @@ ${topic}`
       purpose: detectedScene || purpose,
       imageMode: parsed.imageMode || rawImageMode || normalized.imageSource || sceneConfig.imageMode,
       contentStrategy: finalTextMode,
+      mode: auto ? 'auto' : (finalTextMode as 'generate' | 'condense' | 'preserve'),
+      wordCount: topic.length,
     };
 
     // D2: 构建前端兼容的 slides（带 id 字段）
@@ -475,6 +496,47 @@ function detectScene(text: string): string {
   return '通用';
 }
 
+function preprocessSmartInput(input: string, maxChars: number): { prepared: string; truncated: boolean } {
+  const normalized = input
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  if (normalized.length <= maxChars) {
+    return { prepared: normalized, truncated: false };
+  }
+
+  const lines = normalized
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const important: string[] = [];
+  for (const line of lines) {
+    const isHeading = /^#{1,4}\s+/.test(line) || /^第[一二三四五六七八九十0-9]+/.test(line);
+    const isBullet = /^[-*•]\s+/.test(line) || /^\d+\.\s+/.test(line);
+    const hasData = /\d/.test(line) || /%|同比|环比|增长|下降|金额|亿元|万/.test(line);
+    if (isHeading || isBullet || hasData || line.length <= 48) {
+      important.push(line);
+    }
+  }
+
+  const source = important.length > 0 ? important : lines;
+  let prepared = '';
+  for (const line of source) {
+    const next = prepared ? `${prepared}\n${line}` : line;
+    if (next.length > maxChars) break;
+    prepared = next;
+  }
+
+  if (!prepared) {
+    prepared = normalized.slice(0, maxChars);
+  }
+
+  return { prepared, truncated: true };
+}
+
 // ===== 省心模式智能输入分析 =====
 function analyzeInputType(input: string): {
   type: string;
@@ -512,12 +574,18 @@ function analyzeInputType(input: string): {
   let processInstruction: string;
 
   if (isFullDocument) {
-    // 结构化长文档，无论多长，优先执行无损排版 (preserve)
-    // 现代大模型足以消化长文本，切忌擅自精简导致原意篡改
-    recommendedMode = 'preserve';
-    type = '完整文档（长文本结构化）';
-    reason = '用户提供了结构完整的文档，应当忠实保留原文内容和结构';
-    processInstruction = '逐字保留用户原文的核心内容，仅做结构化分页，不要擅自删减或扩写';
+    // 超长文档在省心模式下会触发模型超时/失败，自动切换到提炼更稳定
+    if (length > AUTO_LONG_DOC_CONDENSE_THRESHOLD) {
+      recommendedMode = 'condense';
+      type = '完整文档（超长）';
+      reason = '文档过长，先提炼关键信息可显著提升稳定性与生成速度';
+      processInstruction = '保留原文关键事实与结构主线，提炼为可展示的精简大纲，禁止编造数据';
+    } else {
+      recommendedMode = 'preserve';
+      type = '完整文档（长文本结构化）';
+      reason = '用户提供了结构完整的文档，应当忠实保留原文内容和结构';
+      processInstruction = '逐字保留用户原文的核心内容，仅做结构化分页，不要擅自删减或扩写';
+    }
   } else if (isSimpleDescription) {
     // 简单描述 → AI扩充
     recommendedMode = 'generate';
