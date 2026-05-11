@@ -90,8 +90,13 @@ function normalizeProvider(raw: string | undefined): FallbackProvider | null {
 
 function isProviderConfigured(provider: FallbackProvider): boolean {
   if (process.env.NODE_ENV === 'test' || process.env.VITEST) return true;
-  if (provider === 'minimax') return Boolean(process.env.MINIMAX_API_KEY);
-  return Boolean(process.env.DEEPSEEK_API_KEY);
+  if (provider === 'minimax') return Boolean((process.env.MINIMAX_API_KEY || '').trim());
+  const singleDeepSeek = (process.env.DEEPSEEK_API_KEY || '').trim();
+  const deepSeekPool = (process.env.DEEPSEEK_API_KEYS || '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean);
+  return Boolean(singleDeepSeek || deepSeekPool[0]);
 }
 
 function buildProviderOrder(): FallbackProvider[] {

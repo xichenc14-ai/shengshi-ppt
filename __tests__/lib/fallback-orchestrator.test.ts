@@ -20,6 +20,7 @@ describe('fallback-orchestrator', () => {
     vi.clearAllMocks();
     process.env.MINIMAX_API_KEY = 'mini-key';
     process.env.DEEPSEEK_API_KEY = 'deep-key';
+    delete process.env.DEEPSEEK_API_KEYS;
     delete process.env.OUTLINE_PRIMARY_PROVIDER;
     delete process.env.AI_PRIMARY_PROVIDER;
   });
@@ -41,6 +42,22 @@ describe('fallback-orchestrator', () => {
     const options = callDeepSeekWithRetry.mock.calls[0][1];
     expect(options.maxRetries).toBe(2);
     expect(options.timeoutMs).toBe(30000);
+  });
+
+  it('accepts deepseek key from DEEPSEEK_API_KEYS pool', async () => {
+    delete process.env.DEEPSEEK_API_KEY;
+    process.env.DEEPSEEK_API_KEYS = 'pool-key-1,pool-key-2';
+    callDeepSeekWithRetry.mockResolvedValueOnce('deepseek pool ok');
+
+    const result = await callWithFallback({
+      systemPrompt: 'sys',
+      userPrompt: 'user',
+      taskType: 'outline',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.provider).toBe('deepseek');
+    expect(callDeepSeekWithRetry).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to minimax when deepseek fails', async () => {
