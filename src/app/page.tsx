@@ -20,7 +20,6 @@ import StreamingOutline from '@/components/StreamingOutline';
 import GenerationProgress from '@/components/GenerationProgress';
 import SkeletonCard from '@/components/SkeletonCard';
 import ThemeSelector from '@/components/ThemeSelector';
-import PDFPreview from '@/components/PDFPreview';
 
 import ScrollingBanner from '@/components/ScrollingBanner';
 import { buildMdV2, buildAdditionalInstructions } from '@/lib/build-md-v2';
@@ -43,9 +42,8 @@ const HOT_SCENES = [
 ];
 
 type GammaImageSource = 'noImages' | 'themeAccent' | 'webFreeToUseCommercially' | 'aiGenerated';
-type UploadedFile = { name: string; type: string; size: number; content?: string };
+type UploadedFile = { name: string; type: string; size: number; content?: string; passthrough?: boolean };
 type SlideItem = { id: string; title: string; content?: string[]; notes?: string };
-type ExportFormat = 'pdf' | 'png' | 'pptx';
 
 function toGammaImageSource(value?: string): GammaImageSource {
   switch ((value || '').trim()) {
@@ -117,6 +115,37 @@ function buildRenderSignature(
     textMode,
     slides: normalizedSlides,
   });
+}
+
+function buildAttachmentContext(file: UploadedFile): string {
+  const sizeMb = (file.size / 1024 / 1024).toFixed(2);
+  return [
+    `【附件】${file.name}`,
+    `类型：${file.type || 'application/octet-stream'}`,
+    `大小：${sizeMb}MB`,
+    '说明：用户已上传此附件作为素材。请结合用户输入的需求描述、附件标题和上下文生成；不要编造附件中未明确提供的具体事实，如需要引用附件正文，请保留“附件内容待补充”的位置。',
+  ].join('\n');
+}
+
+function getGammaEmbedUrl(gammaUrl?: string): string | null {
+  if (!gammaUrl) return null;
+  try {
+    const url = new URL(gammaUrl);
+    const parts = url.pathname.split('/').filter(Boolean);
+    const embedIndex = parts.indexOf('embed');
+    if (embedIndex >= 0 && parts[embedIndex + 1]) {
+      return `https://gamma.app/embed/${parts[embedIndex + 1]}`;
+    }
+
+    const lastPart = parts[parts.length - 1] || '';
+    const id = lastPart.split('-').pop() || '';
+    if (/^[a-zA-Z0-9]{8,}$/.test(id)) {
+      return `https://gamma.app/embed/${id}`;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 // buildMd 已替换为 buildMdV2（lib/build-md-v2.ts）
@@ -203,14 +232,14 @@ export default function Home() {
 
   // Result
   const [result, setResult] = useState<{ title: string; slides: SlideItem[]; pptxUrl: string; gammaUrl?: string; actualPages?: number; generationId?: string; renderSignature?: string } | null>(null);
-  const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null); // 导出中
-  const [showPdfPreview, setShowPdfPreview] = useState(false); // v10.47: PDF预览弹窗
+  const [exporting, setExporting] = useState(false); // 导出中
+  const [showDeckPreview, setShowDeckPreview] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
 
   const collectText = useCallback(() => {
     const p: string[] = [];
-    files.forEach(f => p.push(f.content ? `[${f.name}]\n${f.content}` : `[${f.name}]`));
+    files.forEach(f => p.push(f.content ? `[${f.name}]\n${f.content}` : buildAttachmentContext(f)));
     if (topic.trim()) p.push(topic.trim());
     return p.join('\n\n');
   }, [files, topic]);
@@ -304,7 +333,7 @@ export default function Home() {
   // Track hasInput
   useEffect(() => { setHasInput(files.length > 0 || topic.trim().length > 0); }, [files, topic]);
 
-  // v10.45: Gamma在线预览已移除，使用PPTX/PDF下载替代
+  // 生成结果页保留站内在线预览与 PPTX 下载
 
   // Enter generate flow
   const startGenerate = useCallback(() => {
@@ -418,6 +447,7 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           inputText: finalInputText,
+          uploadedFiles: files.map(({ name, type, size, passthrough }) => ({ name, type, size, passthrough: Boolean(passthrough) })),
           themeId: directTheme,
           numCards: pageCount,
           imageSource: directImgMode,
@@ -515,7 +545,7 @@ export default function Home() {
       setPhase('input');
     }
     setLoading(false);
-  }, [user, collectText, directTheme, directTone, directImgMode, directTextMode, pageCount, openPayment, rollbackCredits]);
+  }, [user, files, collectText, directTheme, directTone, directImgMode, directTextMode, pageCount, openPayment, rollbackCredits]);
 
   // 🚨 V6 标准化：所有模式统一走 outline API → 大纲确认 → Gamma
   const generateOutline = useCallback(async () => {
@@ -581,6 +611,7 @@ export default function Home() {
 
       const outlinePayload = {
         inputText,
+        uploadedFiles: files.map(({ name, type, size, passthrough }) => ({ name, type, size, passthrough: Boolean(passthrough) })),
         slideCount: effectivePages,
         textMode,
         auto,
@@ -928,6 +959,7 @@ export default function Home() {
         imageMode: finalImageSource,
         imageOptions: finalImageOptions,
         visualMetaphor,
+        uploadedFiles: files.map(({ name, type, size, passthrough }) => ({ name, type, size, passthrough: Boolean(passthrough) })),
         originalTextMode: mode === 'direct' ? directTextMode : undefined,
       };
 
@@ -1023,6 +1055,7 @@ export default function Home() {
     outlineResult,
     editedSlides,
     result?.generationId,
+    files,
     mode,
     smartGammaPayload,
     theme,
@@ -1061,6 +1094,7 @@ export default function Home() {
     setPhase('landing');
     setGenProgress(0);
     setGenStep(0);
+    setShowDeckPreview(false);
   };
 
   const backToLanding = () => {
@@ -1114,17 +1148,17 @@ export default function Home() {
     return fallbackName;
   };
 
-  // 🚨 v10.6+: 统一导出处理函数（PDF / PNG / PPTX）
-  const handleExport = async (format: ExportFormat) => {
+  // 🚨 v10.6+: PPTX 导出处理函数
+  const handleExportPPT = async () => {
     if (!user) { openLogin(); return; }
     if (!result?.generationId) return;
 
-    setExportingFormat(format);
+    setExporting(true);
     try {
       const totalPages = result.actualPages || pageCount;
       let shouldRecordDownload = true;
       const permissionRes = await fetch(
-        `/api/download?userId=${encodeURIComponent(user.id)}&pageCount=${totalPages}&format=${format}`
+        `/api/download?userId=${encodeURIComponent(user.id)}&pageCount=${totalPages}&format=pptx`
       );
       const permissionData = await permissionRes.json().catch(() => ({} as any));
 
@@ -1148,21 +1182,10 @@ export default function Home() {
         return;
       }
 
-      const routeMap: Record<ExportFormat, string> = {
-        pdf: '/api/export-pdf',
-        png: '/api/export-png',
-        pptx: '/api/export-pptx',
-      };
-      const extMap: Record<ExportFormat, string> = {
-        pdf: '.pdf',
-        png: '.png',
-        pptx: '.pptx',
-      };
-
       const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
-      const fallbackFilename = `${safeTitle}${extMap[format]}`;
+      const fallbackFilename = `${safeTitle}.pptx`;
       const res = await fetch(
-        `${routeMap[format]}?generationId=${result.generationId}&name=${encodeURIComponent(fallbackFilename)}`
+        `/api/export-pptx?generationId=${result.generationId}&name=${encodeURIComponent(fallbackFilename)}`
       );
       const contentType = (res.headers.get('Content-Type') || '').toLowerCase();
 
@@ -1185,7 +1208,7 @@ export default function Home() {
               action: 'record',
               userId: user.id,
               pageCount: totalPages,
-              format,
+              format: 'pptx',
             }),
           });
         } catch (recordErr) {
@@ -1193,7 +1216,7 @@ export default function Home() {
         }
       }
     } finally {
-      setExportingFormat(null);
+      setExporting(false);
     }
   };
 
@@ -1296,6 +1319,13 @@ export default function Home() {
       }
       // PDF/Excel/Word/PPT：通过 parse-file API 服务端解析
       else if (/\.(pdf|xlsx?|docx?|pptx?)$/.test(ext)) {
+        if (/\.pdf$/.test(ext)) {
+          item.passthrough = true;
+          item.content = buildAttachmentContext(item);
+          r.push(item);
+          continue;
+        }
+
         try {
           const formData = new FormData();
           formData.append('file', f);
@@ -1336,6 +1366,7 @@ export default function Home() {
   };
 
   const fmtSize = (b: number) => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
+  const deckPreviewUrl = result ? getGammaEmbedUrl(result.gammaUrl) : null;
 
   return (
     <div className="min-h-screen bg-[#FAFBFE] flex flex-col">
@@ -2038,11 +2069,11 @@ export default function Home() {
                   <span className="text-xs text-gray-600">文稿已生成 · {result.actualPages || pageCount} 页</span>
                 </div>
                 <button
-                  onClick={() => setShowPdfPreview(true)}
+                  onClick={() => setShowDeckPreview(true)}
                   className="px-3 py-1 text-xs text-purple-600 hover:text-purple-800 hover:bg-purple-100 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={!result.generationId || exportingFormat !== null}
+                  disabled={!deckPreviewUrl || exporting}
                 >
-                  🔍 PDF预览
+                  🔍 在线预览
                 </button>
               </div>
 
@@ -2050,34 +2081,23 @@ export default function Home() {
                 <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-8 text-center">
                   <div className="text-5xl mb-4">✅</div>
                   <p className="text-white font-bold text-lg mb-2">PPT 已就绪</p>
-                  <p className="text-gray-400 text-sm mb-5">可直接导出 PDF / PNG / PPTX</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <p className="text-gray-400 text-sm mb-5">可下载 PPTX 文件，或在站内查看在线预览</p>
+                  <div className="flex flex-col sm:flex-row justify-center gap-3">
+                    {deckPreviewUrl && (
+                      <button
+                        onClick={() => setShowDeckPreview(true)}
+                        disabled={exporting}
+                        className="px-5 py-2.5 bg-white/10 text-white rounded-xl text-sm font-bold hover:bg-white/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        🔍 在线预览
+                      </button>
+                    )}
                     <button
-                      onClick={() => handleExport('pdf')}
-                      disabled={!result.generationId || exportingFormat !== null}
-                      className="px-4 py-2.5 bg-white/10 text-white rounded-xl text-sm font-bold hover:bg-white/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {exportingFormat === 'pdf' ? (
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      ) : '📕'}
-                      下载 PDF
-                    </button>
-                    <button
-                      onClick={() => handleExport('png')}
-                      disabled={!result.generationId || exportingFormat !== null}
-                      className="px-4 py-2.5 bg-white/10 text-white rounded-xl text-sm font-bold hover:bg-white/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {exportingFormat === 'png' ? (
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      ) : '🖼️'}
-                      下载 PNG
-                    </button>
-                    <button
-                      onClick={() => handleExport('pptx')}
-                      disabled={!result.generationId || exportingFormat !== null}
+                      onClick={handleExportPPT}
+                      disabled={!result.generationId || exporting}
                       className="px-4 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-orange-200/40 hover:shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {exportingFormat === 'pptx' ? (
+                      {exporting ? (
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                       ) : '📄'}
                       下载 PPTX
@@ -2106,12 +2126,29 @@ export default function Home() {
         </div>
       )}
 
-      {/* ===== PDF预览弹窗 ===== */}
-      {showPdfPreview && result?.generationId && (
-        <PDFPreview
-          generationId={result.generationId}
-          onClose={() => setShowPdfPreview(false)}
-        />
+      {/* ===== 在线预览弹窗 ===== */}
+      {showDeckPreview && deckPreviewUrl && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden">
+            <div className="h-12 px-4 border-b border-gray-100 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-700">{result?.title || '在线预览'}</div>
+              <button
+                onClick={() => setShowDeckPreview(false)}
+                className="px-3 py-1.5 rounded-lg text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                关闭
+              </button>
+            </div>
+            <div className="bg-gray-950">
+              <iframe
+                src={deckPreviewUrl}
+                className="w-full aspect-video min-h-[360px]"
+                allow="fullscreen"
+                title={result?.title || '在线预览'}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ===== MODALS ===== */}

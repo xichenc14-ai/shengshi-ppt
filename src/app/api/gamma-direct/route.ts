@@ -9,6 +9,21 @@ import { checkPermission } from '@/lib/membership';
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
+function buildUploadedFilesInstruction(uploadedFiles: unknown): string {
+  if (!Array.isArray(uploadedFiles) || uploadedFiles.length === 0) return '';
+
+  const fileLines = uploadedFiles
+    .slice(0, 10)
+    .map((file: any) => {
+      const size = typeof file?.size === 'number' ? `${(file.size / 1024 / 1024).toFixed(2)}MB` : '未知大小';
+      const passthrough = file?.passthrough ? '，未做站内文字提取' : '';
+      return `- ${file?.name || '未命名附件'} (${file?.type || 'application/octet-stream'}, ${size}${passthrough})`;
+    })
+    .join('\n');
+
+  return `\n\n【用户上传附件】\n${fileLines}\n这些附件是用户提供的生成素材。若当前 inputText 中没有附件正文，请不要编造附件中的具体事实；只根据用户需求、已提取文本和附件元信息生成。`;
+}
+
 // 场景 → 推荐配置映射(恢复技术部验证的 pictographic)
 const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource: string; imageModel: string }> = {
   biz: { themeId: 'consultant', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
@@ -156,6 +171,7 @@ export async function POST(request: NextRequest) {
       imageSource = 'webFreeToUseCommercially',
       exportAs = 'pptx',
       visualMetaphor,
+      uploadedFiles,
     } = body;
 
     // 🚨 D1: Normalize aliased fields → canonical PptUserInput
@@ -279,10 +295,13 @@ export async function POST(request: NextRequest) {
       exportAs,
       themeId: finalThemeId,
       cardSplit: undefined, // removed inputTextBreaks to avoid blank pages
-      additionalInstructions: finalInstructions + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji代替web SVG图标。' + criticalInstruction,
+      additionalInstructions: finalInstructions + buildUploadedFilesInstruction(uploadedFiles) + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji代替web SVG图标。' + criticalInstruction,
       textOptions: { amount: 'medium', tone: finalTone, language: 'zh-cn' },
       imageOptions,
       cardOptions: { dimensions: '16x9' },
+      sharingOptions: {
+        externalAccess: 'view',
+      },
     };
 
     console.log('[GammaDirect] Payload:', JSON.stringify(gammaPayload, null, 2));

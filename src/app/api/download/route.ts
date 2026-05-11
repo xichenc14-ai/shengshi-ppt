@@ -22,8 +22,10 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get('userId');
   const pageCount = parseInt(searchParams.get('pageCount') || '0');
-  const rawFormat = (searchParams.get('format') || 'pdf').toLowerCase();
-  const format: 'pptx' | 'pdf' | 'png' = rawFormat === 'pptx' || rawFormat === 'png' ? rawFormat : 'pdf';
+  const rawFormat = (searchParams.get('format') || 'pptx').toLowerCase();
+  if (rawFormat !== 'pptx') {
+    return NextResponse.json({ error: 'PDF/PNG 下载已关闭，仅支持 PPTX 下载' }, { status: 410 });
+  }
 
   if (!userId) return NextResponse.json({ error: '缺少用户ID' }, { status: 400 });
 
@@ -38,7 +40,7 @@ export async function GET(request: NextRequest) {
     if (error || !user) return NextResponse.json({ error: '用户不存在' }, { status: 404 });
 
     // 检查下载权限
-    const permission = checkDownloadPermission(user, pageCount, format);
+    const permission = checkDownloadPermission(user, pageCount, 'pptx');
 
     return NextResponse.json({
       ...permission,
@@ -62,8 +64,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const { action, userId, pageCount, format: rawFormat } = await request.json();
-    const format: 'pptx' | 'pdf' | 'png' =
-      rawFormat === 'pptx' || rawFormat === 'png' ? rawFormat : 'pdf';
+    if ((rawFormat || 'pptx') !== 'pptx') {
+      return NextResponse.json({ error: 'PDF/PNG 下载已关闭，仅支持 PPTX 下载' }, { status: 410 });
+    }
 
     if (action === 'record') {
       if (!userId) return NextResponse.json({ error: '缺少用户ID' }, { status: 400 });
@@ -95,7 +98,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 检查权限
-      const permission = checkDownloadPermission(user, pageCount, format);
+      const permission = checkDownloadPermission(user, pageCount, 'pptx');
 
       if (permission.needPayment) {
         // TODO: 接入支付系统
@@ -108,11 +111,7 @@ export async function POST(request: NextRequest) {
 
       // 更新计数
       const updates: any = {};
-      if (format === 'pdf' || format === 'png') {
-        updates.download_count_month = (user.download_count_month || 0) + 1;
-      } else if (format === 'pptx') {
-        updates.ppt_trial_count_month = (user.ppt_trial_count_month || 0) + 1;
-      }
+      updates.ppt_trial_count_month = (user.ppt_trial_count_month || 0) + 1;
 
       if (Object.keys(updates).length > 0) {
         await sb.from('users').update(updates).eq('id', userId);
@@ -121,7 +120,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         recorded: true,
-        format,
+        format: 'pptx',
         downloadCount: updates.download_count_month || user.download_count_month,
         pptTrialCount: updates.ppt_trial_count_month || user.ppt_trial_count_month,
         watermarked: permission.watermarked,

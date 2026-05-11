@@ -17,7 +17,7 @@ export interface MembershipPlan {
   smartMode: boolean;
 
   // 🆕 兮晨哥哥2026-04-15方案：免费用户下载配额
-  monthlyFreeDownloads?: number;  // 每月免费下载次数（PDF）
+  monthlyFreeDownloads?: number;  // 旧 PDF 下载额度字段，保留兼容历史数据
   monthlyPptTrial?: number;       // 每月原生PPT体验次数
   smartTrialUsed?: boolean;       // 新用户省心模式体验标记
   pricePerPage?: number;          // 超出后按页付费（¥0.2/页）
@@ -43,7 +43,7 @@ const PLANS: Record<string, MembershipPlan> = {
     allowedAiModels: [],
     smartMode: false,
     // 🆕 兮晨哥哥2026-04-15方案
-    monthlyFreeDownloads: 3,     // 每月3次免费下载（带水印PDF）
+    monthlyFreeDownloads: 3,     // 历史 PDF 下载额度，当前下载入口已关闭 PDF
     monthlyPptTrial: 1,          // 每月1次体验原生PPT
     smartTrialUsed: false,       // 新用户首次省心模式体验（一次）
   },
@@ -189,11 +189,11 @@ export function mapImgModeToSource(imgMode: string): string {
 
 /**
  * 🆕 兮晨哥哥2026-04-15方案：下载权限检查
- * 免费用户：每月3次免费下载（带水印PDF）+ 每月1次体验原生PPT
+ * 免费用户：每月1次体验原生PPT
  * 超出后按页数付费（¥0.2/页）
  * 付费会员：无限制免费下载
  */
-export function checkDownloadPermission(user: UserDownloadInfo, pageCount: number, format: 'pptx' | 'pdf' | 'png'): {
+export function checkDownloadPermission(user: UserDownloadInfo, pageCount: number, format: 'pptx'): {
   allowed: boolean;
   needPayment?: boolean;
   cost?: number;
@@ -211,7 +211,6 @@ export function checkDownloadPermission(user: UserDownloadInfo, pageCount: numbe
 
   // 2. 免费用户 → 检查月度配额
   const currentMonth = new Date().toISOString().substring(0, 7); // '2026-04'
-  const monthlyFreeDownloads = plan.monthlyFreeDownloads || 3;
   const monthlyPptTrial = plan.monthlyPptTrial || 1;
 
   // 检查是否需要月度重置
@@ -220,22 +219,12 @@ export function checkDownloadPermission(user: UserDownloadInfo, pageCount: numbe
     return {
       allowed: true,
       isFreeDownload: true,
-      isTrial: format === 'pptx',
-      watermarked: format === 'pdf' || format === 'png',
+      isTrial: true,
+      watermarked: false,
     }; // 需要在 API 层更新 download_reset_month
   }
 
-  // 3. PDF/PNG 下载：每月3次免费
-  if ((format === 'pdf' || format === 'png') && user.download_count_month < monthlyFreeDownloads) {
-    return {
-      allowed: true,
-      cost: 0,
-      watermarked: format === 'pdf' || format === 'png',
-      reason: `本月免费下载第${user.download_count_month + 1}/${monthlyFreeDownloads}次（导出文件）`,
-    }; // 需要在 API 层更新 download_count_month
-  }
-
-  // 4. PPTX下载：每月1次体验
+  // 3. PPTX下载：每月1次体验
   if (format === 'pptx' && user.ppt_trial_count_month < monthlyPptTrial) {
     return {
       allowed: true,
@@ -245,7 +234,7 @@ export function checkDownloadPermission(user: UserDownloadInfo, pageCount: numbe
     }; // 需要在 API 层更新 ppt_trial_count_month
   }
 
-  // 5. 超出配额 → 按页数付费
+  // 4. 超出配额 → 按页数付费
   const pricePerPage = 0.2; // ¥0.2/页
   const cost = pageCount * pricePerPage;
   return {

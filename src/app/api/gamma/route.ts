@@ -7,6 +7,21 @@ import { buildGammaImageOptions, normalizeUserInput } from '@/lib/adapters/ppt-p
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
+function buildUploadedFilesInstruction(uploadedFiles: unknown): string {
+  if (!Array.isArray(uploadedFiles) || uploadedFiles.length === 0) return '';
+
+  const fileLines = uploadedFiles
+    .slice(0, 10)
+    .map((file: any) => {
+      const size = typeof file?.size === 'number' ? `${(file.size / 1024 / 1024).toFixed(2)}MB` : '未知大小';
+      const passthrough = file?.passthrough ? '，未做站内文字提取' : '';
+      return `- ${file?.name || '未命名附件'} (${file?.type || 'application/octet-stream'}, ${size}${passthrough})`;
+    })
+    .join('\n');
+
+  return `\n\n【用户上传附件】\n${fileLines}\n这些附件是用户提供的生成素材。若当前 inputText 中没有附件正文，请不要编造附件中的具体事实；只根据用户需求、已确认大纲和已提取文本生成。`;
+}
+
 // 场景 → 推荐配置映射(恢复技术部验证的 pictographic)
 const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource: string; imageModel: string }> = {
   biz: { themeId: 'consultant', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
@@ -279,6 +294,7 @@ export async function POST(request: NextRequest) {
       cardOptions,
       cardSplit,
       textOptions,
+      uploadedFiles,
     } = body;
 
     // 🚨 D1: Normalize aliased fields → canonical PptUserInput
@@ -371,7 +387,9 @@ export async function POST(request: NextRequest) {
 
     // 🚨 V8.2: Gamma 固定使用 preserve 模式（大纲已由 outline API 预处理）
     // 构建最终 additionalInstructions
-    let finalAdditionalInstructions = finalInstructions + '\n\n【图标规范-统一风格】\n使用Gamma内置的图标系统(Icons),保持风格统一:简洁、线性、单色、与主题色一致。禁止混用不同风格的图标(不要同时使用emoji和线性图标)。每页2-4个图标,用于要点标记和视觉装饰。禁止出现无图标的页面。';
+    let finalAdditionalInstructions = finalInstructions
+      + buildUploadedFilesInstruction(uploadedFiles)
+      + '\n\n【图标规范-统一风格】\n使用Gamma内置的图标系统(Icons),保持风格统一:简洁、线性、单色、与主题色一致。禁止混用不同风格的图标(不要同时使用emoji和线性图标)。每页2-4个图标,用于要点标记和视觉装饰。禁止出现无图标的页面。';
     const isThemeAccentMode = finalImageOptions?.source === 'themeAccent';
     if (normalized.textMode === 'preserve') {
       // 🚨 V6修复：追加CRITICAL强制指令，封锁Gamma的发散权限
@@ -403,6 +421,9 @@ export async function POST(request: NextRequest) {
       imageOptions: finalImageOptions,
       cardOptions: cardOptions || {
         dimensions: '16x9',
+      },
+      sharingOptions: {
+        externalAccess: 'view',
       },
       numCards: pageCount,
     };
