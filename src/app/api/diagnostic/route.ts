@@ -3,12 +3,16 @@ import { callDeepSeek } from '@/lib/deepseek-client';
 
 export async function POST(request: NextRequest) {
   try {
+    if (process.env.NODE_ENV === 'production') {
+      return NextResponse.json({ error: 'diagnostic disabled in production' }, { status: 403 });
+    }
+
     const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY;
     const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
     
     const results: Record<string, any> = {
       minimaxKey: MINIMAX_API_KEY ? '存在' : '不存在',
-      deepseekKey: DEEPSEEK_API_KEY ? `存在 (${DEEPSEEK_API_KEY.substring(0, 8)}...)` : '不存在',
+      deepseekKey: DEEPSEEK_API_KEY ? '存在' : '不存在',
     };
 
     // 测试 DeepSeek
