@@ -127,25 +127,19 @@ function buildAttachmentContext(file: UploadedFile): string {
   ].join('\n');
 }
 
-function getGammaEmbedUrl(gammaUrl?: string): string | null {
-  if (!gammaUrl) return null;
-  try {
-    const url = new URL(gammaUrl);
-    const parts = url.pathname.split('/').filter(Boolean);
-    const embedIndex = parts.indexOf('embed');
-    if (embedIndex >= 0 && parts[embedIndex + 1]) {
-      return `https://gamma.app/embed/${parts[embedIndex + 1]}`;
-    }
-
-    const lastPart = parts[parts.length - 1] || '';
-    const id = lastPart.split('-').pop() || '';
-    if (/^[a-zA-Z0-9]{8,}$/.test(id)) {
-      return `https://gamma.app/embed/${id}`;
-    }
-  } catch {
-    return null;
-  }
-  return null;
+function buildPreviewApiPath(
+  generationId: string,
+  format: 'pdf' | 'pptx',
+  filename: string,
+  inline = true
+): string {
+  const params = new URLSearchParams({
+    generationId,
+    format,
+    name: filename,
+    inline: inline ? '1' : '0',
+  });
+  return `/api/preview/file?${params.toString()}`;
 }
 
 // buildMd 已替换为 buildMdV2（lib/build-md-v2.ts）
@@ -234,6 +228,11 @@ export default function Home() {
   const [result, setResult] = useState<{ title: string; slides: SlideItem[]; pptxUrl: string; gammaUrl?: string; actualPages?: number; generationId?: string; renderSignature?: string } | null>(null);
   const [exporting, setExporting] = useState(false); // 导出中
   const [showDeckPreview, setShowDeckPreview] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
+  const [previewTab, setPreviewTab] = useState<'pdf' | 'pptx'>('pdf');
+  const [previewPdfObjectUrl, setPreviewPdfObjectUrl] = useState('');
+  const [previewPptxEmbedUrl, setPreviewPptxEmbedUrl] = useState('');
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -243,6 +242,23 @@ export default function Home() {
     if (topic.trim()) p.push(topic.trim());
     return p.join('\n\n');
   }, [files, topic]);
+
+  const resetPreviewState = useCallback(() => {
+    setPreviewLoading(false);
+    setPreviewError('');
+    setPreviewTab('pdf');
+    setPreviewPptxEmbedUrl('');
+    setPreviewPdfObjectUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return '';
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (previewPdfObjectUrl) URL.revokeObjectURL(previewPdfObjectUrl);
+    };
+  }, [previewPdfObjectUrl]);
 
   // 🚨 P0 Fix: 构建 preserve 模式的 Markdown（忠实呈现用户原文，不做 AI 提炼）
   // 原则：用户写什么，PPT 就呈现什么。只需要加基础 markdown 结构（分页、标题）。
@@ -1095,6 +1111,7 @@ export default function Home() {
     setGenProgress(0);
     setGenStep(0);
     setShowDeckPreview(false);
+    resetPreviewState();
   };
 
   const backToLanding = () => {
@@ -1105,6 +1122,8 @@ export default function Home() {
     setOriginalSlides([]);
     setStreamingSlides([]);
     setError('');
+    setShowDeckPreview(false);
+    resetPreviewState();
   };
 
   // 🚨 v10.5: 处理定价页订阅按钮
@@ -1219,6 +1238,53 @@ export default function Home() {
       setExporting(false);
     }
   };
+
+  const handleOpenPreview = useCallback(async () => {
+    if (!result?.generationId) return;
+
+    setShowDeckPreview(true);
+    setPreviewLoading(true);
+    setPreviewError('');
+    setPreviewTab('pdf');
+
+    try {
+      const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
+      const pdfFilename = `${safeTitle}.pdf`;
+      const pdfPath = buildPreviewApiPath(result.generationId, 'pdf', pdfFilename, true);
+
+      const pdfRes = await fetch(pdfPath);
+      const contentType = (pdfRes.headers.get('Content-Type') || '').toLowerCase();
+      if (!pdfRes.ok || contentType.includes('application/json')) {
+        const errData = await pdfRes.json().catch(() => ({ error: 'PDF 预览文件获取失败' }));
+        throw new Error(errData.error || 'PDF 预览文件获取失败');
+      }
+
+      const pdfBlob = await pdfRes.blob();
+      const pdfObjectUrl = URL.createObjectURL(pdfBlob);
+      setPreviewPdfObjectUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return pdfObjectUrl;
+      });
+
+      const pptxFilename = `${safeTitle}.pptx`;
+      const pptxPath = buildPreviewApiPath(result.generationId, 'pptx', pptxFilename, true);
+      if (typeof window !== 'undefined') {
+        const absolutePptxUrl = `${window.location.origin}${pptxPath}`;
+        setPreviewPptxEmbedUrl(`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absolutePptxUrl)}`);
+      } else {
+        setPreviewPptxEmbedUrl('');
+      }
+    } catch (e: any) {
+      setPreviewError(e.message || '在线预览加载失败');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [result?.generationId, result?.title]);
+
+  const handleClosePreview = useCallback(() => {
+    setShowDeckPreview(false);
+    resetPreviewState();
+  }, [resetPreviewState]);
 
 
 
@@ -1366,7 +1432,6 @@ export default function Home() {
   };
 
   const fmtSize = (b: number) => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
-  const deckPreviewUrl = result ? getGammaEmbedUrl(result.gammaUrl) : null;
 
   return (
     <div className="min-h-screen bg-[#FAFBFE] flex flex-col">
@@ -2069,11 +2134,11 @@ export default function Home() {
                   <span className="text-xs text-gray-600">文稿已生成 · {result.actualPages || pageCount} 页</span>
                 </div>
                 <button
-                  onClick={() => setShowDeckPreview(true)}
+                  onClick={handleOpenPreview}
                   className="px-3 py-1 text-xs text-purple-600 hover:text-purple-800 hover:bg-purple-100 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={!deckPreviewUrl || exporting}
+                  disabled={!result.generationId || exporting || previewLoading}
                 >
-                  🔍 在线预览
+                  {previewLoading ? '预览加载中...' : '🔍 在线预览'}
                 </button>
               </div>
 
@@ -2081,17 +2146,15 @@ export default function Home() {
                 <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-8 text-center">
                   <div className="text-5xl mb-4">✅</div>
                   <p className="text-white font-bold text-lg mb-2">PPT 已就绪</p>
-                  <p className="text-gray-400 text-sm mb-5">可下载 PPTX 文件，或在站内查看在线预览</p>
+                  <p className="text-gray-400 text-sm mb-5">可下载 PPTX 文件，或在站内预览 PDF / PPTX</p>
                   <div className="flex flex-col sm:flex-row justify-center gap-3">
-                    {deckPreviewUrl && (
-                      <button
-                        onClick={() => setShowDeckPreview(true)}
-                        disabled={exporting}
-                        className="px-5 py-2.5 bg-white/10 text-white rounded-xl text-sm font-bold hover:bg-white/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        🔍 在线预览
-                      </button>
-                    )}
+                    <button
+                      onClick={handleOpenPreview}
+                      disabled={!result.generationId || exporting || previewLoading}
+                      className="px-5 py-2.5 bg-white/10 text-white rounded-xl text-sm font-bold hover:bg-white/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {previewLoading ? '预览加载中...' : '🔍 在线预览'}
+                    </button>
                     <button
                       onClick={handleExportPPT}
                       disabled={!result.generationId || exporting}
@@ -2127,25 +2190,83 @@ export default function Home() {
       )}
 
       {/* ===== 在线预览弹窗 ===== */}
-      {showDeckPreview && deckPreviewUrl && (
+      {showDeckPreview && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden">
             <div className="h-12 px-4 border-b border-gray-100 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-700">{result?.title || '在线预览'}</div>
-              <button
-                onClick={() => setShowDeckPreview(false)}
-                className="px-3 py-1.5 rounded-lg text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-              >
-                关闭
-              </button>
+              <div className="flex items-center gap-3">
+                <div className="text-sm font-semibold text-gray-700">{result?.title || '在线预览'}</div>
+                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                  <button
+                    onClick={() => setPreviewTab('pdf')}
+                    className={`px-2 py-1 rounded text-xs ${previewTab === 'pdf' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+                  >
+                    PDF
+                  </button>
+                  <button
+                    onClick={() => setPreviewTab('pptx')}
+                    className={`px-2 py-1 rounded text-xs ${previewTab === 'pptx' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+                  >
+                    PPTX
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {previewError && (
+                  <button
+                    onClick={handleOpenPreview}
+                    className="px-3 py-1.5 rounded-lg text-sm text-purple-600 hover:text-purple-700 hover:bg-purple-50 transition-colors"
+                  >
+                    重试
+                  </button>
+                )}
+                <button
+                  onClick={handleClosePreview}
+                  className="px-3 py-1.5 rounded-lg text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  关闭
+                </button>
+              </div>
             </div>
-            <div className="bg-gray-950">
-              <iframe
-                src={deckPreviewUrl}
-                className="w-full aspect-video min-h-[360px]"
-                allow="fullscreen"
-                title={result?.title || '在线预览'}
-              />
+            <div className="bg-gray-950 min-h-[360px]">
+              {previewLoading ? (
+                <div className="w-full aspect-video min-h-[360px] flex items-center justify-center text-white text-sm">
+                  正在拉取预览文件...
+                </div>
+              ) : previewError ? (
+                <div className="w-full aspect-video min-h-[360px] flex flex-col items-center justify-center text-white gap-4 px-6 text-center">
+                  <p className="text-sm text-red-300">{previewError}</p>
+                  <button
+                    onClick={handleExportPPT}
+                    className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm"
+                  >
+                    下载 PPTX
+                  </button>
+                </div>
+              ) : previewTab === 'pdf' ? (
+                previewPdfObjectUrl ? (
+                  <iframe
+                    src={previewPdfObjectUrl}
+                    className="w-full aspect-video min-h-[360px] bg-white"
+                    title={result?.title || 'PDF 预览'}
+                  />
+                ) : (
+                  <div className="w-full aspect-video min-h-[360px] flex items-center justify-center text-white text-sm">
+                    PDF 预览暂不可用
+                  </div>
+                )
+              ) : previewPptxEmbedUrl ? (
+                <iframe
+                  src={previewPptxEmbedUrl}
+                  className="w-full aspect-video min-h-[360px] bg-white"
+                  allow="fullscreen"
+                  title={result?.title || 'PPTX 预览'}
+                />
+              ) : (
+                <div className="w-full aspect-video min-h-[360px] flex items-center justify-center text-white text-sm">
+                  PPTX 预览暂不可用
+                </div>
+              )}
             </div>
           </div>
         </div>
