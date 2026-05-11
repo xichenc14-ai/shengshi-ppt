@@ -230,6 +230,7 @@ export default function Home() {
   const [showDeckPreview, setShowDeckPreview] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
+  const [previewPdfError, setPreviewPdfError] = useState('');
   const [previewTab, setPreviewTab] = useState<'pdf' | 'pptx'>('pdf');
   const [previewPdfObjectUrl, setPreviewPdfObjectUrl] = useState('');
   const [previewPptxEmbedUrl, setPreviewPptxEmbedUrl] = useState('');
@@ -246,6 +247,7 @@ export default function Home() {
   const resetPreviewState = useCallback(() => {
     setPreviewLoading(false);
     setPreviewError('');
+    setPreviewPdfError('');
     setPreviewTab('pdf');
     setPreviewPptxEmbedUrl('');
     setPreviewPdfObjectUrl((prev) => {
@@ -469,7 +471,7 @@ export default function Home() {
           imageSource: directImgMode,
           tone: directTone,
           textMode: directTextMode,
-          exportAs: 'pdf',
+          exportAs: 'pptx',
         }),
       });
       // 先读取响应文本，再尝试解析 JSON
@@ -969,7 +971,7 @@ export default function Home() {
         textMode: tm,
         format: 'presentation',
         numCards: editedSlides.length,
-        exportAs: 'pdf',
+        exportAs: 'pptx',
         themeId: finalThemeId,
         tone: finalTone,
         imageMode: finalImageSource,
@@ -1245,26 +1247,11 @@ export default function Home() {
     setShowDeckPreview(true);
     setPreviewLoading(true);
     setPreviewError('');
-    setPreviewTab('pdf');
+    setPreviewPdfError('');
+    setPreviewTab('pptx');
 
     try {
       const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
-      const pdfFilename = `${safeTitle}.pdf`;
-      const pdfPath = buildPreviewApiPath(result.generationId, 'pdf', pdfFilename, true);
-
-      const pdfRes = await fetch(pdfPath);
-      const contentType = (pdfRes.headers.get('Content-Type') || '').toLowerCase();
-      if (!pdfRes.ok || contentType.includes('application/json')) {
-        const errData = await pdfRes.json().catch(() => ({ error: 'PDF 预览文件获取失败' }));
-        throw new Error(errData.error || 'PDF 预览文件获取失败');
-      }
-
-      const pdfBlob = await pdfRes.blob();
-      const pdfObjectUrl = URL.createObjectURL(pdfBlob);
-      setPreviewPdfObjectUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return pdfObjectUrl;
-      });
 
       const pptxFilename = `${safeTitle}.pptx`;
       const pptxPath = buildPreviewApiPath(result.generationId, 'pptx', pptxFilename, true);
@@ -1273,6 +1260,22 @@ export default function Home() {
         setPreviewPptxEmbedUrl(`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absolutePptxUrl)}`);
       } else {
         setPreviewPptxEmbedUrl('');
+      }
+
+      const pdfFilename = `${safeTitle}.pdf`;
+      const pdfPath = buildPreviewApiPath(result.generationId, 'pdf', pdfFilename, true);
+      const pdfRes = await fetch(pdfPath);
+      const contentType = (pdfRes.headers.get('Content-Type') || '').toLowerCase();
+      if (!pdfRes.ok || contentType.includes('application/json')) {
+        const errData = await pdfRes.json().catch(() => ({ error: 'PDF 预览文件获取失败' }));
+        setPreviewPdfError(errData.error || 'PDF 预览文件获取失败');
+      } else {
+        const pdfBlob = await pdfRes.blob();
+        const pdfObjectUrl = URL.createObjectURL(pdfBlob);
+        setPreviewPdfObjectUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return pdfObjectUrl;
+        });
       }
     } catch (e: any) {
       setPreviewError(e.message || '在线预览加载失败');
@@ -2251,8 +2254,14 @@ export default function Home() {
                     title={result?.title || 'PDF 预览'}
                   />
                 ) : (
-                  <div className="w-full aspect-video min-h-[360px] flex items-center justify-center text-white text-sm">
-                    PDF 预览暂不可用
+                  <div className="w-full aspect-video min-h-[360px] flex flex-col items-center justify-center text-white gap-3 px-6 text-center">
+                    <p className="text-sm text-red-300">{previewPdfError || 'PDF 预览暂不可用'}</p>
+                    <button
+                      onClick={() => setPreviewTab('pptx')}
+                      className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm"
+                    >
+                      切换到 PPTX 预览
+                    </button>
                   </div>
                 )
               ) : previewPptxEmbedUrl ? (
