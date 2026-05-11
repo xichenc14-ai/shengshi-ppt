@@ -30,7 +30,7 @@ function isFormatUrl(url: string, format: PreviewFormat): boolean {
   return lower.includes('.pptx') || lower.includes('/pptx/');
 }
 
-function extractExportUrl(payload: Record<string, any>, format: PreviewFormat): string | null {
+function extractExportUrl(payload: Record<string, any>, format: PreviewFormat, allowFallback = false): string | null {
   const candidates = [
     payload.exportUrl,
     payload.url,
@@ -43,9 +43,11 @@ function extractExportUrl(payload: Record<string, any>, format: PreviewFormat): 
       return candidate;
     }
   }
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string' && candidate) {
-      return candidate;
+  if (allowFallback) {
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate) {
+        return candidate;
+      }
     }
   }
   return null;
@@ -65,7 +67,7 @@ async function pollExportUrl(generationId: string, exportId: string, apiKey: str
     if (!checkRes.ok) continue;
 
     const checkData = await checkRes.json().catch(() => ({}));
-    const readyUrl = extractExportUrl(checkData, format);
+    const readyUrl = extractExportUrl(checkData, format, true);
     if (readyUrl) return readyUrl;
 
     const status = String(checkData.status || '').toLowerCase();
@@ -95,7 +97,7 @@ async function createExportUrl(generationId: string, apiKey: string, format: Pre
     if (!exportRes.ok) continue;
 
     const exportData = await exportRes.json().catch(() => ({}));
-    const exportUrl = extractExportUrl(exportData, format);
+    const exportUrl = extractExportUrl(exportData, format, true);
     if (exportUrl) return exportUrl;
 
     const exportId = typeof exportData.id === 'string'
