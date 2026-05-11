@@ -1,7 +1,7 @@
 // MiniMax API 客户端 - 设为默认模型（支持图片理解 + 联网搜索）
 // Base URL: https://api.minimaxi.com (与 OpenClaw 共用 key)
 
-const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY || '';
+const MINIMAX_API_KEY = (process.env.MINIMAX_API_KEY || '').trim();
 
 // MiniMax 的 API 格式兼容 OpenAI，同时支持 vision
 const MINIMAX_BASE = 'https://api.minimaxi.com/v1';

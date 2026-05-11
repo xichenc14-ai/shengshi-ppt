@@ -1,6 +1,6 @@
 // DeepSeek API 客户端 - 备用方案
 
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
+const DEEPSEEK_API_KEY = (process.env.DEEPSEEK_API_KEY || '').trim();
 const DEEPSEEK_BASE = 'https://api.deepseek.com/v1';
 
 export interface DeepSeekMessage {
