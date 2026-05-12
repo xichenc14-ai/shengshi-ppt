@@ -184,7 +184,7 @@ export default function Home() {
   const [directTextMode, setDirectTextMode] = useState<'generate' | 'condense' | 'preserve'>('generate');
 
   // Landing page vs generate flow
-  const [phase, setPhase] = useState<'landing' | 'input' | 'streaming' | 'outline' | 'generating' | 'direct-generating' | 'result'>('landing');
+  const [phase, setPhase] = useState<'landing' | 'input' | 'streaming' | 'outline' | 'generating' | 'direct-generating' | 'result'>('input');
 
   // Input state
   const [topic, setTopic] = useState('');
@@ -193,6 +193,7 @@ export default function Home() {
 
   // Pro mode
   const [showPro, setShowPro] = useState(false);
+  const [showDirectAdvanced, setShowDirectAdvanced] = useState(false);
 
   const [genMode, setGenMode] = useState('preserve');
   const [theme, setTheme] = useState('auto');
@@ -225,17 +226,25 @@ export default function Home() {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Result
-  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; pptxUrl: string; gammaUrl?: string; actualPages?: number; generationId?: string; renderSignature?: string } | null>(null);
+  const [result, setResult] = useState<{
+    title: string;
+    slides: SlideItem[];
+    pptxUrl: string;
+    gammaUrl?: string;
+    actualPages?: number;
+    generationId?: string;
+    renderSignature?: string;
+    pptxSeedBody?: Record<string, unknown>;
+    pptxSeedEndpoint?: 'gamma' | 'gamma-direct';
+    pptxGenerationId?: string;
+  } | null>(null);
   const [exporting, setExporting] = useState(false); // 导出中
-  const [showDeckPreview, setShowDeckPreview] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
-  const [previewPdfError, setPreviewPdfError] = useState('');
-  const [previewTab, setPreviewTab] = useState<'pdf' | 'pptx'>('pdf');
   const [previewPdfObjectUrl, setPreviewPdfObjectUrl] = useState('');
-  const [previewPptxEmbedUrl, setPreviewPptxEmbedUrl] = useState('');
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const previewLoadedGenerationRef = useRef('');
 
   const collectText = useCallback(() => {
     const p: string[] = [];
@@ -247,9 +256,6 @@ export default function Home() {
   const resetPreviewState = useCallback(() => {
     setPreviewLoading(false);
     setPreviewError('');
-    setPreviewPdfError('');
-    setPreviewTab('pdf');
-    setPreviewPptxEmbedUrl('');
     setPreviewPdfObjectUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return '';
@@ -460,19 +466,22 @@ export default function Home() {
         finalInputText = buildPreserveMarkdown(inputText, pageCount);
       }
 
+      const directGammaBody = {
+        inputText: finalInputText,
+        uploadedFiles: files.map(({ name, type, size, passthrough }) => ({ name, type, size, passthrough: Boolean(passthrough) })),
+        themeId: directTheme,
+        numCards: pageCount,
+        imageSource: directImgMode,
+        tone: directTone,
+        textMode: directTextMode,
+        exportAs: 'pdf',
+      } as const;
+      const directGammaPptxSeed = { ...directGammaBody, exportAs: 'pptx' as const };
+
       const gRes = await fetch('/api/gamma-direct', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          inputText: finalInputText,
-          uploadedFiles: files.map(({ name, type, size, passthrough }) => ({ name, type, size, passthrough: Boolean(passthrough) })),
-          themeId: directTheme,
-          numCards: pageCount,
-          imageSource: directImgMode,
-          tone: directTone,
-          textMode: directTextMode,
-          exportAs: 'pptx',
-        }),
+        body: JSON.stringify(directGammaBody),
       });
       // 先读取响应文本，再尝试解析 JSON
       const gText = await gRes.text();
@@ -532,6 +541,8 @@ export default function Home() {
           gammaUrl: lastStatusData?.gammaUrl || '',
           actualPages: pageCount,
           generationId: gd.generationId,
+          pptxSeedBody: directGammaPptxSeed,
+          pptxSeedEndpoint: 'gamma-direct',
           renderSignature: buildRenderSignature(
             [],
             'direct',
@@ -971,7 +982,7 @@ export default function Home() {
         textMode: tm,
         format: 'presentation',
         numCards: editedSlides.length,
-        exportAs: 'pptx',
+        exportAs: 'pdf',
         themeId: finalThemeId,
         tone: finalTone,
         imageMode: finalImageSource,
@@ -980,6 +991,7 @@ export default function Home() {
         uploadedFiles: files.map(({ name, type, size, passthrough }) => ({ name, type, size, passthrough: Boolean(passthrough) })),
         originalTextMode: mode === 'direct' ? directTextMode : undefined,
       };
+      const gammaPptxSeedBody = { ...gammaRequestBody, exportAs: 'pptx' };
 
       const gRes = await fetch('/api/gamma', {
         method: 'POST',
@@ -1044,6 +1056,8 @@ export default function Home() {
           gammaUrl: lastStatusData?.gammaUrl || '',
           actualPages: editedSlides.length,
           generationId: gd.generationId,
+          pptxSeedBody: gammaPptxSeedBody,
+          pptxSeedEndpoint: 'gamma',
           renderSignature: currentRenderSignature,
         });
         setGenProgress(100);
@@ -1108,23 +1122,25 @@ export default function Home() {
     setFiles([]);
     setTopic('');
     setShowPro(false);
+    setShowDirectAdvanced(false);
     setGenMode('preserve');
-    setPhase('landing');
+    setPhase('input');
     setGenProgress(0);
     setGenStep(0);
-    setShowDeckPreview(false);
+    previewLoadedGenerationRef.current = '';
     resetPreviewState();
   };
 
   const backToLanding = () => {
-    setPhase('landing');
+    setPhase('input');
     setOutlineResult(null);
     setSmartGammaPayload(null);
     setEditedSlides([]);
     setOriginalSlides([]);
     setStreamingSlides([]);
     setError('');
-    setShowDeckPreview(false);
+    setShowDirectAdvanced(false);
+    previewLoadedGenerationRef.current = '';
     resetPreviewState();
   };
 
@@ -1169,6 +1185,55 @@ export default function Home() {
     return fallbackName;
   };
 
+  const pollGammaUntilComplete = useCallback(async (generationId: string) => {
+    const startTime = Date.now();
+    while (Date.now() - startTime < 180000) {
+      await new Promise(r => setTimeout(r, 3000));
+      const statusRes = await fetch(`/api/gamma?id=${generationId}`);
+      if (!statusRes.ok) continue;
+      const statusData = await statusRes.json();
+      if (statusData.status === 'completed') return statusData;
+      if (statusData.status === 'failed') {
+        throw new Error(statusData.error || 'PPTX 生成失败');
+      }
+    }
+    throw new Error('PPTX 生成超时（3分钟），请稍后重试');
+  }, []);
+
+  const ensurePptxGenerationId = useCallback(async () => {
+    if (!result?.generationId) throw new Error('缺少 generationId');
+    if (result.pptxGenerationId) return result.pptxGenerationId;
+    if (!result.pptxSeedBody) return result.generationId;
+    const seedEndpoint = result.pptxSeedEndpoint || 'gamma';
+
+    const createRes = await fetch(`/api/${seedEndpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(result.pptxSeedBody),
+    });
+    const createText = await createRes.text();
+    if (!createRes.ok) {
+      let err = 'PPTX 任务创建失败';
+      try { const d = JSON.parse(createText); err = d.error || err; } catch {}
+      throw new Error(err);
+    }
+    let created: any;
+    try {
+      created = JSON.parse(createText);
+    } catch {
+      throw new Error('PPTX 任务创建响应异常');
+    }
+    const newGenerationId = created.generationId;
+    if (!newGenerationId) throw new Error('未获取到PPTX任务ID');
+
+    await pollGammaUntilComplete(newGenerationId);
+    setResult((prev) => {
+      if (!prev || prev.generationId !== result.generationId) return prev;
+      return { ...prev, pptxGenerationId: newGenerationId };
+    });
+    return newGenerationId;
+  }, [pollGammaUntilComplete, result?.generationId, result?.pptxGenerationId, result?.pptxSeedBody, result?.pptxSeedEndpoint]);
+
   // 🚨 v10.6+: PPTX 导出处理函数
   const handleExportPPT = async () => {
     if (!user) { openLogin(); return; }
@@ -1205,19 +1270,30 @@ export default function Home() {
 
       const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
       const fallbackFilename = `${safeTitle}.pptx`;
-      const res = await fetch(
+      let downloadRes = await fetch(
         `/api/export-pptx?generationId=${result.generationId}&name=${encodeURIComponent(fallbackFilename)}`
       );
-      const contentType = (res.headers.get('Content-Type') || '').toLowerCase();
+      let contentType = (downloadRes.headers.get('Content-Type') || '').toLowerCase();
 
-      if (!res.ok || contentType.includes('application/json')) {
-        const errData = await res.json().catch(() => ({ error: '导出失败' }));
+      if (!downloadRes.ok || contentType.includes('application/json')) {
+        // PDF 主任务下，补跑一条 PPTX 任务并重试下载
+        if (result.pptxSeedBody) {
+          const pptxGenerationId = await ensurePptxGenerationId();
+          downloadRes = await fetch(
+            `/api/export-pptx?generationId=${pptxGenerationId}&name=${encodeURIComponent(fallbackFilename)}`
+          );
+          contentType = (downloadRes.headers.get('Content-Type') || '').toLowerCase();
+        }
+      }
+
+      if (!downloadRes.ok || contentType.includes('application/json')) {
+        const errData = await downloadRes.json().catch(() => ({ error: '导出失败' }));
         alert(errData.error || '导出失败，请稍后重试');
         return;
       }
 
-      const blob = await res.blob();
-      const finalFilename = resolveDownloadFilename(res.headers, fallbackFilename);
+      const blob = await downloadRes.blob();
+      const finalFilename = resolveDownloadFilename(downloadRes.headers, fallbackFilename);
       downloadBlob(blob, finalFilename);
 
       if (shouldRecordDownload) {
@@ -1241,64 +1317,46 @@ export default function Home() {
     }
   };
 
-  const handleOpenPreview = useCallback(async () => {
+  const loadInlinePreview = useCallback(async () => {
     if (!result?.generationId) return;
 
-    setShowDeckPreview(true);
     setPreviewLoading(true);
     setPreviewError('');
-    setPreviewPdfError('');
-    setPreviewTab('pptx');
 
     try {
       const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
       const generationId = result.generationId;
       if (!generationId) throw new Error('缺少生成任务ID，无法预览');
 
-      const pptxFilename = `${safeTitle}.pptx`;
-      const pptxPath = buildPreviewApiPath(generationId, 'pptx', pptxFilename, true);
-      if (typeof window !== 'undefined') {
-        const absolutePptxUrl = `${window.location.origin}${pptxPath}`;
-        setPreviewPptxEmbedUrl(`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absolutePptxUrl)}`);
-      } else {
-        setPreviewPptxEmbedUrl('');
+      const pdfFilename = `${safeTitle}.pdf`;
+      const pdfPath = buildPreviewApiPath(generationId, 'pdf', pdfFilename, true);
+      const pdfRes = await fetch(pdfPath);
+      const contentType = (pdfRes.headers.get('Content-Type') || '').toLowerCase();
+      if (!pdfRes.ok || contentType.includes('application/json')) {
+        const errData = await pdfRes.json().catch(() => ({ error: 'PDF 预览文件获取失败' }));
+        throw new Error(errData.error || 'PDF 预览文件获取失败');
       }
 
-      setPreviewLoading(false);
-
-      // PDF 预览作为增强能力异步加载，不阻塞 PPTX 预览首屏。
-      (async () => {
-        const pdfFilename = `${safeTitle}.pdf`;
-        const pdfPath = buildPreviewApiPath(generationId, 'pdf', pdfFilename, true);
-        const pdfRes = await fetch(pdfPath);
-        const contentType = (pdfRes.headers.get('Content-Type') || '').toLowerCase();
-        if (!pdfRes.ok || contentType.includes('application/json')) {
-          const errData = await pdfRes.json().catch(() => ({ error: 'PDF 预览文件获取失败' }));
-          setPreviewPdfError(errData.error || 'PDF 预览文件获取失败');
-          return;
-        }
-
-        const pdfBlob = await pdfRes.blob();
-        const pdfObjectUrl = URL.createObjectURL(pdfBlob);
-        setPreviewPdfObjectUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return pdfObjectUrl;
-        });
-      })().catch((err: any) => {
-        setPreviewPdfError(err?.message || 'PDF 预览文件获取失败');
+      const pdfBlob = await pdfRes.blob();
+      const pdfObjectUrl = URL.createObjectURL(pdfBlob);
+      setPreviewPdfObjectUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return pdfObjectUrl;
       });
     } catch (e: any) {
       setPreviewError(e.message || '在线预览加载失败');
+    } finally {
       setPreviewLoading(false);
     }
   }, [result?.generationId, result?.title]);
 
-  const handleClosePreview = useCallback(() => {
-    setShowDeckPreview(false);
-    resetPreviewState();
-  }, [resetPreviewState]);
-
-
+  useEffect(() => {
+    if (phase !== 'result') return;
+    if (!result?.generationId) return;
+    if (previewLoadedGenerationRef.current === result.generationId) return;
+    previewLoadedGenerationRef.current = result.generationId;
+    void loadInlinePreview();
+  }, [phase, result?.generationId, loadInlinePreview]);
 
   const downloadBlob = (blob: Blob, filename: string) => {
     const blobUrl = URL.createObjectURL(blob);
@@ -1685,7 +1743,10 @@ export default function Home() {
                   {/* Mode toggle - segmented control style */}
                   <div className="flex bg-gray-100 rounded-xl p-1 mt-4">
                     <button
-                      onClick={() => setMode('direct')}
+                      onClick={() => {
+                        setMode('direct');
+                        setShowDirectAdvanced(false);
+                      }}
                       className={`flex-1 py-2.5 rounded-lg text-center transition-all text-sm font-semibold ${
                         mode === 'direct'
                           ? 'bg-white text-[#4338CA] shadow-sm'
@@ -1709,6 +1770,7 @@ export default function Home() {
                           return;
                         }
                         setMode('smart');
+                        setShowDirectAdvanced(false);
                       }}
                       className={`flex-1 py-2.5 rounded-lg text-center transition-all text-sm font-semibold ${
                         mode === 'smart'
@@ -1734,8 +1796,19 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* Direct mode: show ThemeSelector + params */}
                   {mode === 'direct' && (
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        onClick={() => setShowDirectAdvanced(v => !v)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium text-[#5B4FE9] bg-[#F5F3FF] hover:bg-[#EDE9FE] transition-colors"
+                      >
+                        {showDirectAdvanced ? '收起高级选项' : '展开高级选项'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Direct mode: show ThemeSelector + params */}
+                  {mode === 'direct' && showDirectAdvanced && (
                     <div className="mt-4 pt-4 border-t border-gray-100 space-y-5 max-h-[55vh] overflow-y-auto -mx-1 px-1">
                       {/* 主题风格 */}
                       <div>
@@ -2138,7 +2211,7 @@ export default function Home() {
               <p className="text-sm text-gray-500">{result.title || '演示文稿'} · {result.actualPages || pageCount} 页</p>
             </div>
 
-            {/* 导出与预览 */}
+            {/* 导出与预览（结果页内自动加载） */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden mb-6">
               <div className="bg-gradient-to-r from-purple-50 to-indigo-50 px-4 py-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -2146,38 +2219,61 @@ export default function Home() {
                   <span className="text-xs text-gray-600">文稿已生成 · {result.actualPages || pageCount} 页</span>
                 </div>
                 <button
-                  onClick={handleOpenPreview}
+                  onClick={() => {
+                    previewLoadedGenerationRef.current = '';
+                    void loadInlinePreview();
+                  }}
                   className="px-3 py-1 text-xs text-purple-600 hover:text-purple-800 hover:bg-purple-100 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={!result.generationId || exporting || previewLoading}
                 >
-                  {previewLoading ? '预览加载中...' : '🔍 在线预览'}
+                  {previewLoading ? '预览加载中...' : '刷新预览'}
                 </button>
               </div>
 
-              <div className="p-6">
-                <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-8 text-center">
-                  <div className="text-5xl mb-4">✅</div>
-                  <p className="text-white font-bold text-lg mb-2">PPT 已就绪</p>
-                  <p className="text-gray-400 text-sm mb-5">可下载 PPTX 文件，或在站内预览 PDF / PPTX</p>
-                  <div className="flex flex-col sm:flex-row justify-center gap-3">
-                    <button
-                      onClick={handleOpenPreview}
-                      disabled={!result.generationId || exporting || previewLoading}
-                      className="px-5 py-2.5 bg-white/10 text-white rounded-xl text-sm font-bold hover:bg-white/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {previewLoading ? '预览加载中...' : '🔍 在线预览'}
-                    </button>
-                    <button
-                      onClick={handleExportPPT}
-                      disabled={!result.generationId || exporting}
-                      className="px-4 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-orange-200/40 hover:shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {exporting ? (
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      ) : '📄'}
-                      下载 PPTX
-                    </button>
-                  </div>
+              <div className="p-4 md:p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                  <p className="text-sm text-gray-600">PDF 在线预览（自动加载）</p>
+                  <button
+                    onClick={handleExportPPT}
+                    disabled={!result.generationId || exporting}
+                    className="px-4 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-orange-200/40 hover:shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {exporting ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : '📄'}
+                    下载 PPTX
+                  </button>
+                </div>
+
+                <div className="rounded-xl overflow-hidden border border-gray-100 bg-gray-950 min-h-[420px]">
+                  {previewLoading ? (
+                    <div className="w-full min-h-[420px] flex items-center justify-center text-white text-sm">
+                      正在加载 PDF 预览...
+                    </div>
+                  ) : previewError ? (
+                    <div className="w-full min-h-[420px] flex flex-col items-center justify-center text-white gap-4 px-6 text-center">
+                      <p className="text-sm text-red-300">{previewError}</p>
+                      <button
+                        onClick={() => {
+                          previewLoadedGenerationRef.current = '';
+                          void loadInlinePreview();
+                        }}
+                        className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm"
+                      >
+                        重试预览
+                      </button>
+                    </div>
+                  ) : previewPdfObjectUrl ? (
+                    <iframe
+                      src={previewPdfObjectUrl}
+                      className="w-full min-h-[420px] md:min-h-[560px] bg-white"
+                      title={result?.title || 'PDF 预览'}
+                    />
+                  ) : (
+                    <div className="w-full min-h-[420px] flex items-center justify-center text-white text-sm">
+                      暂无可预览内容
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -2196,95 +2292,6 @@ export default function Home() {
               >
                 ➕ 继续创建
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===== 在线预览弹窗 ===== */}
-      {showDeckPreview && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden">
-            <div className="h-12 px-4 border-b border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="text-sm font-semibold text-gray-700">{result?.title || '在线预览'}</div>
-                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-                  <button
-                    onClick={() => setPreviewTab('pdf')}
-                    className={`px-2 py-1 rounded text-xs ${previewTab === 'pdf' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
-                  >
-                    PDF
-                  </button>
-                  <button
-                    onClick={() => setPreviewTab('pptx')}
-                    className={`px-2 py-1 rounded text-xs ${previewTab === 'pptx' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
-                  >
-                    PPTX
-                  </button>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {previewError && (
-                  <button
-                    onClick={handleOpenPreview}
-                    className="px-3 py-1.5 rounded-lg text-sm text-purple-600 hover:text-purple-700 hover:bg-purple-50 transition-colors"
-                  >
-                    重试
-                  </button>
-                )}
-                <button
-                  onClick={handleClosePreview}
-                  className="px-3 py-1.5 rounded-lg text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                >
-                  关闭
-                </button>
-              </div>
-            </div>
-            <div className="bg-gray-950 min-h-[360px]">
-              {previewLoading ? (
-                <div className="w-full aspect-video min-h-[360px] flex items-center justify-center text-white text-sm">
-                  正在拉取预览文件...
-                </div>
-              ) : previewError ? (
-                <div className="w-full aspect-video min-h-[360px] flex flex-col items-center justify-center text-white gap-4 px-6 text-center">
-                  <p className="text-sm text-red-300">{previewError}</p>
-                  <button
-                    onClick={handleExportPPT}
-                    className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm"
-                  >
-                    下载 PPTX
-                  </button>
-                </div>
-              ) : previewTab === 'pdf' ? (
-                previewPdfObjectUrl ? (
-                  <iframe
-                    src={previewPdfObjectUrl}
-                    className="w-full aspect-video min-h-[360px] bg-white"
-                    title={result?.title || 'PDF 预览'}
-                  />
-                ) : (
-                  <div className="w-full aspect-video min-h-[360px] flex flex-col items-center justify-center text-white gap-3 px-6 text-center">
-                    <p className="text-sm text-red-300">{previewPdfError || 'PDF 预览暂不可用'}</p>
-                    <button
-                      onClick={() => setPreviewTab('pptx')}
-                      className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm"
-                    >
-                      切换到 PPTX 预览
-                    </button>
-                  </div>
-                )
-              ) : previewPptxEmbedUrl ? (
-                <iframe
-                  src={previewPptxEmbedUrl}
-                  className="w-full aspect-video min-h-[360px] bg-white"
-                  allow="fullscreen"
-                  title={result?.title || 'PPTX 预览'}
-                />
-              ) : (
-                <div className="w-full aspect-video min-h-[360px] flex items-center justify-center text-white text-sm">
-                  PPTX 预览暂不可用
-                </div>
-              )}
             </div>
           </div>
         </div>
