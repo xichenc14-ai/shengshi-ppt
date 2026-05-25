@@ -92,10 +92,308 @@
 
 body {
   color: var(--foreground);
-  background: var(--background);
+  background:
+    radial-gradient(1200px 500px at 5% -5%, rgba(14, 165, 233, 0.08), transparent 60%),
+    radial-gradient(1000px 420px at 95% 0%, rgba(99, 102, 241, 0.1), transparent 58%),
+    #f6f8fc;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.premium-shell {
+  background:
+    radial-gradient(1200px 540px at 8% -10%, rgba(14, 165, 233, 0.1), transparent 60%),
+    radial-gradient(1100px 520px at 92% 2%, rgba(99, 102, 241, 0.12), transparent 60%),
+    linear-gradient(180deg, #f8fbff 0%, #f6f8fc 100%);
+}
+
+.premium-shell-vivid {
+  background:
+    radial-gradient(900px 420px at 12% 0%, rgba(139, 92, 246, 0.16), transparent 62%),
+    radial-gradient(900px 420px at 90% 10%, rgba(59, 130, 246, 0.14), transparent 60%),
+    radial-gradient(640px 300px at 50% 22%, rgba(167, 139, 250, 0.1), transparent 65%),
+    linear-gradient(180deg, #f7f8ff 0%, #f4f7ff 48%, #f7faff 100%);
+}
+
+.hero-poster-bg {
+  background:
+    linear-gradient(145deg, rgba(99, 102, 241, 0.11) 0%, rgba(168, 85, 247, 0.09) 38%, rgba(56, 189, 248, 0.08) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(248, 251, 255, 0.94) 100%);
+  border: 1px solid rgba(129, 140, 248, 0.22);
+  box-shadow: 0 24px 48px rgba(79, 70, 229, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.hero-banner {
+  background:
+    radial-gradient(140% 160% at 15% 0%, rgba(129, 140, 248, 0.3) 0%, rgba(129, 140, 248, 0) 56%),
+    radial-gradient(120% 180% at 86% 10%, rgba(56, 189, 248, 0.22) 0%, rgba(56, 189, 248, 0) 58%),
+    linear-gradient(135deg, #ffffff 0%, #f5f7ff 42%, #eef3ff 100%);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  box-shadow: 0 16px 36px rgba(79, 70, 229, 0.11);
+}
+
+.premium-grid-bg {
+  background-image:
+    linear-gradient(rgba(71, 85, 105, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(71, 85, 105, 0.06) 1px, transparent 1px);
+  background-size: 34px 34px;
+}
+
+.premium-hero {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: linear-gradient(130deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 255, 0.78) 55%, rgba(238, 242, 255, 0.75) 100%);
+  box-shadow: 0 20px 46px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(16px);
+}
+
+.premium-card {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(251, 253, 255, 0.96) 100%);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+}
+
+.premium-chip {
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.premium-btn-primary {
+  background: linear-gradient(135deg, #4f46e5 0%, #0ea5e9 100%);
+  box-shadow: 0 10px 22px rgba(59, 130, 246, 0.28);
+}
+
+.premium-btn-primary:hover {
+  box-shadow: 0 14px 28px rgba(59, 130, 246, 0.34);
+}
+
+.premium-btn-ghost {
+  border: 1px solid rgba(99, 102, 241, 0.24);
+  background: rgba(255, 255, 255, 0.85);
+}
+
+/* UI Style Lock: v10.60 紫蓝渐变海报风（未经明确审批不做大改） */
+.sx-shell {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(246, 248, 255, 0.96) 0%, rgba(241, 245, 255, 0.92) 46%, rgba(250, 252, 255, 1) 100%),
+    radial-gradient(900px 420px at 74% 9%, rgba(110, 102, 255, 0.2), transparent 62%),
+    radial-gradient(760px 340px at 18% 24%, rgba(60, 139, 255, 0.14), transparent 60%);
+}
+
+.sx-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(92, 106, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(92, 106, 255, 0.045) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.8), transparent 88%);
+}
+
+.sx-glass {
+  border: 1px solid rgba(159, 172, 255, 0.34);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 255, 0.74));
+  box-shadow:
+    0 22px 60px rgba(67, 71, 183, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(18px);
+}
+
+.sx-glass-strong {
+  border: 1px solid rgba(138, 151, 255, 0.38);
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.96), rgba(246, 249, 255, 0.86)),
+    linear-gradient(135deg, rgba(124, 92, 255, 0.1), rgba(27, 139, 255, 0.06));
+  box-shadow:
+    0 28px 80px rgba(58, 63, 178, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(22px);
+}
+
+.sx-gradient-text {
+  background: linear-gradient(100deg, #111827 0%, #111827 34%, #6c5cff 58%, #2e7cff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.sx-accent-text {
+  background: linear-gradient(100deg, #5b4fe9 0%, #8a63ff 48%, #2f86ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.sx-primary-btn {
+  background: linear-gradient(135deg, #2f86ff 0%, #6c5cff 48%, #8b35ff 100%);
+  box-shadow: 0 16px 34px rgba(72, 86, 255, 0.32);
+}
+
+.sx-primary-btn:hover {
+  box-shadow: 0 18px 42px rgba(72, 86, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+.sx-ghost-btn {
+  border: 1px solid rgba(111, 104, 255, 0.24);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 10px 24px rgba(70, 80, 180, 0.08);
+}
+
+.sx-crystal {
+  position: absolute;
+  width: var(--size, 74px);
+  height: var(--size, 74px);
+  border-radius: 22%;
+  background:
+    linear-gradient(140deg, rgba(255, 255, 255, 0.9), rgba(143, 129, 255, 0.42) 42%, rgba(32, 136, 255, 0.42) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  box-shadow:
+    0 20px 42px rgba(76, 87, 210, 0.2),
+    inset 8px 8px 18px rgba(255, 255, 255, 0.44),
+    inset -10px -12px 22px rgba(53, 64, 188, 0.16);
+  transform: rotate(var(--rotate, 14deg)) skew(-6deg);
+  opacity: var(--opacity, 0.72);
+  animation: sxFloat 7s ease-in-out infinite;
+}
+
+.sx-crystal::after {
+  content: "";
+  position: absolute;
+  inset: 18% 13% auto auto;
+  width: 34%;
+  height: 34%;
+  border-radius: 30%;
+  background: rgba(255, 255, 255, 0.5);
+  filter: blur(1px);
+}
+
+.sx-orbit {
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid rgba(116, 130, 255, 0.28);
+  border-left-color: transparent;
+  border-right-color: rgba(45, 150, 255, 0.22);
+  border-radius: 999px;
+  transform: rotate(-9deg);
+}
+
+.sx-product-stage {
+  position: relative;
+  min-height: 330px;
+  perspective: 1100px;
+}
+
+.sx-product-screen {
+  position: absolute;
+  inset: 28px 28px auto auto;
+  width: min(520px, 92%);
+  aspect-ratio: 16 / 9;
+  border-radius: 28px;
+  border: 1px solid rgba(168, 181, 255, 0.56);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(236, 242, 255, 0.64)),
+    linear-gradient(135deg, rgba(69, 98, 255, 0.18), rgba(255, 255, 255, 0));
+  box-shadow:
+    0 34px 80px rgba(61, 72, 190, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transform: rotateY(-13deg) rotateX(4deg);
+  overflow: hidden;
+}
+
+.sx-product-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.46) 44%, transparent 62%),
+    radial-gradient(420px 160px at 74% 52%, rgba(70, 137, 255, 0.28), transparent 70%);
+  animation: sxSweep 5.8s ease-in-out infinite;
+}
+
+.sx-slide-preview {
+  position: absolute;
+  inset: 40px 50px 46px 50px;
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(26, 45, 125, 0.94), rgba(70, 112, 255, 0.84)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+.sx-slide-preview::before {
+  content: "项目汇报方案";
+  position: absolute;
+  top: 28px;
+  left: 30px;
+  font-size: 22px;
+  font-weight: 800;
+  color: white;
+  letter-spacing: 0;
+}
+
+.sx-slide-preview::after {
+  content: "";
+  position: absolute;
+  right: 28px;
+  bottom: 22px;
+  width: 150px;
+  height: 92px;
+  border-radius: 999px 999px 18px 18px;
+  background:
+    linear-gradient(110deg, rgba(255, 255, 255, 0.36), rgba(86, 211, 255, 0.42)),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.28) 0 8px, transparent 8px 18px);
+  clip-path: polygon(0 100%, 8% 58%, 22% 78%, 38% 36%, 55% 56%, 72% 16%, 100% 100%);
+}
+
+.sx-floating-panel {
+  position: absolute;
+  border-radius: 18px;
+  border: 1px solid rgba(166, 177, 255, 0.5);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 18px 42px rgba(72, 84, 190, 0.14);
+  backdrop-filter: blur(12px);
+  animation: sxFloat 6s ease-in-out infinite;
+}
+
+.sx-mini-lines {
+  display: grid;
+  gap: 8px;
+}
+
+.sx-mini-lines span {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(98, 116, 255, 0.22), rgba(57, 160, 255, 0.1));
+}
+
+.sx-appear {
+  animation: sxAppear 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sx-appear-delay-1 { animation-delay: 80ms; }
+.sx-appear-delay-2 { animation-delay: 160ms; }
+.sx-appear-delay-3 { animation-delay: 240ms; }
+
+@keyframes sxFloat {
+  0%, 100% { transform: translateY(0) rotate(var(--rotate, 0deg)) skew(-6deg); }
+  50% { transform: translateY(-14px) rotate(calc(var(--rotate, 0deg) + 3deg)) skew(-6deg); }
+}
+
+@keyframes sxSweep {
+  0%, 100% { transform: translateX(-18%); opacity: 0.56; }
+  50% { transform: translateX(18%); opacity: 0.9; }
+}
+
+@keyframes sxAppear {
+  from { opacity: 0; transform: translateY(18px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* 高端滚动条 */

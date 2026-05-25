@@ -49,22 +49,9 @@ export interface PptUserInput {
 export type GammaImageSource =
   | 'noImages'
   | 'themeAccent'
+  | 'pictographic'
   | 'webFreeToUseCommercially'
   | 'aiGenerated';
-
-const DARK_THEME_IDS = new Set([
-  'founder',
-  'aurora',
-  'electric',
-  'blues',
-  'gamma',
-  'gamma-dark',
-  'default-dark',
-  'luxe',
-  'aurum',
-  'coal',
-  'noir',
-]);
 
 function firstNonEmptyString(...values: unknown[]): string | undefined {
   for (const value of values) {
@@ -148,9 +135,9 @@ export function normalizeUserInput(raw: Record<string, unknown>): PptUserInput {
  * 兼容签名：第二参数 themeId 预留给调用方扩展，当前版本不使用
  *
  * 支持输入（不区分大小写，完整别名清单）：
- * - noImages / none                    → noImages
- * - theme-img / theme                  → themeAccent
- * - pictographic / 插图                 → themeAccent
+ * - noImages / none                    → themeAccent (无图模式已下线，兼容回退)
+ * - theme-img / theme / themeAccent    → themeAccent
+ * - pictographic / 插图                 → pictographic
  * - web / 网图 / 搜索图                 → webFreeToUseCommercially
  * - webFreeToUseCommercially           → webFreeToUseCommercially
  * - ai / aiGenerated / AI图             → aiGenerated (imagen-3-flash)
@@ -170,7 +157,7 @@ export function mapImageSource(
   switch (normalized) {
     case 'noimages':
     case 'none':
-      return { source: 'noImages' };
+      return { source: 'themeAccent' };
 
     case 'weballimages':
       return { source: 'webFreeToUseCommercially' };
@@ -204,9 +191,11 @@ export function mapImageSource(
     case 'theme':
     case 'theme-img':
     case 'themeaccent':
+      return { source: 'themeAccent' };
+
     case 'pictographic':
     case '插图':
-      return { source: 'themeAccent' };
+      return { source: 'pictographic' };
 
     default:
       return { source: 'themeAccent' };
@@ -218,9 +207,10 @@ export function buildGammaImageOptions(
   themeId?: string,
   existingOptions?: Record<string, unknown>
 ): Record<string, unknown> {
-  const rawSource = typeof existingOptions?.source === 'string'
-    ? existingOptions.source
-    : imageSource;
+  const hasExplicitSource = typeof imageSource === 'string' && imageSource.trim().length > 0;
+  const rawSource = hasExplicitSource
+    ? imageSource
+    : (typeof existingOptions?.source === 'string' ? existingOptions.source : imageSource);
   const mapped = mapImageSource(rawSource, themeId);
   const merged = {
     ...mapped,
@@ -228,8 +218,8 @@ export function buildGammaImageOptions(
     source: mapped.source,
   };
 
-  if (merged.source === 'themeAccent' && themeId && DARK_THEME_IDS.has(themeId)) {
-    return { source: 'webFreeToUseCommercially' };
+  if (merged.source === 'noImages') {
+    return { ...merged, source: 'themeAccent' };
   }
 
   return merged;

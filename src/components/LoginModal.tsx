@@ -184,6 +184,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
       if (data.error === 'NEED_SET_PASSWORD') {
         // 账号未设置密码，引导设置
         setPhone(phone);
+        setRegUsername(data.nickname || '');
         setPhoneStep('set_profile');
         setLoading(false);
         setTimeout(() => document.getElementById('reg-username-input')?.focus(), 150);
@@ -195,7 +196,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
         setLoading(false);
         return;
       }
-      if (data.user) { login(data.user); handleClose(); }
+      if (data.user) { login(data.user, data.authToken); handleClose(); }
     } catch { setError('验证失败，请检查网络'); }
     setLoading(false);
   }, [phone, code, login]);
@@ -205,7 +206,8 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
     if (!regUsername.trim()) { setError('请输入用户名'); return; }
     if (regUsername.trim().length < 2 || regUsername.trim().length > 20) { setError('用户名需要2-20个字符'); return; }
     if (/[<>"'&]/.test(regUsername)) { setError('用户名包含非法字符'); return; }
-    if (regPassword.length < 6) { setError('密码至少6位'); return; }
+    if (regPassword.length < 8) { setError('密码至少8位'); return; }
+    if (!/[A-Za-z]/.test(regPassword) || !/\d/.test(regPassword)) { setError('密码需包含字母和数字'); return; }
     if (regPassword !== regConfirmPwd) { setError('两次密码不一致'); return; }
     setLoading(true); setError('');
     try {
@@ -216,7 +218,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
       });
       const data = await res.json();
       if (data.error) { setError(data.error); setLoading(false); return; }
-      if (data.user) { login(data.user); handleClose(); }
+      if (data.user) { login(data.user, data.authToken); handleClose(); }
     } catch { setError('注册失败，请检查网络'); }
     setLoading(false);
   }, [phone, regUsername, regPassword, regConfirmPwd, login]);
@@ -234,7 +236,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
       });
       const data = await res.json();
       if (data.error) { setError(data.error); setLoading(false); return; }
-      if (data.user) { login(data.user); handleClose(); }
+      if (data.user) { login(data.user, data.authToken); handleClose(); }
     } catch { setError('登录失败，请检查网络'); }
     setLoading(false);
   }, [account, password, login]);
@@ -452,13 +454,13 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                   />
 
                   {/* 密码 */}
-                  <label className="text-xs font-medium text-gray-500 mb-1.5 block">设置密码</label>
+                    <label className="text-xs font-medium text-gray-500 mb-1.5 block">设置密码（至少8位，字母+数字）</label>
                   <div className="relative mb-2">
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={regPassword}
                       onChange={e => { setRegPassword(e.target.value); setError(''); }}
-                      placeholder="至少6位密码"
+                      placeholder="至少8位，字母+数字"
                       className="w-full px-4 py-3.5 pr-12 rounded-2xl bg-[#FAFBFE] border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none text-sm transition-all"
                     />
                     <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1">
@@ -479,13 +481,13 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                     }`}
                     onKeyDown={e => { if (e.key === 'Enter') handleRegister(); }}
                   />
-                  {regConfirmPwd && regConfirmPwd === regPassword && regConfirmPwd.length >= 6 && (
+                  {regConfirmPwd && regConfirmPwd === regPassword && regConfirmPwd.length >= 8 && (
                     <p className="text-xs text-green-500 mb-3 -mt-2">✓ 密码一致</p>
                   )}
 
                   <button
                     onClick={handleRegister}
-                    disabled={!regUsername.trim() || regPassword.length < 6 || regPassword !== regConfirmPwd || loading}
+                    disabled={!regUsername.trim() || regPassword.length < 8 || regPassword !== regConfirmPwd || loading}
                     className="w-full py-3.5 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-2xl text-sm font-bold hover:shadow-lg hover:shadow-purple-300/40 active:scale-[0.98] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     {loading ? (

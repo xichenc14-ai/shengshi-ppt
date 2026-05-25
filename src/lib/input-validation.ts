@@ -8,7 +8,7 @@ export interface ValidationResult {
 }
 
 // 允许的文件类型
-const ALLOWED_EXTENSIONS = [
+export const ALLOWED_EXTENSIONS = [
   '.txt', '.md', '.pdf', '.doc', '.docx',
   '.xls', '.xlsx', '.csv',
   '.png', '.jpg', '.jpeg', '.webp',
@@ -16,7 +16,7 @@ const ALLOWED_EXTENSIONS = [
 ];
 
 // 允许的 MIME 类型
-const ALLOWED_MIME_PREFIXES = [
+export const ALLOWED_MIME_PREFIXES = [
   'text/',           // .txt, .md, .csv
   'image/png',       // .png
   'image/jpeg',      // .jpg, .jpeg
@@ -29,12 +29,26 @@ const ALLOWED_MIME_PREFIXES = [
 
 // 限制常量
 export const LIMITS = {
-  MAX_FILE_SIZE: 50 * 1024 * 1024,     // 50MB 单文件
-  MAX_IMAGE_SIZE: 20 * 1024 * 1024,    // 20MB 单张图片
+  // 基于当前 200k context（MiniMax）做保守预算：
+  // - 预留系统提示词 / 规则 / 输出 / 安全缓冲
+  // - 用户可用文本预算约 10 万字（中英混排场景）
+  MAX_FILE_SIZE: 30 * 1024 * 1024,       // 30MB 单文件
+  MAX_IMAGE_SIZE: 15 * 1024 * 1024,      // 15MB 单张图片
   MAX_TOTAL_FILE_SIZE: 100 * 1024 * 1024, // 100MB 总文件
-  MAX_FILE_COUNT: 9,                    // 最多9个文件
-  MAX_TEXT_LENGTH: 60000,              // 60000字总文本
-  MAX_TOPIC_LENGTH: 20000,             // 20000字纯文本输入
+  MAX_FILE_COUNT: 9,                      // 最多9个文件
+  MAX_TEXT_LENGTH: 50000,                 // 总文本预算（用户输入 + 附件提取）
+  MAX_TOPIC_LENGTH: 40000,                // 纯文本输入预算
+  MAX_EXTRACTED_CHARS_PER_FILE: 25000,    // 单文件最多保留 2.5 万字
+} as const;
+
+export const LIMITS_HUMAN_READABLE = {
+  SUPPORTED_TYPES: '.txt, .md, .pdf, .doc, .docx, .xls, .xlsx, .csv, .png, .jpg, .jpeg, .webp, .ppt, .pptx',
+  MAX_FILE_SIZE_LABEL: '30MB',
+  MAX_IMAGE_SIZE_LABEL: '15MB',
+  MAX_TOTAL_FILE_SIZE_LABEL: '100MB',
+  MAX_FILE_COUNT_LABEL: '9个',
+  MAX_TEXT_LENGTH_LABEL: '5万字',
+  MAX_TOPIC_LENGTH_LABEL: '4万字',
 } as const;
 
 /**
@@ -43,12 +57,12 @@ export const LIMITS = {
 export function validateFile(file: File): string | null {
   // 检查文件大小
   if (file.size > LIMITS.MAX_FILE_SIZE) {
-    return `文件 "${file.name}" 超过50MB限制（${(file.size / 1024 / 1024).toFixed(1)}MB）`;
+    return `文件 "${file.name}" 超过${LIMITS_HUMAN_READABLE.MAX_FILE_SIZE_LABEL}限制（${(file.size / 1024 / 1024).toFixed(1)}MB）`;
   }
 
   // 图片额外限制
   if (file.type.startsWith('image/') && file.size > LIMITS.MAX_IMAGE_SIZE) {
-    return `图片 "${file.name}" 超过20MB限制（${(file.size / 1024 / 1024).toFixed(1)}MB）`;
+    return `图片 "${file.name}" 超过${LIMITS_HUMAN_READABLE.MAX_IMAGE_SIZE_LABEL}限制（${(file.size / 1024 / 1024).toFixed(1)}MB）`;
   }
 
   // 检查文件扩展名
@@ -84,11 +98,11 @@ export function validateFiles(files: File[]): ValidationResult {
 
   // 检查总大小
   if (totalSize > LIMITS.MAX_TOTAL_FILE_SIZE) {
-    errors.push(`文件总大小超过100MB限制（${(totalSize / 1024 / 1024).toFixed(1)}MB）`);
+    errors.push(`文件总大小超过${LIMITS_HUMAN_READABLE.MAX_TOTAL_FILE_SIZE_LABEL}限制（${(totalSize / 1024 / 1024).toFixed(1)}MB）`);
   }
 
   // 警告：文件较大
-  if (totalSize > 50 * 1024 * 1024 && totalSize <= LIMITS.MAX_TOTAL_FILE_SIZE) {
+  if (totalSize > 70 * 1024 * 1024 && totalSize <= LIMITS.MAX_TOTAL_FILE_SIZE) {
     warnings.push(`文件较大（${(totalSize / 1024 / 1024).toFixed(1)}MB），处理可能较慢`);
   }
 
@@ -117,7 +131,7 @@ export function validateText(topic: string, fileContents: string[]): ValidationR
   }
 
   // 警告
-  if (totalLength > 30000 && totalLength <= LIMITS.MAX_TEXT_LENGTH) {
+  if (totalLength > 50000 && totalLength <= LIMITS.MAX_TEXT_LENGTH) {
     warnings.push(`内容较多（${totalLength}字），AI处理可能较慢`);
   }
 
@@ -147,16 +161,16 @@ export function validateInput(topic: string, files: { size: number; name: string
   let totalSize = 0;
   for (const file of files) {
     if (file.size > LIMITS.MAX_FILE_SIZE) {
-      fileErrors.push(`文件 "${file.name}" 超过50MB`);
+      fileErrors.push(`文件 "${file.name}" 超过${LIMITS_HUMAN_READABLE.MAX_FILE_SIZE_LABEL}`);
     }
     if (file.type?.startsWith('image/') && file.size > LIMITS.MAX_IMAGE_SIZE) {
-      fileErrors.push(`图片 "${file.name}" 超过20MB`);
+      fileErrors.push(`图片 "${file.name}" 超过${LIMITS_HUMAN_READABLE.MAX_IMAGE_SIZE_LABEL}`);
     }
     totalSize += file.size;
   }
 
   if (totalSize > LIMITS.MAX_TOTAL_FILE_SIZE) {
-    fileErrors.push(`文件总大小超过100MB`);
+    fileErrors.push(`文件总大小超过${LIMITS_HUMAN_READABLE.MAX_TOTAL_FILE_SIZE_LABEL}`);
   }
 
   // 文本验证
@@ -165,6 +179,9 @@ export function validateInput(topic: string, files: { size: number; name: string
 
   if (totalTextLength > LIMITS.MAX_TEXT_LENGTH) {
     fileErrors.push(`总内容超过${LIMITS.MAX_TEXT_LENGTH}字限制`);
+  }
+  if (topic.length > LIMITS.MAX_TOPIC_LENGTH) {
+    fileErrors.push(`文本输入超过${LIMITS.MAX_TOPIC_LENGTH}字限制`);
   }
 
   if (topic.trim().length === 0 && files.length === 0) {

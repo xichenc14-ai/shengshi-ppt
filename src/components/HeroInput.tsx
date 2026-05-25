@@ -142,11 +142,9 @@ export default React.memo(function HeroInput({
                     onChange={e => setDirectImgMode(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
                   >
-                    <option value="noImages">无图</option>
-                    <option value="pictographic">插图图标</option>
-                    <option value="pexels">高清照片</option>
-                    <option value="webFreeToUseCommercially">搜索配图</option>
-                    <option value="aiGenerated">AI配图</option>
+                    <option value="theme-img">主题套图</option>
+                    <option value="web">搜索配图</option>
+                    <option value="ai">AI配图</option>
                   </select>
                 </div>
                 <div>

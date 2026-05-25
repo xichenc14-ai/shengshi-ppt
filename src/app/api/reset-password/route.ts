@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getClientIP, rateLimit } from '@/lib/rate-limit';
+import { hashPasswordSecure } from '@/lib/password-utils';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
-}
-
-function hashPassword(password: string): string {
-  const { createHash } = require('crypto');
-  return createHash('sha256').update(password + '_sxPPT_salt_2026').digest('hex');
 }
 
 // 发送重置验证码
@@ -56,9 +52,19 @@ export async function POST(request: NextRequest) {
         created_at: new Date().toISOString(),
       });
 
-      // TODO: 调用短信接口发送验证码
-      // 这里先用日志输出，实际使用时替换为真实短信发送
-      console.log(`[重置密码验证码] 手机号: ${phone}, 验证码: ${code}`);
+      // 短信发送（与登录注册保持一致）
+      try {
+        const { sendSMS } = await import('@/lib/sms-client');
+        const result = await sendSMS(phone, code);
+        if (!result.success && process.env.NODE_ENV === 'production') {
+          return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
+        }
+      } catch (e) {
+        if (process.env.NODE_ENV === 'production') {
+          return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
+        }
+        console.warn('[ResetPassword] 短信发送失败，开发模式降级:', e);
+      }
 
       // 在开发环境直接返回验证码方便测试
       if (process.env.NODE_ENV !== 'production') {
@@ -77,8 +83,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: '缺少必要参数' }, { status: 400 });
       }
 
-      if (newPassword.length < 6) {
-        return NextResponse.json({ error: '密码至少6位' }, { status: 400 });
+      if (newPassword.length < 8) {
+        return NextResponse.json({ error: '密码至少8位' }, { status: 400 });
+      }
+      if (!/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) {
+        return NextResponse.json({ error: '密码需包含字母和数字' }, { status: 400 });
       }
 
       // 验证验证码
@@ -101,9 +110,13 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: '验证码已过期，请重新获取' }, { status: 400 });
       }
 
-      // 更新密码
-      const hashedPwd = hashPassword(newPassword);
-      await sb.from('users').update({ password: hashedPwd }).eq('phone', phone);
+      // 更新密码（写入 password_hash）
+      const hashedPwd = hashPasswordSecure(newPassword);
+      const { error: updateErr } = await sb.from('users').update({ password_hash: hashedPwd }).eq('phone', phone);
+      if (updateErr) {
+        console.error('[ResetPassword] 更新密码失败:', updateErr.message);
+        return NextResponse.json({ error: '密码重置失败，请稍后重试' }, { status: 500 });
+      }
 
       // 删除验证码
       await sb.from('verification_codes').delete().eq('phone', phone).eq('type', 'reset_password');

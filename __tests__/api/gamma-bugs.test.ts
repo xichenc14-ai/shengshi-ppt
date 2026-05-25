@@ -9,6 +9,10 @@ vi.mock('@/lib/gamma-key-pool', () => ({
     label: '测试key',
     remaining: 1000,
   }),
+  getAllKeys: vi.fn().mockReturnValue([
+    { key: 'mock-key', label: '测试key', remaining: 1000 },
+    { key: 'mock-key-2', label: '备用key', remaining: 1000 },
+  ]),
   updateKeyBalance: vi.fn(),
   recordKeyFailure: vi.fn(),
   getKeyPoolStatus: vi.fn().mockReturnValue({ keys: [], totalRemaining: 0, healthyCount: 0, lowBalanceKeys: [] }),
@@ -108,11 +112,11 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
     const fetchCall = mockFetch.mock.calls[0];
     const calledBody = JSON.parse(fetchCall[1].body as string);
     
-    // themeId=consultant is NOT in darkThemes set, so should use themeAccent
+    // themeId=consultant is NOT in darkThemes set, should keep themeAccent
     expect(calledBody.imageOptions.source).toBe('themeAccent');
   });
 
-  it('BUG-2b: imageOptions.source should use webFreeToUseCommercially for dark themes', async () => {
+  it('BUG-2b: imageOptions.source should keep themeAccent for dark themes when user selects theme-img', async () => {
     // Arrange
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -130,7 +134,28 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
 
     expect(res.status).toBe(200);
 
-    // Assert: Dark theme should use webFreeToUseCommercially
+    // Assert: 用户明确选择 theme-img 时，深色主题也应保持 themeAccent
+    const fetchCall = mockFetch.mock.calls[0];
+    const calledBody = JSON.parse(fetchCall[1].body as string);
+    expect(calledBody.imageOptions.source).toBe('themeAccent');
+  });
+
+  it('BUG-2c: explicit imageMode=web should not be overridden by stale imageOptions.source', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ generationId: 'test-gen-123' }),
+    });
+
+    const res = await POST(mockPostRequest({
+      inputText: '# Test',
+      imageMode: 'webFreeToUseCommercially',
+      imageOptions: { source: 'themeAccent' },
+      themeId: 'consultant',
+      tone: 'professional',
+    }));
+
+    expect(res.status).toBe(200);
     const fetchCall = mockFetch.mock.calls[0];
     const calledBody = JSON.parse(fetchCall[1].body as string);
     expect(calledBody.imageOptions.source).toBe('webFreeToUseCommercially');
@@ -179,7 +204,7 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
     // Assert
     expect(res.status).toBe(502);
     const data = await res.json();
-    expect(data.error).toContain('Gamma API');
+    expect(data.error).toContain('生成服务');
     expect(data.error).toContain('400');
   });
 

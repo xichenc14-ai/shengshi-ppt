@@ -51,17 +51,18 @@ export default function FAQSection() {
   return (
     <section className="py-20 md:py-28 relative overflow-hidden" id="faq">
       {/* Background */}
-      <div className="absolute inset-0 bg-gradient-to-b from-white via-purple-50/20 to-white" />
+      <div className="absolute inset-0 bg-gradient-to-b from-white via-violet-50/44 to-indigo-50/34" />
+      <span className="sx-crystal hidden md:block" style={{ '--size': '68px', '--rotate': '-17deg', '--opacity': '0.22', right: '6%', top: '15%' } as React.CSSProperties} />
       
       <div className="relative max-w-3xl mx-auto px-4 md:px-6">
         {/* Header */}
         <div className="text-center mb-12">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-purple-100 rounded-full mb-4">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/80 border border-indigo-100 rounded-full mb-4 shadow-sm">
             <span className="text-xs font-semibold text-purple-700">有疑问？</span>
           </div>
           <h2 className="text-3xl md:text-4xl font-black text-gray-900 mb-3">
             常见问题
-            <span className="bg-gradient-to-r from-purple-600 to-amber-500 bg-clip-text text-transparent"> 解答</span>
+            <span className="bg-gradient-to-r from-[#5B4FE9] via-[#7C3AED] to-[#0EA5E9] bg-clip-text text-transparent"> 解答</span>
           </h2>
           <p className="text-gray-500">还有其他问题？联系我们</p>
         </div>
@@ -73,10 +74,10 @@ export default function FAQSection() {
             return (
               <div 
                 key={i} 
-                className={`bg-white rounded-2xl border-2 overflow-hidden transition-all duration-300 ${
+                className={`sx-glass rounded-2xl overflow-hidden transition-all duration-300 ${
                   isOpen 
                     ? 'border-purple-200 shadow-lg shadow-purple-100/30' 
-                    : 'border-gray-100 hover:border-purple-100 hover:shadow-sm'
+                    : 'hover:border-purple-100 hover:shadow-sm'
                 }`}
               >
                 <button
@@ -124,7 +125,7 @@ export default function FAQSection() {
         </div>
 
         {/* Contact CTA */}
-        <div className="mt-12 text-center p-6 bg-gradient-to-br from-purple-50 to-white rounded-2xl border border-purple-100/50">
+        <div className="mt-12 text-center p-6 sx-glass rounded-2xl">
           <p className="text-sm text-gray-600 mb-3">还有其他问题？</p>
           <a href="#" className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-purple-600 bg-white rounded-xl border-2 border-purple-200 hover:bg-purple-50 hover:border-purple-300 transition-all">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

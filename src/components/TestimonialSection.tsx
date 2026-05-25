@@ -20,21 +20,20 @@ export default function TestimonialSection() {
   return (
     <section className="py-20 md:py-28 relative overflow-hidden" id="testimonials">
       {/* Background */}
-      <div className="absolute inset-0 bg-gradient-to-b from-white via-purple-50/30 to-white" />
-      
-      {/* Decorative elements */}
-      <div className="absolute top-20 left-10 w-64 h-64 bg-purple-200/20 rounded-full blur-3xl" />
-      <div className="absolute bottom-20 right-10 w-48 h-48 bg-amber-200/20 rounded-full blur-3xl" />
+      <div className="absolute inset-0 bg-gradient-to-b from-indigo-50/35 via-white/76 to-sky-50/30" />
+      <div className="absolute inset-0 opacity-35" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(99,102,241,0.18) 1px, transparent 0)', backgroundSize: '24px 24px' }} />
+      <span className="sx-crystal hidden md:block" style={{ '--size': '96px', '--rotate': '19deg', '--opacity': '0.3', left: '7%', top: '18%' } as React.CSSProperties} />
+      <span className="sx-crystal hidden md:block" style={{ '--size': '66px', '--rotate': '-24deg', '--opacity': '0.24', right: '8%', top: '58%' } as React.CSSProperties} />
       
       <div className="relative max-w-6xl mx-auto px-4 md:px-6">
         {/* Header */}
         <div className="text-center mb-12">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-purple-100 rounded-full mb-4">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/80 border border-indigo-100 rounded-full mb-4 shadow-sm">
             <span className="text-xs font-semibold text-purple-700">真实反馈</span>
           </div>
           <h2 className="text-3xl md:text-4xl font-black text-gray-900 mb-3">
             用户
-            <span className="bg-gradient-to-r from-purple-600 to-amber-500 bg-clip-text text-transparent"> 好评如潮</span>
+            <span className="bg-gradient-to-r from-[#5B4FE9] via-[#7C3AED] to-[#0EA5E9] bg-clip-text text-transparent"> 好评如潮</span>
           </h2>
           <p className="text-gray-500">来自各行各业的真实用户反馈</p>
         </div>
@@ -42,7 +41,7 @@ export default function TestimonialSection() {
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-14">
           {STATS.map((s, i) => (
-            <div key={i} className="text-center p-5 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-purple-100 transition-all">
+            <div key={i} className="text-center p-5 sx-glass rounded-2xl hover:-translate-y-1 transition-all">
               <div className="text-2xl mb-1">{s.icon}</div>
               <div className="text-2xl md:text-3xl font-black bg-gradient-to-r from-purple-600 to-purple-500 bg-clip-text text-transparent">
                 {s.value}
@@ -57,7 +56,7 @@ export default function TestimonialSection() {
           {TESTIMONIALS.map((t, i) => (
             <div 
               key={i} 
-              className="group relative bg-white rounded-2xl p-6 md:p-7 border border-gray-100 shadow-sm hover:shadow-xl hover:border-purple-200 transition-all duration-300 overflow-hidden"
+              className="group relative sx-glass rounded-2xl p-6 md:p-7 hover:-translate-y-1 transition-all duration-300 overflow-hidden"
             >
               {/* Quote decoration */}
               <div className="absolute top-4 right-4 text-6xl text-purple-100 font-serif leading-none select-none">"</div>

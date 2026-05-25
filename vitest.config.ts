@@ -1,6 +1,8 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
 
+const WORKSPACE_ROOT = '/Users/macmini/.openclaw/workspace';
+
 export default defineConfig({
   test: {
     setupFiles: ['./__tests__/setup.ts'],
@@ -15,6 +17,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@workspace': WORKSPACE_ROOT,
     },
   },
 });

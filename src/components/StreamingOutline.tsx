@@ -25,11 +25,11 @@ const STAGE_TIPS: Record<Stage, string[]> = {
 };
 
 const STAGE_ICONS: Record<Stage, string> = {
-  analyzing: '🔍',
-  planning: '📋',
-  generating: '✍️',
-  polishing: '🎨',
-  complete: '✅',
+  analyzing: 'M4 11h16M4 6h16M4 16h9',
+  planning: 'M6 4h12v16H6zM9 8h6M9 12h6',
+  generating: 'M5 5h14v14H5zM8 9h8M8 13h5',
+  polishing: 'M12 3l2.6 5.2L20 9l-4 3.9.9 5.6L12 16l-4.9 2.5.9-5.6L3 9l5.4-.8z',
+  complete: 'M5 13l4 4L19 7',
 };
 
 function getStageFromProgress(current: number, total: number, prevStage: Stage): Stage {
@@ -121,18 +121,18 @@ export default function StreamingOutline({ slides, onComplete }: StreamingOutlin
   const stageIcon = STAGE_ICONS[stage];
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {/* AI Status Header */}
       {!done && (
-        <div className="bg-gradient-to-r from-[#5B4FE9]/5 via-[#8B5CF6]/5 to-[#5B4FE9]/5 rounded-xl border border-[#EDE9FE] p-3 mb-4">
+        <div className="bg-gradient-to-r from-[#5B4FE9]/7 via-[#8B5CF6]/6 to-[#5B4FE9]/7 rounded-2xl border border-[#EDE9FE] p-3 md:p-4 mb-2 shadow-[0_10px_30px_rgba(105,84,255,0.12)]">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#5B4FE9] to-[#8B5CF6] flex items-center justify-center text-white text-sm shadow-lg shadow-purple-200">
-                AI
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#5B4FE9] to-[#8B5CF6] flex items-center justify-center text-white shadow-lg shadow-purple-200">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={stageIcon} /></svg>
               </div>
               <div>
                 <div className="text-xs font-medium text-[#5B4FE9]">
-                  {stageIcon} {stage === 'analyzing' && '分析中'}
+                  {stage === 'analyzing' && '分析中'}
                   {stage === 'planning' && '规划中'}
                   {stage === 'generating' && '生成中'}
                   {stage === 'polishing' && '优化中'}
@@ -172,10 +172,10 @@ export default function StreamingOutline({ slides, onComplete }: StreamingOutlin
 
       {/* Done header */}
       {done && (
-        <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200 p-3 mb-4">
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl border border-green-200 p-3 md:p-4 mb-2">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center text-white text-lg shadow-lg shadow-green-200">
-              ✨
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
             </div>
             <div>
               <div className="text-sm font-semibold text-green-700">大纲生成完成！</div>
@@ -189,7 +189,7 @@ export default function StreamingOutline({ slides, onComplete }: StreamingOutlin
       {slides.slice(0, visibleSlides).map((slide, idx) => (
         <div
           key={slide.id}
-          className="bg-white rounded-xl border border-gray-100 p-3 animate-slide-in"
+          className="bg-white/85 rounded-2xl border border-indigo-100 p-3 animate-slide-in shadow-[0_6px_18px_rgba(114,93,255,0.08)]"
           style={{ animationDelay: `${idx * 50}ms` }}
         >
           <div className="flex items-start gap-2">
@@ -203,7 +203,7 @@ export default function StreamingOutline({ slides, onComplete }: StreamingOutlin
                   {slide.content.slice(0, 2).map((c, ci) => (
                     <div key={ci} className="truncate">• {c}</div>
                   ))}
-                  {slide.content.length > 2 && <div className="text-gray-300">+{slide.content.length - 2} more</div>}
+                  {slide.content.length > 2 && <div className="text-gray-300">+{slide.content.length - 2} 条更多要点</div>}
                 </div>
               )}
             </div>
@@ -213,7 +213,7 @@ export default function StreamingOutline({ slides, onComplete }: StreamingOutlin
 
       {/* Currently typing slide */}
       {typingIdx >= 0 && typingIdx < slides.length && (
-        <div ref={currentSlideRef} className="bg-white rounded-xl border-2 border-[#EDE9FE] p-3 shadow-lg shadow-purple-100/30 animate-fade-in">
+        <div ref={currentSlideRef} className="bg-white rounded-2xl border-2 border-[#EDE9FE] p-3 shadow-lg shadow-purple-100/30 animate-fade-in">
           <div className="flex items-start gap-2">
             <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gradient-to-br from-[#5B4FE9] to-[#8B5CF6] text-white text-[10px] font-bold flex items-center justify-center">
               {typingIdx + 1}
@@ -230,7 +230,7 @@ export default function StreamingOutline({ slides, onComplete }: StreamingOutlin
 
       {/* Skeleton for upcoming slides */}
       {!done && typingIdx < 0 && visibleSlides < slides.length && (
-        <div className="bg-white rounded-xl border border-gray-100 p-3 animate-pulse">
+        <div className="bg-white/80 rounded-2xl border border-indigo-100 p-3 animate-pulse">
           <div className="flex items-start gap-2">
             <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gray-200" />
             <div className="flex-1 space-y-2">

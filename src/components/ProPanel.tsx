@@ -11,8 +11,12 @@ const GEN_MODES = [
 const COLOR_THEMES = [
   { id: 'auto', name: '智能', colors: ['#5B4FE9', '#8B5CF6', '#C4B5FD'] },
   { id: 'consultant', name: '商务蓝', colors: ['#1E40AF', '#3B82F6', '#93C5FD'] },
+  { id: 'aurora', name: '科技紫', colors: ['#6366F1', '#8B5CF6', '#A78BFA'] },
   { id: 'electric', name: '活力橙', colors: ['#EA580C', '#F97316', '#FDBA74'] },
   { id: 'chisel', name: '大地棕', colors: ['#78350F', '#A16207', '#FDE68A'] },
+  { id: 'finesse', name: '雅致米', colors: ['#FAFAF9', '#65A30D', '#A3E635'] },
+  { id: 'ash', name: '古风灰', colors: ['#1F2937', '#FFFFFF', '#6B7280'] },
+  { id: 'ashrose', name: '少女粉', colors: ['#BE185D', '#EC4899', '#F9A8D4'] },
   { id: 'blues', name: '高级金', colors: ['#1E3A5F', '#C9A96E', '#F5E6CC'] },
   { id: 'gleam', name: '科技青', colors: ['#0F766E', '#14B8A6', '#99F6E4'] },
   { id: 'founder', name: '路演紫', colors: ['#5B4FE9', '#8B5CF6', '#C4B5FD'] },
@@ -27,9 +31,9 @@ const TONES = [
 ];
 
 const IMAGE_MODES = [
-  { id: 'auto', name: '自动', desc: '智能配图' },
-  { id: 'none', name: '无图', desc: '纯文字' },
-  { id: 'web', name: '精选', desc: '商用图' },
+  { id: 'theme-img', name: '主题套图', desc: '默认' },
+  { id: 'web', name: '精选网图', desc: '商用图' },
+  { id: 'ai', name: 'AI图', desc: '定制图' },
 ];
 
 interface ProPanelProps {
@@ -110,11 +114,13 @@ export default function ProPanel({ open, onClose, genMode, setGenMode, theme, se
                 <button
                   key={t.id}
                   onClick={() => setTheme(t.id)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border transition-all cursor-pointer ${
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all cursor-pointer ${
                     theme === t.id ? 'border-[#5B4FE9] bg-[#F5F3FF]/60' : 'border-gray-100 hover:border-gray-200'
                   }`}
                 >
-                  <div className="flex gap-0.5">{t.colors.map((c, i) => <div key={i} className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c }} />)}</div>
+                  <div className="w-8 h-5 rounded border border-slate-200 overflow-hidden relative" style={{ backgroundColor: t.colors[0] }}>
+                    <span className="absolute right-0 top-0 w-3 h-2.5" style={{ backgroundColor: t.colors[1] }} />
+                  </div>
                   <span className={`text-[11px] font-medium ${theme === t.id ? 'text-[#4338CA]' : 'text-gray-500'}`}>{t.name}</span>
                 </button>
               ))}
@@ -167,17 +173,17 @@ export default function ProPanel({ open, onClose, genMode, setGenMode, theme, se
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setPages(Math.max(5, pages - 1))}
+                onClick={() => setPages(Math.max(3, pages - 1))}
                 className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:border-[#5B4FE9] hover:text-[#5B4FE9] transition-colors"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
               </button>
               <input
                 type="number"
-                min="5"
+                min="3"
                 max="30"
                 value={pages}
-                onChange={e => setPages(Math.min(30, Math.max(5, Number(e.target.value))))}
+                onChange={e => setPages(Math.min(30, Math.max(3, Number(e.target.value))))}
                 className="w-16 h-8 text-center border border-gray-200 rounded-lg text-sm font-medium text-gray-700 outline-none focus:border-[#5B4FE9]"
               />
               <span className="text-xs text-gray-400">页</span>

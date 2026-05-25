@@ -20,6 +20,14 @@ export interface OutlineMeta {
   contentStrategy?: string;
   mode?: 'generate' | 'condense' | 'preserve' | 'auto';
   wordCount?: number;
+  preprocess?: {
+    truncated?: boolean;
+    requestedMode?: 'generate' | 'condense' | 'preserve';
+    effectiveMode?: 'generate' | 'condense' | 'preserve';
+    autoAdjusted?: boolean;
+    forceRequestedMode?: boolean;
+    strictPreserve?: boolean;
+  };
   fallback?: boolean;
   _fallback?: boolean;
   _fromMarkdown?: boolean;

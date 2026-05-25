@@ -5,6 +5,7 @@ import { isCallbackIPAllowed } from '@/lib/payment';
 import { verifyWechatPayCallback } from '@/lib/payment/wechat-verify';
 import { verifyAlipayCallback, normalizeAlipayPublicKey } from '@/lib/payment/alipay-verify';
 import type { TypedSupabaseClient, CreditTransactionInsert, UserRow } from '@/lib/supabase-types';
+import { createProviderOrderIntent } from '@/lib/payment/provider-adapter';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -15,9 +16,14 @@ function getSupabase() {
 
 // ── 套餐配置 ──
 const PLAN_PRICES: Record<string, { name: string; monthly: number; annual: number; credits: number }> = {
-  basic: { name: '普通会员', monthly: 29.9, annual: 299, credits: 500 },
-  pro: { name: '高级会员', monthly: 49.9, annual: 499, credits: 1000 },
-  vip: { name: '尊享会员', monthly: 99.9, annual: 999, credits: 2000 },
+  shengxin: { name: '省心会员', monthly: 19.9, annual: 199, credits: 400 },
+  advanced: { name: '高级会员', monthly: 39.9, annual: 399, credits: 1000 },
+  // 兼容旧计划ID
+  basic: { name: '省心会员', monthly: 19.9, annual: 199, credits: 400 },
+  standard: { name: '高级会员', monthly: 39.9, annual: 399, credits: 1000 },
+  pro: { name: '高级会员', monthly: 39.9, annual: 399, credits: 1000 },
+  vip: { name: '高级会员', monthly: 39.9, annual: 399, credits: 1000 },
+  supreme: { name: '高级会员', monthly: 39.9, annual: 399, credits: 1000 },
 };
 
 // ── IP 检查已在 @/lib/payment 中统一处理 ──
@@ -48,11 +54,30 @@ async function activateSubscription(
   const currentCredits = Number((currentUser as UserRow).credits ?? 0);
   const newCredits = currentCredits + credits;
   const newPlanType = planType; // 直接升级
+  const now = new Date();
+  const nextExpire = new Date(now);
+  if (isAnnual) {
+    nextExpire.setFullYear(nextExpire.getFullYear() + 1);
+  } else {
+    nextExpire.setMonth(nextExpire.getMonth() + 1);
+  }
+  const planStartISO = now.toISOString();
+  const planExpireISO = nextExpire.toISOString();
 
-  const { error: updErr } = await typedSb.from('users').update({
+  let { error: updErr } = await typedSb.from('users').update({
     plan_type: newPlanType,
     credits: newCredits,
+    plan_started_at: planStartISO,
+    plan_expires_at: planExpireISO,
   }).eq('id', userId);
+
+  // 兼容未升级的库：无到期字段时降级为仅更新套餐和积分
+  if (updErr && String(updErr.message || '').includes('plan_started_at')) {
+    ({ error: updErr } = await typedSb.from('users').update({
+      plan_type: newPlanType,
+      credits: newCredits,
+    }).eq('id', userId));
+  }
 
   if (updErr) return { success: false, error: '开通会员失败: ' + updErr.message };
 
@@ -81,10 +106,6 @@ export async function POST(req: NextRequest) {
   const clientIP = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || req.headers.get('x-real-ip')
     || '0.0.0.0';
-  if (!isCallbackIPAllowed(clientIP)) {
-    console.warn(`[Payment] 回调IP不在白名单: ${clientIP}`);
-    return NextResponse.json({ error: '非法请求' }, { status: 403 });
-  }
 
   try {
     const body = await req.json();
@@ -123,17 +144,38 @@ export async function POST(req: NextRequest) {
 
       if (error) return NextResponse.json({ error: '创建订单失败' }, { status: 500 });
 
+      const notifyUrl = process.env.PAYMENT_NOTIFY_URL || '';
+      const intent = await createProviderOrderIntent({
+        provider: (payMethod === 'alipay' ? 'alipay' : 'wechat'),
+        orderNo,
+        amountFen: Math.round(amount * 100),
+        subject: `${plan.name}（${billingLabel}）`,
+        userId: userId || '',
+        notifyUrl,
+      });
+
       return NextResponse.json({
         order_no: orderNo,
         amount,
         product_name: `${plan.name}（${billingLabel}）`,
         billing,
         status: 'pending',
+        provider: intent.provider,
+        provider_order_id: intent.providerOrderId,
+        pay_url: intent.payUrl || null,
+        qr_code_url: intent.qrCodeUrl || null,
+        provider_mock: intent.mock,
+        provider_raw: intent.raw || null,
       });
     }
 
     // ===== 支付回调 webhook（已实现） =====
     if (action === 'callback') {
+      if (!isCallbackIPAllowed(clientIP)) {
+        console.warn(`[Payment] 回调IP不在白名单: ${clientIP}`);
+        return NextResponse.json({ error: '非法请求' }, { status: 403 });
+      }
+
       const {
         order_no,
         status: callbackStatus,
@@ -224,7 +266,7 @@ export async function POST(req: NextRequest) {
       const targetUserId = user_id || order.user_id;
       const targetPlanId = plan_id || order.metadata?.planId;
       const targetBilling = billing || order.metadata?.billing || 'monthly';
-      const plan = PLAN_PRICES[targetPlanId || 'basic'];
+      const plan = PLAN_PRICES[targetPlanId || 'shengxin'];
 
       if (!targetUserId || targetUserId === '00000000-0000-0000-000000000000') {
         console.error(`[Payment] 支付成功但userId无效: order=${order_no}, user_id=${targetUserId}`);

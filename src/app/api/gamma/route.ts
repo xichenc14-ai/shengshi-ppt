@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
-import { selectBestKey, updateKeyBalance, recordKeyFailure } from '@/lib/gamma-key-pool';
+import { selectBestKey, updateKeyBalance, recordKeyFailure, getAllKeys } from '@/lib/gamma-key-pool';
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
 import { buildGammaImageOptions, normalizeUserInput } from '@/lib/adapters/ppt-param-adapter';
 
@@ -26,10 +26,10 @@ function buildUploadedFilesInstruction(uploadedFiles: unknown): string {
 const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource: string; imageModel: string }> = {
   biz: { themeId: 'consultant', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
   pitch: { themeId: 'founder', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
-  training: { themeId: 'icebreaker', tone: 'casual', imageSource: 'noImages', imageModel: '' },
+  training: { themeId: 'cornflower', tone: 'casual', imageSource: 'themeAccent', imageModel: '' },
   creative: { themeId: 'electric', tone: 'creative', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
   education: { themeId: 'chisel', tone: 'casual', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
-  data: { themeId: 'gleam', tone: 'professional', imageSource: 'noImages', imageModel: '' },
+  data: { themeId: 'gleam', tone: 'professional', imageSource: 'themeAccent', imageModel: '' },
   annual: { themeId: 'blues', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
   launch: { themeId: 'aurora', tone: 'bold', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
   traditional: { themeId: 'chisel', tone: 'traditional', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
@@ -130,9 +130,9 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
 【配图规则】
-- 不使用外部图片,纯文字+图标+色块设计
-- 内容少的页面用装饰性元素和图标补充留白
-- 可使用图标库(Font Awesome / Material Icons)
+- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
+- 禁止与用户选择冲突：用户选网图/AI图时，不可改回纯文字页
+- 封面页、目录页、过渡页、结束页必须含图（至少主题强调图）
 
 【语言规则】
 - 所有文字使用简体中文
@@ -171,9 +171,9 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
 【配图规则】
-- 封面页使用AI生成配图
-- 配图风格:creative, vibrant, modern, bold colors, minimalist, negative space
-- 配图位置:右图或上图
+- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
+- 只有当 source=aiGenerated 时才使用 AI 生成图；source=web 时必须用网图
+- 配图风格: creative, minimalist, clean background, negative space
 
 【语言规则】
 - 所有文字使用简体中文
@@ -212,9 +212,9 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
 【配图规则】
-- 封面页使用震撼的AI生成配图
-- 配图风格:futuristic, technology, modern, sleek, minimalist, negative space
-- 配图位置:右图或上图
+- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
+- 只有当 source=aiGenerated 时才使用 AI 生成图；source=web 时必须用网图
+- 配图风格:futuristic, technology, minimalist, negative space
 
 【语言规则】
 - 所有文字使用简体中文
@@ -251,14 +251,37 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome(中式元素), 自定义祥云/水墨图标
 
 【配图规则】
-- 封面页使用中国风配图
-- 配图风格:Chinese traditional, ink wash, classical Chinese art, elegant, minimalist, negative space
-- 配图位置:右图或上图
+- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
+- source=aiGenerated 时使用国风 AI 图；source=web 时使用国风网图；source=themeAccent 使用主题强调图
+- 配图风格:Chinese traditional, elegant, minimalist, negative space
 
 【语言规则】
 - 所有文字使用简体中文
 - 保持演讲者备注(通过 > 引用块)`,
 };
+
+function buildSmartImagePolicy(source: unknown): {
+  keyPageHint: string;
+  contentPageHint: string;
+} {
+  const normalized = String(source || '').trim();
+  if (normalized === 'aiGenerated') {
+    return {
+      keyPageHint: '结构页优先使用主题强调图（themeAccent）形成统一视觉锚点',
+      contentPageHint: '内容页默认使用 AI 图（aiGenerated）；仅在生成失败时回退为 themeAccent',
+    };
+  }
+  if (normalized === 'webFreeToUseCommercially') {
+    return {
+      keyPageHint: '结构页优先使用主题强调图（themeAccent）形成统一视觉锚点',
+      contentPageHint: '内容页默认使用网图（webFreeToUseCommercially）；仅在检索失败时回退为 themeAccent',
+    };
+  }
+  return {
+    keyPageHint: '结构页使用主题强调图（themeAccent / Emphasize布局）',
+    contentPageHint: '内容页需按主题语义补足可见主图，必要时可使用 web/ai 获取更贴题图片，失败时回退 themeAccent',
+  };
+}
 
 // POST: 创建 Gamma 生成任务
 export async function POST(request: NextRequest) {
@@ -288,6 +311,7 @@ export async function POST(request: NextRequest) {
       imageMode = 'auto',
       slides,
       visualMetaphor,
+      strictPreserve = false,
       // 省心模式传的完整参数
       additionalInstructions,
       imageOptions,
@@ -295,23 +319,25 @@ export async function POST(request: NextRequest) {
       cardSplit,
       textOptions,
       uploadedFiles,
+      auto = false,
     } = body;
 
     // 🚨 D1: Normalize aliased fields → canonical PptUserInput
     const normalized = normalizeUserInput(body as Record<string, unknown>);
     const pageCount = normalized.pageCount ?? 8;
+    const isSmartFlow = Boolean(auto) || normalized.auto === true;
 
     // 支持结构化 slides 数据或纯文本 inputText
     let finalInputText: string;
-    // 🚨 Bug fix: reject whitespace-only input BEFORE any processing
-    // 否则 "   " 会变成 "# \n\n---\n" 并通过后续验证
-    if (!inputText || typeof inputText !== 'string' || !inputText.trim()) {
-      return NextResponse.json({ error: '请输入内容' }, { status: 400 });
-    }
+    const normalizedInputText =
+      typeof normalized.inputText === 'string' ? normalized.inputText : '';
+    const requestInputText = typeof inputText === 'string' ? inputText : '';
+    const effectiveInputText = requestInputText || normalizedInputText;
+    const hasTextInput = effectiveInputText.trim().length > 0;
 
-    if (inputText && inputText.trim()) {
+    if (hasTextInput) {
       // 优先使用 inputText(已由前端 buildMdV2 处理过的高质量 markdown)
-      finalInputText = inputText.trim();
+      finalInputText = effectiveInputText.trim();
       // 短内容自动增强结构
       if (finalInputText.length < 100) {
         finalInputText = `# ${finalInputText}\n\n---\n`;
@@ -325,14 +351,6 @@ export async function POST(request: NextRequest) {
         return `## ${s.title}\n\n${content}`;
       }).join('\n\n---\n\n');
       finalInputText = `# ${slides[0]?.title || 'PPT'}\n\n${markdown}`;
-    } else if (inputText) {
-      finalInputText = inputText.trim();
-      // 短内容自动增强结构
-      if (finalInputText.length < 100) {
-        finalInputText = `# ${finalInputText}\n\n---\n`;
-      } else if (!finalInputText.includes('---')) {
-        finalInputText = finalInputText.split(/\n\n+/).filter((p: string) => p.trim()).join('\n\n---\n\n');
-      }
     } else {
       return NextResponse.json({ error: '请输入内容' }, { status: 400 });
     }
@@ -376,6 +394,9 @@ export async function POST(request: NextRequest) {
         ? (imageOptions as Record<string, unknown>)
         : undefined
     );
+    if (finalImageOptions?.source === 'noImages') {
+      finalImageOptions.source = 'themeAccent';
+    }
 
     const instructions = INSTRUCTION_TEMPLATES[finalTone] || INSTRUCTION_TEMPLATES.professional;
     // P0修复：追加全局视觉隐喻（如果提供）
@@ -391,14 +412,26 @@ export async function POST(request: NextRequest) {
       + buildUploadedFilesInstruction(uploadedFiles)
       + '\n\n【图标规范-统一风格】\n使用Gamma内置的图标系统(Icons),保持风格统一:简洁、线性、单色、与主题色一致。禁止混用不同风格的图标(不要同时使用emoji和线性图标)。每页2-4个图标,用于要点标记和视觉装饰。禁止出现无图标的页面。';
     const isThemeAccentMode = finalImageOptions?.source === 'themeAccent';
+    const imagePolicy = buildSmartImagePolicy(finalImageOptions?.source);
+    finalAdditionalInstructions += `\n\n【图片策略-强制】\n1. 封面页、目录页、章节过渡页、结束页：必须配图，${imagePolicy.keyPageHint}。\n2. 内容页必须有可见图片主体（非纯图标），按“每页至少1个主视觉”执行，禁止纯文字白板。\n3. ${imagePolicy.contentPageHint}。\n4. 当来源为 web/ai 时，内容页一旦配图必须使用对应来源，不得偷偷替换为其它来源。\n5. 当来源为 web/ai 时，内容页中至少 70% 页面使用该来源配图（仅文字极密页可例外）。\n6. 任何页面都禁止空图片占位、灰框占位或无图输出；若失败必须即时回退 themeAccent 保证有图。`;
     if (normalized.textMode === 'preserve') {
       // 🚨 V6修复：追加CRITICAL强制指令，封锁Gamma的发散权限
       finalAdditionalInstructions += '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作、扩写或修改任何事实信息。严格按照提供的Markdown层级和\'---\'分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。保持所有 \'>\' 作为演讲者备注不做展示。';
       if (isThemeAccentMode) {
-        finalAdditionalInstructions += '\n\n【视觉丰富度-强制规则】\n1. 每页必须使用Gamma内置的Emphasize卡片布局(主题强调布局图),每页不同的布局变体\n2. 每页必须有视觉元素(图片/插图/图标/装饰),禁止出现纯文字页\n3. 使用主题套图(themeAccent)作为配图来源,确保图片与内容主题匹配\n4. 封面页和结尾页必须使用大幅背景图/强调图\n5. 数据页使用卡片式布局展示指标,配合图标和色彩区分';
+        finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页必须使用主题强调图；内容页默认图标+色块，只有内容稀疏时再加图。禁止输出无图页面。';
+      }
+      if (Boolean(strictPreserve)) {
+        finalAdditionalInstructions += '\n\n【严格保真开关】\n禁止改写或重命名标题；禁止添加“续页”后缀；禁止在正文中注入填充提示语或额外说明。';
+        if (isSmartFlow) {
+          finalAdditionalInstructions += '\n【省心模式保真补充】\n在不改写正文的前提下，必须执行图片策略：为结构页和关键页补足可见配图，禁止输出纯文字大白板。';
+        } else {
+          finalAdditionalInstructions += '\n【专业模式保真补充】\n保留Markdown结构即可，可按图片策略补图，但不要改变正文事实。';
+        }
       }
     } else if (isThemeAccentMode) {
-      finalAdditionalInstructions += '\n\n【视觉丰富度-强制规则】\n1. 每页必须配图:使用Pexels高质量照片,风格professional/clean/minimalist\n2. 每页使用Gamma内置的Emphasize强调布局,每页不同的布局变体\n3. 封面页和结尾页必须使用大幅背景图\n4. 禁止出现纯文字页,每页必须有视觉元素';
+      finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页必须使用主题强调图；内容页按留白情况择优补图，不强制每页都上图，但禁止无图页面。';
+    } else {
+      finalAdditionalInstructions += '\n\n【网图/AI图关键页策略】\n首屏封面必须有可见主图，不允许纯文字封面；若本次图片源检索或生成失败，必须回退为主题强调图(themeAccent)保证封面有图。';
     }
 
     // 🚨 P0 Fix: 使用解构排除 slides，不使用 delete 语句
@@ -449,7 +482,7 @@ export async function POST(request: NextRequest) {
       // 记录Key失败
       recordKeyFailure(apiKey);
       return NextResponse.json(
-        { error: `Gamma API 调用失败: ${gammaResponse.status}`, detail: errText.substring(0, 500) },
+        { error: `生成服务调用失败: ${gammaResponse.status}`, detail: errText.substring(0, 500) },
         { status: 502 }
       );
     }
@@ -498,7 +531,8 @@ export async function GET(request: NextRequest) {
   if (isIPBlocked(ip)) {
     return NextResponse.json({ error: '请求受限' }, { status: 403 });
   }
-  const { allowed } = rateLimit(`gamma_get:${ip}`, getRateLimitConfig('/api/gamma'));
+  // 状态查询与创建任务分开限流：轮询阶段允许更高频率，避免误伤前端进度查询
+  const { allowed } = rateLimit(`gamma_get:${ip}`, { windowMs: 60 * 1000, maxRequests: 80 });
   if (!allowed) {
     return NextResponse.json({ error: '查询过于频繁,请稍后再试' }, { status: 429 });
   }
@@ -511,29 +545,42 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '缺少 generationId' }, { status: 400 });
     }
 
-    // GET查询可以使用任意key（generationId不依赖key）
-    const selectedKey = selectBestKey();
-    const apiKey = selectedKey.key;
+    // GET查询按 key 池重试，避免单 key 限流导致“已生成但状态丢失”
+    const first = selectBestKey();
+    const orderedKeys = [first, ...getAllKeys().filter((k) => k.key !== first.key)];
+    const maxAttempts = Math.min(4, orderedKeys.length);
+    let lastStatus = 502;
+    let lastErrorText = '查询失败';
 
-    const response = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
-      headers: {
-        'X-API-KEY': apiKey,
-        'User-Agent': GAMMA_UA,
-      },
-    });
+    for (let i = 0; i < maxAttempts; i++) {
+      const current = orderedKeys[i];
+      const response = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
+        headers: {
+          'X-API-KEY': current.key,
+          'User-Agent': GAMMA_UA,
+        },
+      });
 
-    if (!response.ok) {
-      return NextResponse.json({ error: `查询失败: ${response.status}` }, { status: 502 });
+      if (!response.ok) {
+        lastStatus = response.status;
+        await response.text().catch(() => '');
+        lastErrorText = `查询失败: ${response.status}`;
+        // 仅在显式限流/鉴权失败时记失败并切换下一个 key
+        if (response.status === 429 || response.status === 401 || response.status === 403 || response.status >= 500) {
+          recordKeyFailure(current.key);
+          continue;
+        }
+        return NextResponse.json({ error: lastErrorText }, { status: 502 });
+      }
+
+      const data = await response.json();
+      if (data.status === 'completed' && data.credits) {
+        updateKeyBalance(current.key, data.credits.deducted, data.credits.remaining);
+      }
+      return NextResponse.json(data);
     }
 
-    const data = await response.json();
-    
-    // 🚨 V8: 更新积分信息（completed状态时）
-    if (data.status === 'completed' && data.credits) {
-      updateKeyBalance(apiKey, data.credits.deducted, data.credits.remaining);
-    }
-    
-    return NextResponse.json(data);
+    return NextResponse.json({ error: `${lastErrorText}（已重试${maxAttempts}个Key）`, status: lastStatus }, { status: 502 });
   } catch (error: any) {
     console.error('Gamma status error:', error);
     return NextResponse.json({ error: error.message || '查询失败' }, { status: 500 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClientIP, rateLimit } from '@/lib/rate-limit';
+import { LIMITS } from '@/lib/input-validation';
 
 export const runtime = 'nodejs';
 
@@ -9,6 +10,19 @@ function normalizeExtractedText(raw: string): string {
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+function decodeXmlEntities(text: string): string {
+  return text
+    .replace(/&#x0*A;/gi, '\n')
+    .replace(/&#10;/g, '\n')
+    .replace(/&#x0*9;/gi, '\t')
+    .replace(/&#9;/g, '\t')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
 }
 
 async function parsePdfWithPdfParse(buffer: Buffer): Promise<string> {
@@ -78,10 +92,11 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
+    const skipTables = String(formData.get('skipTables') || '').toLowerCase() === 'true';
 
     if (!file) return NextResponse.json({ error: '未提供文件' }, { status: 400 });
-    if (file.size > 50 * 1024 * 1024) {
-      return NextResponse.json({ error: '文件超过50MB限制' }, { status: 400 });
+    if (file.size > LIMITS.MAX_FILE_SIZE) {
+      return NextResponse.json({ error: `文件超过${Math.floor(LIMITS.MAX_FILE_SIZE / 1024 / 1024)}MB限制` }, { status: 400 });
     }
 
     const fileName = file.name.toLowerCase();
@@ -97,8 +112,15 @@ export async function POST(request: NextRequest) {
         error = 'PDF 未提取到可用文字（可能是扫描件）';
       }
     } else if (fileName.endsWith('.csv')) {
-      text = buffer.toString('utf-8').trim() || `[CSV: ${file.name}，内容为空]`;
+      if (skipTables) {
+        text = `[表格文件已上传: ${file.name}，默认未展开表格明细。若需解析表格，请在需求中明确说明“处理表格数据”。]`;
+      } else {
+        text = buffer.toString('utf-8').trim() || `[CSV: ${file.name}，内容为空]`;
+      }
     } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+      if (skipTables) {
+        text = `[表格文件已上传: ${file.name}，默认未展开表格明细。若需解析表格，请在需求中明确说明“处理表格数据”。]`;
+      } else {
       try {
         const XLSX = await import('xlsx');
         const workbook = XLSX.read(buffer, { type: 'buffer' });
@@ -112,6 +134,7 @@ export async function POST(request: NextRequest) {
         failed = true;
         error = `Excel解析失败: ${e.message || '未知错误'}`;
       }
+      }
     } else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
       try {
         const mammoth = await import('mammoth');
@@ -123,7 +146,8 @@ export async function POST(request: NextRequest) {
       }
     } else if (fileName.endsWith('.pptx') || fileName.endsWith('.ppt')) {
       try {
-        const JSZip = await import('jszip');
+        const JSZipModule = await import('jszip');
+        const JSZip = (JSZipModule.default ?? JSZipModule) as { loadAsync: (input: Buffer) => Promise<any> };
         const zip = await JSZip.loadAsync(buffer);
         const slides: string[] = [];
         const files = Object.keys(zip.files)
@@ -132,8 +156,11 @@ export async function POST(request: NextRequest) {
         for (const f of files) {
           const c = await zip.file(f)?.async('text');
           if (c) {
-            const ts = (c.match(/<a:t>([^<]*)<\/a:t>/g) || []).map(t => t.replace(/<\/?a:t>/g, ''));
-            if (ts.join('').trim()) slides.push(ts.join(' '));
+            const matches = Array.from(c.matchAll(/<a:t[^>]*>([\s\S]*?)<\/a:t>/g));
+            const ts = matches
+              .map((m) => decodeXmlEntities(m[1] || '').trim())
+              .filter(Boolean);
+            if (ts.length > 0) slides.push(ts.join(' '));
           }
         }
         text = slides.join('\n\n---\n\n') || `[PPT: ${file.name}，无文本内容]`;
@@ -158,7 +185,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (text.length > 80000) text = text.substring(0, 80000) + '\n\n[...内容已截断...]';
+    if (text.length > LIMITS.MAX_EXTRACTED_CHARS_PER_FILE) {
+      text = text.substring(0, LIMITS.MAX_EXTRACTED_CHARS_PER_FILE) + '\n\n[...内容已截断...]';
+    }
 
     return NextResponse.json({
       text,

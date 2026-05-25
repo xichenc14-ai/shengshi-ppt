@@ -111,11 +111,25 @@ export async function POST(request: NextRequest) {
 
       // 更新计数
       const updates: any = {};
-      updates.ppt_trial_count_month = (user.ppt_trial_count_month || 0) + 1;
+      if ((user.plan_type || 'free') === 'free') {
+        updates.ppt_trial_count_month = (user.ppt_trial_count_month || 0) + 1;
+      }
 
       if (Object.keys(updates).length > 0) {
         await sb.from('users').update(updates).eq('id', userId);
       }
+
+      // 统一记录下载行为（便于后台审计）
+      try {
+        const latestBalance = Number((user as { credits?: number | null }).credits || 0);
+        await sb.from('credit_transactions').insert({
+          user_id: userId,
+          amount: 0,
+          balance_after: latestBalance,
+          type: permission.needPayment ? 'download_pending_payment' : (user.plan_type === 'free' ? 'download_trial' : 'download_member'),
+          description: `PPTX下载-${pageCount}页-${user.plan_type || 'free'}`,
+        });
+      } catch {}
 
       return NextResponse.json({
         success: true,

@@ -5,9 +5,21 @@ import { useAuth } from '@/lib/auth-context';
 
 // 收款码图片映射
 const QR_CODE_MAP: Record<string, Record<'monthly' | 'annual', string>> = {
+  'shengxin': {
+    monthly: '/payment-qrcodes/basic-monthly.jpg',
+    annual: '/payment-qrcodes/basic-annual.jpg',
+  },
+  'advanced': {
+    monthly: '/payment-qrcodes/pro-monthly.jpg',
+    annual: '/payment-qrcodes/pro-annual.jpg',
+  },
   'basic': {
     monthly: '/payment-qrcodes/basic-monthly.jpg',
     annual: '/payment-qrcodes/basic-annual.jpg',
+  },
+  'standard': {
+    monthly: '/payment-qrcodes/pro-monthly.jpg',
+    annual: '/payment-qrcodes/pro-annual.jpg',
   },
   'pro': {
     monthly: '/payment-qrcodes/pro-monthly.jpg',

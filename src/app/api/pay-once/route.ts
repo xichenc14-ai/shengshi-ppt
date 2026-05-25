@@ -13,8 +13,8 @@ export async function POST(req: NextRequest) {
   const sb = getSupabase();
   if (!sb) return NextResponse.json({ error: '服务未配置' }, { status: 503 });
   try {
-    const { userId, pptxUrl, pageCount, filename } = await req.json();
-    if (!userId || !pptxUrl) return NextResponse.json({ error: '参数不全' }, { status: 400 });
+    const { userId, generationId, pageCount, filename } = await req.json();
+    if (!userId || !generationId) return NextResponse.json({ error: '参数不全' }, { status: 400 });
 
     const PRICE_PER_PAGE = 0.2; // 每页2毛
     const total = Math.round(pageCount * PRICE_PER_PAGE * 100) / 100;
@@ -46,20 +46,23 @@ export async function POST(req: NextRequest) {
       .eq('id', userId)
       .select('credits').single();
 
-    // 记录下载
-    await sb.from('downloads').insert({
-      user_id: userId,
-      page_count: pageCount,
-      format: 'pptx',
-      cost: neededCredits,
-    });
+    // 记录下载（统一入积分流水，避免依赖缺失表）
+    try {
+      await sb.from('credit_transactions').insert({
+        user_id: userId,
+        amount: -neededCredits,
+        balance_after: updated?.credits || 0,
+        type: 'download_paid',
+        description: `按页付费下载PPTX-${pageCount}页-扣${neededCredits}积分`,
+      });
+    } catch {}
 
-    // 返回PPTX文件的代理URL（前端拿到后下载）
+    // 返回PPTX文件代理下载链接（前端拿到后下载）
     return NextResponse.json({
       success: true,
       cost: neededCredits,
       remainingCredits: updated?.credits || 0,
-      downloadUrl: `/api/export?url=${encodeURIComponent(pptxUrl)}&name=${encodeURIComponent(filename || '省心PPT.pptx')}`,
+      downloadUrl: `/api/export-pptx?generationId=${encodeURIComponent(generationId)}&name=${encodeURIComponent(filename || '省心PPT.pptx')}`,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

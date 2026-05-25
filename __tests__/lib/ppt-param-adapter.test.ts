@@ -17,14 +17,21 @@ describe('ppt-param-adapter', () => {
     expect(normalized.imageSource).toBe('web');
   });
 
-  it('maps app image modes to Gamma sources and avoids themeAccent on dark themes', () => {
+  it('maps app image modes to Gamma sources', () => {
     expect(buildGammaImageOptions('theme-img', 'consultant').source).toBe('themeAccent');
-    expect(buildGammaImageOptions('theme-img', 'founder').source).toBe('webFreeToUseCommercially');
+    expect(buildGammaImageOptions('theme-img', 'founder').source).toBe('themeAccent');
     expect(buildGammaImageOptions('weballimages', 'consultant').source).toBe('webFreeToUseCommercially');
     expect(buildGammaImageOptions('webfreetouse', 'consultant').source).toBe('webFreeToUseCommercially');
     expect(buildGammaImageOptions('ai-pro', 'consultant')).toMatchObject({
       source: 'aiGenerated',
       model: 'imagen-3-pro',
     });
+  });
+
+  it('keeps explicit imageSource priority over stale imageOptions.source', () => {
+    const options = buildGammaImageOptions('webFreeToUseCommercially', 'consultant', {
+      source: 'themeAccent',
+    });
+    expect(options.source).toBe('webFreeToUseCommercially');
   });
 });

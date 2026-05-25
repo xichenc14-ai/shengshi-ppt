@@ -23,6 +23,7 @@ vi.mock('@/lib/deepseek-client', () => ({
 import { POST } from '@/app/api/outline/route';
 import { callMiniMaxWithRetry } from '@/lib/minimax-client';
 import { callDeepSeekWithRetry } from '@/lib/deepseek-client';
+import { LIMITS } from '@/lib/input-validation';
 
 function mockRequest(body: Record<string, unknown> = {}) {
   return new Request('http://localhost/api/outline', {
@@ -45,8 +46,8 @@ describe('POST /api/outline', () => {
     expect(res.status).toBe(400);
   });
 
-  it('should return 400 when inputText exceeds 10000 chars', async () => {
-    const res = await POST(mockRequest({ inputText: 'a'.repeat(10001) }));
+  it('should return 400 when inputText exceeds limit', async () => {
+    const res = await POST(mockRequest({ inputText: 'a'.repeat(LIMITS.MAX_TEXT_LENGTH + 1) }));
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toContain('过长');
@@ -98,6 +99,36 @@ describe('POST /api/outline', () => {
     expect(data.imageMode).toBe('web');
   });
 
+  it('should normalize ai imageMode aliases to canonical values', async () => {
+    vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
+      title: '图片模式规范化',
+      scene: '商务汇报',
+      themeId: 'consultant',
+      tone: 'professional',
+      imageMode: 'webFreeToUseCommercially',
+      slides: [{ title: '封面', content: ['测试'] }, { title: '结尾', content: ['完成'] }],
+    }));
+    const res = await POST(mockRequest({ inputText: '测试内容' }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.imageMode).toBe('web');
+  });
+
+  it('should fallback noImages style aliases to theme-img', async () => {
+    vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
+      title: '无图回退',
+      scene: '商务汇报',
+      themeId: 'consultant',
+      tone: 'professional',
+      imageMode: 'noImages',
+      slides: [{ title: '封面', content: ['测试'] }, { title: '结尾', content: ['完成'] }],
+    }));
+    const res = await POST(mockRequest({ inputText: '测试内容' }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.imageMode).toBe('theme-img');
+  });
+
   it('should return fallback outline when all LLM providers fail', async () => {
     vi.mocked(callMiniMaxWithRetry).mockRejectedValue(new Error('MiniMax error'));
     vi.mocked(callDeepSeekWithRetry).mockRejectedValue(new Error('DeepSeek error'));
@@ -109,4 +140,26 @@ describe('POST /api/outline', () => {
     expect(Array.isArray(data.slides)).toBe(true);
     expect(data.slides.length).toBeGreaterThanOrEqual(3);
   });
+
+  it('should prefer coffee scene theme and smart default image mode in smart mode even when AI suggests dark fallback theme', async () => {
+    vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
+      title: '咖啡介绍',
+      scene: '通用',
+      themeId: 'founder',
+      tone: 'professional',
+      imageMode: 'theme-img',
+      slides: [{ title: '封面', content: ['测试'] }, { title: '结尾', content: ['完成'] }],
+    }));
+
+    const res = await POST(mockRequest({
+      inputText: '请做一份咖啡文化介绍，5页',
+      auto: true,
+    }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.scene).toBe('餐饮美食');
+    expect(data.themeId).toBe('finesse');
+    expect(data.imageMode).toBe('web');
+  });
+
 });

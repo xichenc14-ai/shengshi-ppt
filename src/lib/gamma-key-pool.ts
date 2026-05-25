@@ -10,11 +10,13 @@ interface KeyInfo {
   lastUsed: Date;
   successCount: number;
   failCount: number;
+  lastFailureAt?: Date;
 }
 
 // 积分阈值配置
 const LOW_BALANCE_THRESHOLD = 500; // 低余额预警（仅用于日志提示，不影响选择）
 const MIN_BALANCE_THRESHOLD = 100; // 最低可用余额
+const FAILURE_COOLDOWN_MS = 90 * 1000;
 
 /**
  * 从环境变量加载 Gamma API Keys
@@ -112,6 +114,7 @@ function loadKeyPool(): KeyInfo[] {
 
 // 动态加载Key池（运行时从环境变量读取）
 let KEY_POOL: KeyInfo[] | null = null;
+let KEY_CURSOR = 0;
 
 function getKeyPool(): KeyInfo[] {
   if (!KEY_POOL) {
@@ -125,6 +128,7 @@ function getKeyPool(): KeyInfo[] {
  */
 export function reloadKeyPool(): void {
   KEY_POOL = null;
+  KEY_CURSOR = 0;
   getKeyPool(); // 验证能正常加载
 }
 
@@ -134,18 +138,34 @@ export function reloadKeyPool(): void {
  */
 export function selectBestKey(): KeyInfo {
   const pool = getKeyPool();
-  // 过滤可用key（余额>=最低阈值）
-  const availableKeys = pool.filter(k => k.remaining >= MIN_BALANCE_THRESHOLD);
+  const now = Date.now();
+  const isCooling = (key: KeyInfo) =>
+    Boolean(key.lastFailureAt && now - key.lastFailureAt.getTime() < FAILURE_COOLDOWN_MS);
 
-  if (availableKeys.length === 0) {
+  // 过滤可用key（余额>=最低阈值）
+  const availableKeys = pool.filter(k => k.remaining >= MIN_BALANCE_THRESHOLD && !isCooling(k));
+
+  const fallbackKeys = availableKeys.length > 0
+    ? availableKeys
+    : pool.filter(k => k.remaining >= MIN_BALANCE_THRESHOLD);
+
+  if (fallbackKeys.length === 0) {
     throw new Error('所有Gamma API Key余额不足');
   }
 
-  // 按余额降序排序
-  availableKeys.sort((a, b) => b.remaining - a.remaining);
+  // 先按健康度和余额排序，再在前几名里轮询，降低同Key限流风险
+  fallbackKeys.sort((a, b) => {
+    const aScore = a.remaining - a.failCount * 20;
+    const bScore = b.remaining - b.failCount * 20;
+    if (bScore !== aScore) return bScore - aScore;
+    return a.lastUsed.getTime() - b.lastUsed.getTime();
+  });
 
-  // 选择余额最高的key
-  const bestKey = availableKeys[0];
+  const roundWindow = Math.min(3, fallbackKeys.length);
+  const pickIndex = KEY_CURSOR % roundWindow;
+  const bestKey = fallbackKeys[pickIndex];
+  KEY_CURSOR = (KEY_CURSOR + 1) % Math.max(1, roundWindow);
+  bestKey.lastUsed = new Date();
 
   return bestKey;
 }
@@ -177,6 +197,7 @@ export function recordKeyFailure(key: string): void {
   if (keyInfo) {
     keyInfo.failCount++;
     keyInfo.lastUsed = new Date();
+    keyInfo.lastFailureAt = new Date();
   }
 }
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { generateMinimalOutline } from '@/lib/ppt-param-adapter';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
   const requestedSlides = Number(body.slideCount || body.numCards || 0) || 8;
   const autoMode = Boolean(body.auto);
   const requestedMode = String(body.textMode || 'preserve');
-  const detectedFileCount = (inputText.match(/\[[^\]]+\]/g) || []).length;
+  const detectedFileCount = (inputText.match(/\[附件:[^\]]+\]/g) || []).length;
 
   const modeLabel = autoMode
     ? '智能预处理'
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
         push({
           type: 'stage',
           stage: 'planning',
-          message: `正在执行「${modeLabel}」策略，目标 ${requestedSlides} 页结构化大纲...`,
+          message: `正在按「${modeLabel}」处理方式整理内容，目标 ${requestedSlides} 页大纲...`,
         });
 
         const outlineRes = await fetch(`${origin}/api/outline`, {
@@ -85,8 +86,24 @@ export async function POST(request: NextRequest) {
         }
 
         if (!outlineRes.ok || !parsed) {
-          const message = parsed?.error || `大纲生成失败(${outlineRes.status})`;
-          push({ type: 'error', status: outlineRes.status, message });
+          const fallback = generateMinimalOutline(inputText, requestedSlides);
+          push({ type: 'stage', stage: 'polishing', message: '已切换稳态兜底大纲，正在完成...' });
+          push({
+            type: 'complete',
+            data: {
+              title: fallback.title,
+              slides: fallback.slides.map((s, i) => ({
+                id: `stream-fb-${i + 1}`,
+                title: s.title,
+                content: s.bullets,
+                notes: s.notes,
+              })),
+              themeId: 'consultant',
+              tone: 'professional',
+              imageMode: 'theme-img',
+              _fallback: true,
+            },
+          });
           controller.close();
           return;
         }
@@ -104,10 +121,23 @@ export async function POST(request: NextRequest) {
         await sleep(80);
         push({ type: 'complete', data: parsed });
       } catch (e: any) {
+        const fallback = generateMinimalOutline(inputText, requestedSlides);
+        push({ type: 'stage', stage: 'polishing', message: '网络波动，已切换稳态大纲...' });
         push({
-          type: 'error',
-          status: 500,
-          message: e?.message || '流式生成中断，请重试',
+          type: 'complete',
+          data: {
+            title: fallback.title,
+            slides: fallback.slides.map((s, i) => ({
+              id: `stream-fb-${i + 1}`,
+              title: s.title,
+              content: s.bullets,
+              notes: s.notes,
+            })),
+            themeId: 'consultant',
+            tone: 'professional',
+            imageMode: 'theme-img',
+            _fallback: true,
+          },
         });
       } finally {
         controller.close();

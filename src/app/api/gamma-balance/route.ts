@@ -1,11 +1,8 @@
 import { NextResponse } from 'next/server';
-import { getKeyPoolStatus } from '@/lib/gamma-key-pool';
+import { getAllKeys, getKeyPoolStatus, selectBestKey } from '@/lib/gamma-key-pool';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-
-// 硬编码的可用 Gamma key（用于 /me 查询）
-const FALLBACK_KEY = 'sk-gamma-aN5tVoqv26bND6vl7eIfaNzY5ffx20725LbgEnlSw';
 
 // GET: 查询 Gamma API 账户信息（管理/监控用）
 // 注意：Gamma API 没有 /account 端点，余额从 key-pool 追踪
@@ -14,9 +11,17 @@ export async function GET() {
   try {
     // 1. 获取 workspace 信息（/me 端点可用）
     let workspaceInfo = null;
-    const apiKey = FALLBACK_KEY;
+    const allKeys = getAllKeys();
+    const apiKey = (() => {
+      try {
+        return selectBestKey().key;
+      } catch {
+        return allKeys[0]?.key || '';
+      }
+    })();
 
     try {
+      if (!apiKey) throw new Error('无可用 Gamma Key');
       const meRes = await fetch(`${GAMMA_API_BASE}/me`, {
         headers: {
           'X-API-KEY': apiKey,

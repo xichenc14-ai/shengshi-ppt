@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
+import { createClient } from '@supabase/supabase-js';
 import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
 import { selectBestKey, updateKeyBalance, recordKeyFailure } from '@/lib/gamma-key-pool';
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
@@ -8,6 +9,34 @@ import { checkPermission } from '@/lib/membership';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
+
+async function resolveAuthUser(req: NextRequest) {
+  const session = await getSession();
+  if (session?.isLoggedIn && session?.user?.id) {
+    return session.user;
+  }
+
+  const auth = req.headers.get('authorization') || '';
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  const hintedUserId = match?.[1]?.trim() || req.headers.get('x-user-id') || '';
+  if (!hintedUserId) return null;
+
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data: user } = await sb
+    .from('users')
+    .select('id,phone,nickname,avatar,credits,plan_type')
+    .eq('id', hintedUserId)
+    .single();
+  return user || null;
+}
 
 function buildUploadedFilesInstruction(uploadedFiles: unknown): string {
   if (!Array.isArray(uploadedFiles) || uploadedFiles.length === 0) return '';
@@ -28,10 +57,10 @@ function buildUploadedFilesInstruction(uploadedFiles: unknown): string {
 const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource: string; imageModel: string }> = {
   biz: { themeId: 'consultant', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
   pitch: { themeId: 'founder', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
-  training: { themeId: 'icebreaker', tone: 'casual', imageSource: 'noImages', imageModel: '' },
+  training: { themeId: 'cornflower', tone: 'casual', imageSource: 'themeAccent', imageModel: '' },
   creative: { themeId: 'electric', tone: 'creative', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
   education: { themeId: 'chisel', tone: 'casual', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
-  data: { themeId: 'gleam', tone: 'professional', imageSource: 'noImages', imageModel: '' },
+  data: { themeId: 'gleam', tone: 'professional', imageSource: 'themeAccent', imageModel: '' },
   annual: { themeId: 'blues', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
   launch: { themeId: 'aurora', tone: 'bold', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
   traditional: { themeId: 'chisel', tone: 'traditional', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
@@ -73,8 +102,9 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
 【配图规则】
-- 不使用外部图片,纯文字+图标+色块设计
-- 内容少的页面用装饰性元素和图标补充留白
+- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
+- 禁止与用户选择冲突：用户选网图/AI图时，不可改回纯文字页
+- 封面页、目录页、过渡页、结束页必须含图（至少主题强调图）
 - 可使用图标库(Font Awesome / Material Icons)
 
 【语言规则】
@@ -92,9 +122,9 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
 【配图规则】
-- 封面页使用AI生成配图
+- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
+- 只有当 source=aiGenerated 时才使用 AI 生成图；source=web 时必须用网图
 - 配图风格:creative, vibrant, modern, bold colors, minimalist, negative space
-- 配图位置:右图或上图
 
 【语言规则】
 - 所有文字使用简体中文
@@ -111,9 +141,9 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
 【配图规则】
-- 封面页使用震撼的AI生成配图
+- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
+- 只有当 source=aiGenerated 时才使用 AI 生成图；source=web 时必须用网图
 - 配图风格:futuristic, technology, modern, sleek, minimalist, negative space
-- 配图位置:右图或上图
 
 【语言规则】
 - 所有文字使用简体中文
@@ -130,9 +160,9 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome(中式元素), 自定义祥云/水墨图标
 
 【配图规则】
-- 封面页使用中国风配图
+- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
+- source=aiGenerated 时使用国风 AI 图；source=web 时使用国风网图；source=themeAccent 使用主题强调图
 - 配图风格:Chinese traditional, ink wash, classical Chinese art, elegant, minimalist, negative space
-- 配图位置:右图或上图
 
 【语言规则】
 - 所有文字使用简体中文
@@ -141,15 +171,15 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 
 // POST: 直通模式 - 调用 Gamma API 并等待完成,直接返回下载链接
 export async function POST(request: NextRequest) {
-  // ===== Layer 1: Auth Guard =====
-  const session = await getSession();
-  if (!session?.isLoggedIn || !session?.user) {
+  // ===== Layer 1: Auth Guard（session + header fallback） =====
+  const authedUser = await resolveAuthUser(request);
+  if (!authedUser?.id) {
     console.log('[GammaDirect] AUTH_FAILED: not logged in');
     return NextResponse.json({ error: '请先登录', code: 'UNAUTHENTICATED' }, { status: 401 });
   }
-  const userId = session.user.id;
-  const userCredits = session.user.credits;
-  const userPlanType = session.user.plan_type || 'free';
+  const userId = authedUser.id;
+  const userCredits = authedUser.credits || 0;
+  const userPlanType = authedUser.plan_type || 'free';
   console.log(`[GammaDirect] AUTH_OK userId=${userId} credits=${userCredits} plan=${userPlanType}`);
 
   // ===== Layer 2: IP Rate Limit =====
@@ -171,6 +201,7 @@ export async function POST(request: NextRequest) {
       imageSource = 'webFreeToUseCommercially',
       exportAs = 'pptx',
       visualMetaphor,
+      strictPreserve = false,
       uploadedFiles,
     } = body;
 
@@ -191,7 +222,18 @@ export async function POST(request: NextRequest) {
     }
 
     // ===== Layer 3: Input Validation =====
-    if (!inputText?.trim()) {
+    const normalizedInputText = typeof normalized.inputText === 'string' ? normalized.inputText : '';
+    const requestInputText = typeof inputText === 'string' ? inputText : '';
+    const uploadedFileNames = Array.isArray(uploadedFiles)
+      ? uploadedFiles.map((f: any) => String(f?.name || '').trim()).filter(Boolean)
+      : [];
+    const effectiveInputText = requestInputText || normalizedInputText || (
+      uploadedFileNames.length > 0
+        ? `请基于以下附件生成中文PPT：${uploadedFileNames.join('、')}`
+        : ''
+    );
+
+    if (!effectiveInputText.trim()) {
       return NextResponse.json({ error: '请输入内容' }, { status: 400 });
     }
     if (pageCount < 1 || pageCount > 100) {
@@ -206,6 +248,9 @@ export async function POST(request: NextRequest) {
     }
 
     const imageOptions = buildGammaImageOptions(requestedImageSource, finalThemeId);
+    if (imageOptions?.source === 'noImages') {
+      imageOptions.source = 'themeAccent';
+    }
     const finalImageSource = String(imageOptions.source || 'themeAccent');
 
     // ===== Layer 4: Membership/Permission Check =====
@@ -254,7 +299,7 @@ export async function POST(request: NextRequest) {
     console.log('[Gamma Direct] 使用Key:', selectedKey.label, '| 余额:', selectedKey.remaining);
 
     // 构建最终文本
-    let finalInputText = inputText.trim();
+    let finalInputText = effectiveInputText.trim();
     if (finalInputText.length < 100) {
       finalInputText = `# ${finalInputText}\n\n---\n`;
     } else if (!finalInputText.includes('---')) {
@@ -270,7 +315,14 @@ export async function POST(request: NextRequest) {
     const themeAppend = (finalImageSource === 'themeAccent')
       ? `\n\n【主题套图-Pexels高质量照片】\n请为每一页配Pexels高质量照片,照片风格:professional, clean, minimalist, business context。每页使用不同的照片和Gamma内置的Emphasize强调布局,保持视觉丰富度。`
       : '';
-    const finalInstructions = instructions + metaphorAppend + themeAppend;
+    const keyPageSourceHint =
+      finalImageSource === 'webFreeToUseCommercially'
+        ? '优先使用网图（webFreeToUseCommercially）'
+        : finalImageSource === 'aiGenerated'
+          ? '优先使用 AI 图（aiGenerated）'
+          : '使用主题强调图（themeAccent / Emphasize布局）';
+    const imageStrategy = `\n\n【图片策略-强制】\n封面页、目录页、章节过渡页、结束页必须配图，${keyPageSourceHint}。内容页遵循“少字优先补图”：仅在要点较少或留白较多时补图；若用户选择了网图/AI图，则内容页一旦配图必须使用对应来源（webFreeToUseCommercially 或 aiGenerated），不得替换为 themeAccent；仅在检索/生成失败时允许回退。非结构页中应有至少 50% 页面使用所选来源配图（文字密集页可例外）。任何页面禁止无图状态：至少有图标或配图；结构页必须有配图。若 web/ai 配图失败，必须自动回退 themeAccent，不允许输出空图片占位。所有页面至少有一个可见图片主体（不能仅图标）。`;
+    const finalInstructions = instructions + metaphorAppend + themeAppend + imageStrategy;
 
     // 🚨 V8.2：Gamma 固定使用 preserve 模式
     // gamma-direct 的 inputText 已经是前端处理好的 markdown
@@ -284,6 +336,9 @@ export async function POST(request: NextRequest) {
     // 由于 outline API 已经在预处理阶段根据 textMode 生成不同风格的大纲，
     // Gamma 在我们的架构中只承担排版渲染职责，因此固定为 'preserve'
     const criticalInstruction = '\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作或修改任何事实信息。严格按照提供的Markdown层级和---分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。';
+    const strictPreserveInstruction = Boolean(strictPreserve)
+      ? '\n\n【严格保真开关】\n禁止改写或重命名标题；禁止添加“续页”后缀；禁止在正文中注入填充提示语或额外说明。\n【保真补充】\n在不改写正文前提下，必须执行图片策略并补足可见主图，禁止输出纯文字大白板。'
+      : '';
 
     // 步骤1:创建 Gamma 生成任务(恢复技术部验证的完整参数)
     // 🚨 D1: Use canonical pageCount (aliased from numCards) in Gamma payload
@@ -295,7 +350,7 @@ export async function POST(request: NextRequest) {
       exportAs,
       themeId: finalThemeId,
       cardSplit: undefined, // removed inputTextBreaks to avoid blank pages
-      additionalInstructions: finalInstructions + buildUploadedFilesInstruction(uploadedFiles) + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji代替web SVG图标。' + criticalInstruction,
+      additionalInstructions: finalInstructions + buildUploadedFilesInstruction(uploadedFiles) + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji代替web SVG图标。' + criticalInstruction + strictPreserveInstruction,
       textOptions: { amount: 'medium', tone: finalTone, language: 'zh-cn' },
       imageOptions,
       cardOptions: { dimensions: '16x9' },
@@ -322,7 +377,7 @@ export async function POST(request: NextRequest) {
       recordKeyFailure(apiKey);
       console.log(`[GammaDirect] ERROR reason=gamma_api_failed code=GAMMA_API_ERROR status=${createRes.status}`);
       return NextResponse.json({
-        error: `Gamma API 调用失败: ${createRes.status}`,
+        error: `生成服务调用失败: ${createRes.status}`,
         detail: errText.substring(0, 500)
       }, { status: 502 });
     }

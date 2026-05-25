@@ -1,0 +1,52 @@
+{
+  "name": "demo",
+  "version": "10.80.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@alicloud/dypnsapi20170525": "^2.0.0",
+    "@alicloud/dysmsapi20170525": "^4.5.1",
+    "@alicloud/openapi-client": "^0.4.15",
+    "@react-pdf/renderer": "^4.5.1",
+    "@supabase/ssr": "^0.10.0",
+    "@supabase/supabase-js": "^2.101.1",
+    "@xyflow/react": "^12.10.2",
+    "iron-session": "^8.0.4",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.0",
+    "mermaid": "^11.15.0",
+    "next": "16.2.2",
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^5.4.296",
+    "pptxgenjs": "^4.0.1",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "recharts": "^3.8.1",
+    "tencentcloud-sdk-nodejs-sms": "^4.1.221",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.2",
+    "msw": "^2.13.6",
+    "playwright": "^1.60.0",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "^4.1.5"
+  }
+}

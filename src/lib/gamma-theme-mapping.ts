@@ -12,7 +12,7 @@
 const GAMMA_STANDARD_THEMES: Set<string> = new Set([
   // === 蓝色系 (Blue) ===
   'consultant',      // 商务蓝 - 专业商务
-  'icebreaker',      // 蓝白友好 - 专业友好
+  // 'icebreaker' 当前 /themes 未返回，使用别名映射到 cornflower
   'blues',           // 高端深蓝 - 高端奢华
   'blue-steel',      // 深蓝灰 - 现代企业
   'breeze',          // 淡蓝清新 - 简约柔和
@@ -70,9 +70,7 @@ const GAMMA_STANDARD_THEMES: Set<string> = new Set([
   'gold-leaf',       // 金叶白 - 奢华优雅
   'creme',           // 奶油米 - 时尚优雅
   'bonan-hale',      // 现代建筑 - 现代建筑
-  'festival',        // 节日红金 - 节庆高端
-  'lunar-new-year',  // 新年红金 - 节庆中国风
-  'luxe',            // 奢侈深棕 - 奢侈高端
+  // 'festival' / 'lunar-new-year' / 'luxe' 当前 /themes 未返回，使用别名映射到可用近似主题
   
   // === 新增Gamma官方主题（2025 API更新）===
   // 以下主题ID来自Gamma官方API /themes 端点
@@ -148,6 +146,57 @@ const GAMMA_STANDARD_THEMES: Set<string> = new Set([
   'autumn',          // 秋季风格
 ]);
 
+// 当前生产 Gamma /themes 实测可用主题（2026-05-23）。
+// 生成请求只允许这些 ID 直传，避免旧清单中的主题导致 400。
+const GAMMA_CURRENT_THEMES: Set<string> = new Set([
+  'alien',
+  'ash',
+  'ashrose',
+  'atacama',
+  'atmosphere',
+  'aurora',
+  'aurum',
+  'bee-happy',
+  'blue-steel',
+  'blueberry',
+  'blues',
+  'bonan-hale',
+  'borealis',
+  'breeze',
+  'bubble-gum',
+  'canaveral',
+  'chimney-dust',
+  'chimney-smoke',
+  'chisel',
+  'chocolate',
+  'cigar',
+  'clementa',
+  'coal',
+  'commons',
+  'consultant',
+  'coral-glow',
+  'cornfield',
+  'cornflower',
+  'creme',
+  'dawn',
+  'daydream',
+  'default-dark',
+  'default-light',
+  'dune',
+  'editoria',
+  'electric',
+  'elysia',
+  'finesse',
+  'flax',
+  'fluo',
+  'founder',
+  'gamma',
+  'gamma-dark',
+  'gleam',
+  'gold-leaf',
+  'howlite',
+]);
+
 // 默认fallback主题（当传入无效ID时使用）
 const DEFAULT_FALLBACK_THEME = 'consultant';
 
@@ -155,7 +204,7 @@ const DEFAULT_FALLBACK_THEME = 'consultant';
 const THEME_ALIAS_MAP: Record<string, string> = {
   // 中文别名
   '商务蓝': 'consultant',
-  '蓝白友好': 'icebreaker',
+  '蓝白友好': 'cornflower',
   '高端深蓝': 'blues',
   '深蓝灰': 'blue-steel',
   '淡蓝清新': 'breeze',
@@ -186,7 +235,9 @@ const THEME_ALIAS_MAP: Record<string, string> = {
   '优雅米绿': 'finesse',
   '优雅经典': 'chocolate',
   '高端商务': 'cigar',
+  '酒红棕': 'cigar',
   '时尚金沙': 'dune',
+  '时间金沙': 'dune',
   
   '玫瑰灰': 'ashrose',
   '珊瑚粉': 'coral-glow',
@@ -207,27 +258,27 @@ const THEME_ALIAS_MAP: Record<string, string> = {
   '金叶白': 'gold-leaf',
   '奶油米': 'creme',
   '现代建筑': 'bonan-hale',
-  '节日红金': 'festival',
-  '新年红金': 'lunar-new-year',
-  '奢侈深棕': 'luxe',
+  '节日红金': 'aurum',
+  '新年红金': 'aurum',
+  '奢侈深棕': 'chocolate',
   
   // 英文别名（常见变体）
   'blue': 'consultant',
   'light': 'default-light',
   'dark': 'default-dark',
   'professional': 'consultant',
-  'casual': 'icebreaker',
+  'casual': 'cornflower',
   'creative': 'electric',
   'tech': 'aurora',
   'startup': 'founder',
   'corporate': 'consultant',
   'minimal': 'howlite',
-  'luxury': 'luxe',
+  'luxury': 'chocolate',
   'nature': 'elysia',
   'education': 'chisel',
   'data': 'gleam',
   'pitch': 'founder',
-  'training': 'icebreaker',
+  'training': 'cornflower',
   'annual': 'blues',
   'launch': 'aurora',
   'traditional': 'chisel',
@@ -235,8 +286,12 @@ const THEME_ALIAS_MAP: Record<string, string> = {
   
   // 场景别名（前端场景映射）
   'business': 'consultant',
+  'icebreaker': 'cornflower',
+  'festival': 'aurum',
+  'lunar-new-year': 'aurum',
+  'luxe': 'chocolate',
   'pitch-deck': 'founder',
-  'training-material': 'icebreaker',
+  'training-material': 'cornflower',
   'creative-presentation': 'electric',
   'education-material': 'chisel',
   'data-report': 'gleam',
@@ -264,23 +319,25 @@ export function getGammaThemeId(themeId: string | undefined | null): string {
   
   const normalizedId = themeId.trim().toLowerCase();
   
-  // 1. 如果已经是Gamma标准ID，直接返回
-  if (GAMMA_STANDARD_THEMES.has(normalizedId)) {
+  // 1. 如果已经是当前可用 Gamma 主题 ID，直接返回
+  if (GAMMA_CURRENT_THEMES.has(normalizedId)) {
     return normalizedId;
   }
   
   // 2. 检查别名映射表
   if (THEME_ALIAS_MAP[themeId]) {
-    return THEME_ALIAS_MAP[themeId];
+    const mapped = THEME_ALIAS_MAP[themeId];
+    return GAMMA_CURRENT_THEMES.has(mapped) ? mapped : DEFAULT_FALLBACK_THEME;
   }
   
   // 3. 检查小写别名
   if (THEME_ALIAS_MAP[normalizedId]) {
-    return THEME_ALIAS_MAP[normalizedId];
+    const mapped = THEME_ALIAS_MAP[normalizedId];
+    return GAMMA_CURRENT_THEMES.has(mapped) ? mapped : DEFAULT_FALLBACK_THEME;
   }
   
   // 4. 尝试匹配标准主题（大小写不敏感）
-  for (const standardTheme of GAMMA_STANDARD_THEMES) {
+  for (const standardTheme of GAMMA_CURRENT_THEMES) {
     if (standardTheme.toLowerCase() === normalizedId) {
       return standardTheme;
     }
@@ -304,18 +361,19 @@ export function isValidGammaTheme(themeId: string): boolean {
   
   const normalizedId = themeId.trim().toLowerCase();
   
-  // 检查标准主题列表
-  if (GAMMA_STANDARD_THEMES.has(normalizedId)) {
+  // 检查当前可用主题列表
+  if (GAMMA_CURRENT_THEMES.has(normalizedId)) {
     return true;
   }
   
   // 检查别名映射（别名也是有效的输入）
-  if (THEME_ALIAS_MAP[themeId] || THEME_ALIAS_MAP[normalizedId]) {
+  const mapped = THEME_ALIAS_MAP[themeId] || THEME_ALIAS_MAP[normalizedId];
+  if (mapped && GAMMA_CURRENT_THEMES.has(mapped)) {
     return true;
   }
   
   // 大小写不敏感检查
-  for (const standardTheme of GAMMA_STANDARD_THEMES) {
+  for (const standardTheme of GAMMA_CURRENT_THEMES) {
     if (standardTheme.toLowerCase() === normalizedId) {
       return true;
     }
@@ -330,7 +388,7 @@ export function isValidGammaTheme(themeId: string): boolean {
  * @returns Gamma标准主题ID数组
  */
 export function getAllGammaThemes(): string[] {
-  return Array.from(GAMMA_STANDARD_THEMES);
+  return Array.from(GAMMA_CURRENT_THEMES);
 }
 
 /**
@@ -338,11 +396,13 @@ export function getAllGammaThemes(): string[] {
  */
 export function getThemeMappingStats(): {
   standardThemes: number;
+  legacyCatalogThemes: number;
   aliases: number;
   fallback: string;
 } {
   return {
-    standardThemes: GAMMA_STANDARD_THEMES.size,
+    standardThemes: GAMMA_CURRENT_THEMES.size,
+    legacyCatalogThemes: GAMMA_STANDARD_THEMES.size,
     aliases: Object.keys(THEME_ALIAS_MAP).length,
     fallback: DEFAULT_FALLBACK_THEME,
   };

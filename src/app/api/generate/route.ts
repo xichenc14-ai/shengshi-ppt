@@ -263,7 +263,7 @@ PPT结构规范：
 
     // ===== 阶段2: 生成成功 → 扣积分 =====
     if (sb && userId && creditsToDeduct > 0) {
-      const desc = `生成PPT-${slideCount}页-${imageSource || 'noImages'}${imageModel ? `-${imageModel}` : ''}-共${creditsToDeduct}积分`;
+      const desc = `生成PPT-${slideCount}页-${imageSource || 'themeAccent'}${imageModel ? `-${imageModel}` : ''}-共${creditsToDeduct}积分`;
       const deductResult = await atomicDeductCredits(sb, userId, creditsToDeduct, desc);
       if (deductResult.success) {
         creditDeducted = true;

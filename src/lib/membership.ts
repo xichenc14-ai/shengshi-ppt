@@ -1,4 +1,4 @@
-// 会员权限体系 - 按兮晨哥哥2026-04-13制定的扣费表
+// 会员权限体系 - v10.61（双套餐）
 
 export interface MembershipPlan {
   id: string;
@@ -39,7 +39,7 @@ const PLANS: Record<string, MembershipPlan> = {
     maxPages: 8,
     priceMonthly: 0,
     priceAnnual: 0,
-    allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent'],
+    allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent'],
     allowedAiModels: [],
     smartMode: false,
     // 🆕 兮晨哥哥2026-04-15方案
@@ -47,62 +47,47 @@ const PLANS: Record<string, MembershipPlan> = {
     monthlyPptTrial: 1,          // 每月1次体验原生PPT
     smartTrialUsed: false,       // 新用户首次省心模式体验（一次）
   },
-  // 省心会员：9.9元，300积分，省心模式+AI图+20页
+  // 省心会员：19.9元，400积分（按 400积分≈10元成本基准保留安全毛利）
   shengxin: {
     id: 'shengxin',
     name: '省心会员',
     emoji: '✨',
-    credits: 300,
+    credits: 400,
     maxPages: 20,
-    priceMonthly: 9.9,
-    priceAnnual: 99,
-    allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'],
+    priceMonthly: 19.9,
+    priceAnnual: 199,
+    allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'],
     allowedAiModels: ['imagen-3-flash'],
     smartMode: true,
     monthlyFreeDownloads: -1,  // 无限制（会员特权）
     monthlyPptTrial: -1,       // 无限制
     pricePerPage: 0,           // 会员免费下载
   },
-  // 高级会员：29.9元，1000积分，高级图+40页
+  // 高级会员：39.9元，1000积分（解锁高阶AI图与更高页数）
   advanced: {
     id: 'advanced',
     name: '高级会员',
     emoji: '👑',
     credits: 1000,
     maxPages: 40,
-    priceMonthly: 29.9,
-    priceAnnual: 299,
-    allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'],
-    allowedAiModels: ['imagen-3-flash', 'imagen-3-pro'],
+    priceMonthly: 39.9,
+    priceAnnual: 399,
+    allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'],
+    allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'],
     smartMode: true,
     monthlyFreeDownloads: -1,
     monthlyPptTrial: -1,
     pricePerPage: 0,
   },
-  // 尊享会员：49.9元，2000积分，全开+60页
-  supreme: {
-    id: 'supreme',
-    name: '尊享会员',
-    emoji: '🏆',
-    credits: 2000,
-    maxPages: 60,
-    priceMonthly: 49.9,
-    priceAnnual: 499,
-    allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'],
-    allowedAiModels: ['imagen-3-flash', 'imagen-3-pro'],
-    smartMode: true,
-    monthlyFreeDownloads: -1,
-    monthlyPptTrial: -1,
-    pricePerPage: 0,
-  },
-  // 兼容旧数据别名
-  basic: { id: 'shengxin', name: '基础', emoji: '💎', credits: 300, maxPages: 20, priceMonthly: 9.9, priceAnnual: 99, allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
-  standard: { id: 'advanced', name: '标准', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 29.9, priceAnnual: 299, allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
-  pro: { id: 'supreme', name: '高级', emoji: '🏆', credits: 2000, maxPages: 60, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
-  vip: { id: 'supreme', name: '尊享', emoji: '🏆', credits: 2000, maxPages: 60, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['noImages', 'pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  // 兼容旧数据别名（旧 plan_type 自动映射到双套餐）
+  basic: { id: 'shengxin', name: '省心会员', emoji: '✨', credits: 400, maxPages: 20, priceMonthly: 19.9, priceAnnual: 199, allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  standard: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  pro: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  vip: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  supreme: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
 };
 
-export const PLAN_LIST = Object.values(PLANS);
+export const PLAN_LIST: MembershipPlan[] = [PLANS.free, PLANS.shengxin, PLANS.advanced];
 
 export function getPlan(planType: string): MembershipPlan {
   return PLANS[planType] || PLANS.free;
@@ -170,7 +155,7 @@ export function mapImgModeToSource(imgMode: string): string {
       return 'themeAccent';
     case 'none':
     case 'noImages':
-      return 'noImages';
+      return 'themeAccent';
     case 'theme-img':
     case 'theme':
     case 'themeAccent':
@@ -183,7 +168,7 @@ export function mapImgModeToSource(imgMode: string): string {
     case 'ai-pro':
     case 'aiGenerated':
       return 'aiGenerated';
-    default: return 'noImages';
+    default: return 'themeAccent';
   }
 }
 

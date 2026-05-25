@@ -89,7 +89,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
   
   const [directTheme, setDirectTheme] = useState('default-light');
   const [directTone, setDirectTone] = useState('professional');
-  const [directImgMode, setDirectImgMode] = useState('none');
+  const [directImgMode, setDirectImgMode] = useState('theme-img');
   const [directTextMode, setDirectTextMode] = useState<'generate' | 'condense' | 'preserve'>('generate');
   const [pages, setPages] = useState(8);
   
@@ -230,7 +230,10 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       setGenStep(1); setGenProgress(25); setStepText('AI 正在渲染 PPT 页面...');
 
       const gRes = await fetch('/api/gamma-direct', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user.id}`,
+        },
         body: JSON.stringify({ inputText, themeId: directTheme, numCards: pages, imageSource: directImgMode, tone: directTone, textMode: directTextMode, exportAs: 'pptx' }),
       });
       if (!gRes.ok) { const d = await gRes.json(); throw new Error(d.error || 'PPT 生成失败'); }
@@ -296,7 +299,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
   // ========== generateSmartOutline（V6 简化：权限检查 + 调用统一流程）==========
   const generateSmartOutline = useCallback(async () => {
     if (!user) { openLogin(); return; }
-    const smartPerm = checkPermission(user.plan_type || 'free', { numPages: 8, imageSource: 'noImages', mode: 'smart' });
+    const smartPerm = checkPermission(user.plan_type || 'free', { numPages: 8, imageSource: 'themeAccent', mode: 'smart' });
     if (!smartPerm.allowed) {
       const reqPlan = smartPerm.requiredPlan || 'basic';
       const planInfo = getPlan(reqPlan);
@@ -312,7 +315,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
   const confirmAndGenerate = useCallback(async () => {
     if (!outlineResult || !user) return;
     const userPlan = getPlan(user.plan_type || 'free');
-    const imageSource = directImgMode === 'none' ? 'noImages' : directImgMode === 'ai' ? 'aiGenerated' : directImgMode === 'web' ? 'webFreeToUseCommercially' : 'pictographic';
+    const imageSource = directImgMode === 'ai' ? 'aiGenerated' : directImgMode === 'web' ? 'webFreeToUseCommercially' : 'themeAccent';
     const numPages = Math.min(editedSlides.length, userPlan.maxPages);
     const perm = checkPermission(user.plan_type || 'free', { numPages, imageSource, mode: mode === 'smart' ? 'smart' : 'direct' });
     if (!perm.allowed) {

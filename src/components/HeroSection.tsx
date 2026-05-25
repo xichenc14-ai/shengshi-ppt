@@ -147,7 +147,7 @@ export default function HeroSection({ onSelectMode }: HeroSectionProps) {
               
               <div className="flex flex-wrap gap-2">
                 <span className="px-2.5 py-1 bg-gray-50 text-gray-600 rounded-lg text-xs">AI预处理</span>
-                <span className="px-2.5 py-1 bg-gray-50 text-gray-600 rounded-lg text-xs">preserve模式</span>
+                <span className="px-2.5 py-1 bg-gray-50 text-gray-600 rounded-lg text-xs">保持原样模式</span>
                 <span className="px-2.5 py-1 bg-gray-50 text-gray-600 rounded-lg text-xs">深度定制</span>
               </div>
             </div>

@@ -6,11 +6,14 @@ export interface UserInfo {
   id: string;
   phone: string;
   nickname: string;
+  avatar?: string;
   credits: number;
   plan_type: string;
+  plan_expires_at?: string | null;
   has_subscription?: boolean;
   is_new?: boolean;
   is_active?: boolean;
+  is_admin?: boolean;
 }
 
 interface PaymentPlan {
@@ -29,7 +32,7 @@ interface AuthContextType {
   showLogin: boolean;
   showPayment: boolean;
   paymentPlan: PaymentPlan | null;
-  login: (user: UserInfo) => void;
+  login: (user: UserInfo, authToken?: string) => void;
   logout: () => void;
   updateCredits: (credits: number) => void;
   updateUser: (data: Partial<UserInfo>) => void;
@@ -73,10 +76,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'login', user: parsed }),
-        }).then(() => {
+        }).then((res) => {
           localStorage.removeItem('sx_user');
-          setUser(parsed);
-        }).catch(() => {});
+          if (res.ok) setUser(parsed);
+        }).catch(() => {
+          localStorage.removeItem('sx_user');
+        });
       } else if (!old && user) {
         // 已有session，确保localStorage干净
         localStorage.removeItem('sx_user');
@@ -84,15 +89,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, [loading, user]);
 
-  const login = useCallback((u: UserInfo) => {
+  const login = useCallback((u: UserInfo, authToken?: string) => {
     setUser(u);
     setShowLogin(false);
     // 写入服务端httpOnly cookie
     fetch('/api/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'login', user: u }),
-    }).catch(() => {});
+      body: JSON.stringify({ action: 'login', user: u, authToken }),
+    })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const syncRes = await fetch('/api/session');
+        const syncData = await syncRes.json();
+        if (syncData?.isLoggedIn && syncData?.user) {
+          setUser(syncData.user);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const logout = useCallback(() => {

@@ -56,13 +56,14 @@ function buildContentPage(
   title: string,
   points: string[],
   speakerNotes?: string,
-  isContinuation: boolean = false
+  isContinuation: boolean = false,
+  strictPreserve: boolean = false,
+  imageHint?: string
 ): string {
-  const MAX_POINTS_PER_PAGE = 4;
   const lines: string[] = [];
 
   // 标题：续页加 "(续)" 后缀
-  const titleSuffix = isContinuation ? ' (续)' : '';
+  const titleSuffix = strictPreserve ? '' : (isContinuation ? ' (续)' : '');
   lines.push(`## ${title}${titleSuffix}`);
   lines.push('');
 
@@ -77,8 +78,13 @@ function buildContentPage(
 
   // 留白填充提示：≤2 点页面自动注入
   // V6：内容少时指导 Gamma 用图标/排版填充，不要留大白板
-  if (points.length <= 2) {
+  if (!strictPreserve && points.length <= 2) {
     lines.push('> *(Gamma提示：此页内容较少，请使用高品质图标、色块或排版元素进行视觉填充，避免大面积留白。)*');
+    lines.push('');
+  }
+
+  if (imageHint) {
+    lines.push(`> *(${imageHint})*`);
     lines.push('');
   }
 
@@ -98,12 +104,53 @@ function buildContentPage(
   return lines.join('\n');
 }
 
+function normalizeImageModeForHint(imageMode: string): 'themeAccent' | 'web' | 'ai' {
+  const value = String(imageMode || '').trim().toLowerCase();
+  if (value === 'web' || value === 'webfreetousecommercially') return 'web';
+  if (value === 'ai' || value === 'ai-pro' || value === 'aigenerated') return 'ai';
+  return 'themeAccent';
+}
+
+function buildPerPageImageHint(
+  imageMode: string,
+  pageIndex: number,
+  pageTotal: number,
+  isContinuation: boolean
+): string {
+  const normalizedMode = normalizeImageModeForHint(imageMode);
+  const keyPages = new Set<number>(
+    [0, 1, pageTotal - 2, pageTotal - 1].filter((idx) => idx >= 0 && idx < pageTotal)
+  );
+  const isKeyPage = keyPages.has(pageIndex) && !isContinuation;
+
+  if (isKeyPage) {
+    if (normalizedMode === 'web') {
+      return '配图硬约束：本页必须配图，优先使用网图(webFreeToUseCommercially)；若检索失败必须自动回退主题强调图(themeAccent)，禁止空白图片占位。';
+    }
+    if (normalizedMode === 'ai') {
+      return '配图硬约束：本页必须配图，优先使用AI图(aiGenerated)；若生成失败必须自动回退主题强调图(themeAccent)，禁止空白图片占位。';
+    }
+    return '配图硬约束：本页必须使用主题强调图（Emphasize布局）并确保可见，不允许仅图标或空白图片占位。';
+  }
+
+  if (normalizedMode === 'web') {
+    return '配图硬约束：本页如配图，优先使用网图(webFreeToUseCommercially)；若检索失败必须自动回退为主题强调图(themeAccent)，禁止空白图片占位。';
+  }
+
+  if (normalizedMode === 'ai') {
+    return '配图硬约束：本页如配图，优先使用AI图(aiGenerated)；若生成失败必须自动回退为主题强调图(themeAccent)，禁止空白图片占位。';
+  }
+
+  return '配图硬约束：本页必须出现可见主题图或视觉主图，不允许纯文字大白板或空白图片占位。';
+}
+
 // ========== V6 主函数：Markdown 组装引擎 ==========
 export function buildMdV2(
   title: string,
   slides: SlideItem[],
-  imageMode: string = 'noImages',
-  allowEnhancement: boolean = false
+  imageMode: string = 'theme-img',
+  allowEnhancement: boolean = false,
+  options?: { strictPreserve?: boolean }
 ): BuildMdV2Result {
   if (!slides || slides.length === 0) {
     return {
@@ -113,6 +160,7 @@ export function buildMdV2(
   }
 
   const MAX_POINTS_PER_PAGE = 4;
+  const strictPreserve = Boolean(options?.strictPreserve);
   const outputParts: string[] = [];
   const total = slides.length;
 
@@ -125,15 +173,19 @@ export function buildMdV2(
     const rawPoints = slide.bullets ?? slide.points ?? slide.content ?? [];
 
     // 🚨 V8.3 修复：空 points 时用标题作为唯一要点，避免输出空内容导致 Gamma 400
-    const points = rawPoints.length > 0 ? rawPoints : [slide.title];
+    const points = rawPoints.length > 0
+      ? rawPoints
+      : (strictPreserve ? [] : [slide.title]);
 
     // ===== 强制拆页：>4 点自动拆成多页 =====
     const chunks = chunkArray(points, MAX_POINTS_PER_PAGE);
+    const normalizedChunks = chunks.length > 0 ? chunks : [[]];
 
-    chunks.forEach((chunk, chunkIndex) => {
+    normalizedChunks.forEach((chunk, chunkIndex) => {
       const isFirstChunk = chunkIndex === 0;
-      const isLastChunk = chunkIndex === chunks.length - 1;
+      const isLastChunk = chunkIndex === normalizedChunks.length - 1;
       const isContinuation = !isFirstChunk;
+      const imageHint = buildPerPageImageHint(imageMode, index, total, isContinuation);
 
       // 🚨 V6.1 修复：不再强制首页=封面、末页=结尾
       // 每一页都按正常内容页处理，让 Gamma 自己决定封面/结尾
@@ -142,7 +194,9 @@ export function buildMdV2(
           slide.title,
           chunk,
           isLastChunk ? slide.notes : undefined,
-          isContinuation
+          isContinuation,
+          strictPreserve,
+          imageHint
         )
       );
 
@@ -251,10 +305,9 @@ export function buildAdditionalInstructions(
 配图风格：professional, clean, minimalist, business context
 禁止使用有任何版权争议的图片`;
   } else if (imageMode === 'noImages') {
-    imageRules = `\n【配图：纯净无图模式】
-不添加任何图片，仅用图标（Unicode emoji）和排版元素丰富视觉
-图标推荐：✅❌📊📈💡🎯⭐🔑🚀💼📧📞📍📌🔍✨⚡🔥💎🏆🔧📋
-图标风格：Outlined, rounded, professional，与整体色调协调`;
+    imageRules = `\n【配图：主题套图模式（兼容回退）】
+无图模式已下线，自动回退为主题套图。
+首页、目录页、过渡页、结束页优先使用主题强调图，内容页按留白情况补图。`;
   } else if (imageMode === 'theme-img' || imageMode === 'theme') {
     imageRules = `\n【配图：主题套图模式】
 使用 Gamma 内置 Emphasize 强调布局图（主题装饰性图片，免费），

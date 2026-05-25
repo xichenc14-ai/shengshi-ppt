@@ -33,7 +33,7 @@ export default function HistoryPage() {
     if (!user) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/history?userId=${user.id}&limit=30`);
+      const res = await fetch('/api/history?limit=30');
       const data = await res.json();
       if (data.history) {
         setHistory(data.history);
@@ -52,7 +52,7 @@ export default function HistoryPage() {
       const res = await fetch('/api/history', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete', userId: user?.id, id }),
+        body: JSON.stringify({ action: 'delete', id }),
       });
       if (res.ok) {
         setHistory(prev => prev.filter(h => h.id !== id));
@@ -67,7 +67,7 @@ export default function HistoryPage() {
 
   const getImageModeLabel = (mode: string) => {
     switch (mode) {
-      case 'noImages': return '📝 无图';
+      case 'noImages': return '🖼️ 主题套图';
       case 'pictographic': return '🖼️ 套图';
       case 'webFreeToUseCommercially': return '🌐 网图';
       case 'aiGenerated': return '🤖 AI图';
@@ -77,7 +77,7 @@ export default function HistoryPage() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#FAFBFE]">
+      <div className="min-h-screen premium-shell">
         <Navbar />
         <div className="flex items-center justify-center py-32">
           <div className="text-center animate-fade-in">
@@ -96,22 +96,27 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FAFBFE]">
+    <div className="min-h-screen premium-shell">
       <Navbar />
 
       {/* Header */}
-      <div className="bg-gradient-to-br from-[#5B4FE9]/5 via-[#7C3AED]/5 to-[#8B5CF6]/5 border-b border-gray-100">
+      <div className="bg-gradient-to-br from-sky-500/10 via-indigo-500/10 to-cyan-500/10 border-b border-slate-200/70">
         <div className="max-w-3xl mx-auto px-4 py-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                 <span className="text-2xl">📋</span> 生成历史
               </h1>
               <p className="text-sm text-gray-400 mt-1">共 {history.length} 条记录</p>
             </div>
-            <Link href="/" className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:border-purple-200 hover:text-purple-600 transition-all">
-              + 新建PPT
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link href="/account" className="px-4 py-2 bg-white border border-indigo-200 rounded-xl text-sm text-indigo-700 hover:bg-indigo-50 transition-all">
+                ← 返回用户中心
+              </Link>
+              <Link href="/" className="px-4 py-2 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-xl text-sm font-semibold shadow-md shadow-purple-200/50 hover:shadow-lg transition-all">
+                + 新建PPT
+              </Link>
+            </div>
           </div>
         </div>
       </div>
@@ -149,7 +154,7 @@ export default function HistoryPage() {
         ) : (
           <div className="space-y-3">
             {history.map((item) => (
-              <div key={item.id} className="bg-white rounded-xl border border-gray-100 p-4 hover:border-purple-100 hover:shadow-sm transition-all group">
+              <div key={item.id} className="premium-card rounded-xl border border-gray-100 p-4 hover:border-indigo-100 transition-all group">
                 <div className="flex items-start gap-3">
                   {/* Thumbnail placeholder */}
                   <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-gradient-to-br from-purple-100 to-purple-50 flex items-center justify-center text-lg font-bold text-purple-600">
@@ -200,12 +205,6 @@ export default function HistoryPage() {
         )}
       </div>
 
-      {/* Back link */}
-      <div className="max-w-3xl mx-auto px-4 pb-8">
-        <Link href="/account" className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors">
-          ← 返回用户中心
-        </Link>
-      </div>
     </div>
   );
 }
