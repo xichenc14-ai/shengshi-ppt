@@ -369,6 +369,19 @@ export async function POST(request: NextRequest) {
     const normalized = normalizeUserInput(body as Record<string, unknown>);
     const pageCount = normalized.pageCount ?? 8;
     const isSmartFlow = Boolean(auto) || normalized.auto === true;
+    const requestedImageSource = normalized.imageSource || imageMode;
+    const mappedPreviewImageOptions = buildGammaImageOptions(
+      requestedImageSource,
+      typeof themeId === 'string' ? themeId : undefined,
+      imageOptions && typeof imageOptions === 'object'
+        ? (imageOptions as Record<string, unknown>)
+        : undefined
+    );
+    console.log('[Gamma] IMAGE_SOURCE_MAP preview=', JSON.stringify({
+      requested: requestedImageSource,
+      mappedSource: mappedPreviewImageOptions?.source || 'themeAccent',
+      auto: isSmartFlow,
+    }));
 
     // 支持结构化 slides 数据或纯文本 inputText
     let finalInputText: string;
