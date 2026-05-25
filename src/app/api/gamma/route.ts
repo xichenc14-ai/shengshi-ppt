@@ -263,24 +263,67 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 function buildSmartImagePolicy(source: unknown): {
   keyPageHint: string;
   contentPageHint: string;
+  allowThemeAccentOnKeyPages: boolean;
 } {
   const normalized = String(source || '').trim();
   if (normalized === 'aiGenerated') {
     return {
-      keyPageHint: '结构页优先使用主题强调图（themeAccent）形成统一视觉锚点',
+      keyPageHint: '结构页与内容页统一使用 AI 图（aiGenerated），确保首屏封面与结束页都有清晰主图',
       contentPageHint: '内容页默认使用 AI 图（aiGenerated）；仅在生成失败时回退为 themeAccent',
+      allowThemeAccentOnKeyPages: false,
     };
   }
   if (normalized === 'webFreeToUseCommercially') {
     return {
-      keyPageHint: '结构页优先使用主题强调图（themeAccent）形成统一视觉锚点',
+      keyPageHint: '结构页与内容页统一使用网图（webFreeToUseCommercially），确保首屏封面与结束页都有清晰主图',
       contentPageHint: '内容页默认使用网图（webFreeToUseCommercially）；仅在检索失败时回退为 themeAccent',
+      allowThemeAccentOnKeyPages: false,
     };
   }
   return {
     keyPageHint: '结构页使用主题强调图（themeAccent / Emphasize布局）',
     contentPageHint: '内容页需按主题语义补足可见主图，必要时可使用 web/ai 获取更贴题图片，失败时回退 themeAccent',
+    allowThemeAccentOnKeyPages: true,
   };
+}
+
+function buildContentImageGuidance(params: {
+  source: unknown;
+  tone: string;
+  scene: string;
+  inputText: string;
+}): string {
+  const source = String(params.source || '');
+  const tone = String(params.tone || 'professional');
+  const scene = String(params.scene || 'biz');
+  const text = String(params.inputText || '').toLowerCase();
+  const sceneHints: Record<string, string> = {
+    biz: '商务办公、团队协作、会议场景、现代写字楼',
+    pitch: '创业路演、产品演示、发布会主视觉',
+    training: '课堂培训、学习互动、讲解示意',
+    creative: '创意概念、视觉冲击、艺术化构图',
+    education: '教学场景、知识图解、校园或学习环境',
+    data: '图表相关场景、分析看板、数据业务环境',
+    annual: '年度回顾、里程碑、团队成果呈现',
+    launch: '新品发布、科技感主视觉、舞台灯光氛围',
+    traditional: '中式审美、传统文化元素、留白构图',
+  };
+  const toneHints: Record<string, string> = {
+    professional: '克制、干净、真实感、商务质感',
+    casual: '友好、明亮、轻松、生活化',
+    creative: '大胆、风格化、构图有张力',
+    bold: '高对比、科技感、未来感',
+    traditional: '典雅、含蓄、东方审美',
+  };
+  const keywordHint = /海|湾|滨海|度假|海景|社区/.test(text)
+    ? '优先包含海岸线、社区景观、宜居生活方式等元素'
+    : '优先选择与当前页标题语义直接相关的场景元素';
+  const sourceHint = source === 'aiGenerated'
+    ? 'AI图提示词要明确主体、场景、光线与镜头视角，避免抽象无主体画面'
+    : source === 'webFreeToUseCommercially'
+      ? '网图优先选高分辨率横向主图，避免水印、拼贴、低清噪点'
+      : '主题强调图与内容语义保持一致，避免与标题无关的装饰图';
+  return `内容页配图智能引导：按页标题与要点语义选图，场景偏好=${sceneHints[scene] || '通用业务场景'}；风格偏好=${toneHints[tone] || toneHints.professional}；${keywordHint}；${sourceHint}。`;
 }
 
 // POST: 创建 Gamma 生成任务
@@ -413,11 +456,11 @@ export async function POST(request: NextRequest) {
       + '\n\n【图标规范-统一风格】\n使用Gamma内置的图标系统(Icons),保持风格统一:简洁、线性、单色、与主题色一致。禁止混用不同风格的图标(不要同时使用emoji和线性图标)。每页2-4个图标,用于要点标记和视觉装饰。禁止出现无图标的页面。';
     const isThemeAccentMode = finalImageOptions?.source === 'themeAccent';
     const imagePolicy = buildSmartImagePolicy(finalImageOptions?.source);
-    finalAdditionalInstructions += `\n\n【图片策略-强制】\n1. 封面页、目录页、章节过渡页、结束页：必须配图，${imagePolicy.keyPageHint}。\n2. 内容页必须有可见图片主体（非纯图标），按“每页至少1个主视觉”执行，禁止纯文字白板。\n3. ${imagePolicy.contentPageHint}。\n4. 当来源为 web/ai 时，内容页一旦配图必须使用对应来源，不得偷偷替换为其它来源。\n5. 当来源为 web/ai 时，内容页中至少 70% 页面使用该来源配图（仅文字极密页可例外）。\n6. 任何页面都禁止空图片占位、灰框占位或无图输出；若失败必须即时回退 themeAccent 保证有图。`;
+    finalAdditionalInstructions += `\n\n【图片策略-强制】\n1. 封面页、目录页、章节过渡页、结束页：必须配图，${imagePolicy.keyPageHint}。\n2. 内容页必须有可见图片主体（非纯图标），按“每页至少1个主视觉”执行，禁止纯文字白板。\n3. ${imagePolicy.contentPageHint}。\n4. 当来源为 web/ai 时，内容页一旦配图必须使用对应来源，不得偷偷替换为其它来源。\n5. 当来源为 web/ai 时，内容页中至少 70% 页面使用该来源配图（仅文字极密页可例外）。\n6. 任何页面都禁止空图片占位、灰框占位或无图输出；若失败必须即时回退 themeAccent 保证有图。\n7. ${buildContentImageGuidance({ source: finalImageOptions?.source, tone: finalTone, scene, inputText: finalInputText })}`;
     if (normalized.textMode === 'preserve') {
       // 🚨 V6修复：追加CRITICAL强制指令，封锁Gamma的发散权限
       finalAdditionalInstructions += '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作、扩写或修改任何事实信息。严格按照提供的Markdown层级和\'---\'分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。保持所有 \'>\' 作为演讲者备注不做展示。';
-      if (isThemeAccentMode) {
+      if (isThemeAccentMode && imagePolicy.allowThemeAccentOnKeyPages) {
         finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页必须使用主题强调图；内容页默认图标+色块，只有内容稀疏时再加图。禁止输出无图页面。';
       }
       if (Boolean(strictPreserve)) {
@@ -431,7 +474,7 @@ export async function POST(request: NextRequest) {
     } else if (isThemeAccentMode) {
       finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页必须使用主题强调图；内容页按留白情况择优补图，不强制每页都上图，但禁止无图页面。';
     } else {
-      finalAdditionalInstructions += '\n\n【网图/AI图关键页策略】\n首屏封面必须有可见主图，不允许纯文字封面；若本次图片源检索或生成失败，必须回退为主题强调图(themeAccent)保证封面有图。';
+      finalAdditionalInstructions += '\n\n【网图/AI图关键页策略】\n首屏封面、目录页、过渡页、结束页均需可见主图，不允许纯文字结构页；若本次图片源检索或生成失败，允许回退为 themeAccent 但仍必须有图。';
     }
 
     // 🚨 P0 Fix: 使用解构排除 slides，不使用 delete 语句

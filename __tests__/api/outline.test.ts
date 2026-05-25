@@ -141,7 +141,7 @@ describe('POST /api/outline', () => {
     expect(data.slides.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('should prefer coffee scene theme and smart default image mode in smart mode even when AI suggests dark fallback theme', async () => {
+  it('should prefer coffee scene theme and keep smart default theme-img in smart mode even when AI suggests dark fallback theme', async () => {
     vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
       title: '咖啡介绍',
       scene: '通用',
@@ -159,7 +159,7 @@ describe('POST /api/outline', () => {
     const data = await res.json();
     expect(data.scene).toBe('餐饮美食');
     expect(data.themeId).toBe('finesse');
-    expect(data.imageMode).toBe('web');
+    expect(data.imageMode).toBe('theme-img');
   });
 
 });

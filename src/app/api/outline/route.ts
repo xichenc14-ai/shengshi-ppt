@@ -158,16 +158,10 @@ function resolveSmartDefaultImageMode(params: {
   detectedScene: string;
   finalTone: string;
   topic: string;
-}): 'web' | 'ai' {
-  const scene = String(params.detectedScene || '');
-  const tone = String(params.finalTone || '');
-  const text = String(params.topic || '').toLowerCase();
-
-  const preferAiScene = new Set(['创意方案', '产品发布', '科技AI', '中国风', '婚礼庆典']);
-  if (preferAiScene.has(scene)) return 'ai';
-  if (tone === 'creative' || tone === 'bold' || tone === 'traditional') return 'ai';
-  if (/插画|拟人|概念图|视觉隐喻|未来感|科幻|国风|古风|海报/.test(text)) return 'ai';
-  return 'web';
+}): 'theme-img' {
+  void params;
+  // 省心模式默认回归主题套图，只有用户明确声明全局网图/AI图才切换。
+  return 'theme-img';
 }
 
 function normalizeThemeToGamma(themeId: string | undefined | null): string {
