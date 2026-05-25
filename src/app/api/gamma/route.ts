@@ -453,12 +453,6 @@ export async function POST(request: NextRequest) {
     if (finalImageOptions?.source === 'noImages') {
       finalImageOptions.source = 'themeAccent';
     }
-    // Hotfix: Gamma 的 themeAccent 属于自动放置，可能出现整份无图。
-    // 为满足“默认不允许无图”原则，省心模式下 themeAccent 兜底切到 web 商用图源。
-    if (isSmartFlow && finalImageOptions?.source === 'themeAccent') {
-      finalImageOptions.source = 'webFreeToUseCommercially';
-      console.warn('[Gamma] SMART_THEMEACCENT_FALLBACK source=themeAccent -> webFreeToUseCommercially');
-    }
 
     const instructions = INSTRUCTION_TEMPLATES[finalTone] || INSTRUCTION_TEMPLATES.professional;
     // P0修复：追加全局视觉隐喻（如果提供）
