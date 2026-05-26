@@ -115,33 +115,34 @@ function buildPerPageImageHint(
   imageMode: string,
   pageIndex: number,
   pageTotal: number,
-  isContinuation: boolean
+  isContinuation: boolean,
+  pageTitle: string
 ): string {
   const normalizedMode = normalizeImageModeForHint(imageMode);
-  const keyPages = new Set<number>(
-    [0, 1, pageTotal - 2, pageTotal - 1].filter((idx) => idx >= 0 && idx < pageTotal)
-  );
-  const isKeyPage = keyPages.has(pageIndex) && !isContinuation;
+  const title = String(pageTitle || '').trim();
+  const keyPageByTitle = /(封面|目录|议程|大纲|章节|过渡|part|结语|结束|总结|致谢|鸣谢|感谢聆听|q&a|答疑)/i.test(title);
+  const isCoverPage = pageIndex === 0;
+  const isKeyPage = !isContinuation && (isCoverPage || keyPageByTitle);
 
   if (isKeyPage) {
     if (normalizedMode === 'web') {
-      return '配图硬约束：本页必须配图，优先使用网图(webFreeToUseCommercially)；若检索失败必须自动回退主题强调图(themeAccent)，禁止空白图片占位。';
+      return '配图硬约束：本页必须配图，优先使用网图(webFreeToUseCommercially)；若检索失败可回退主题强调图(themeAccent)。若无法取图，必须移除图片容器，禁止显示空占位框。';
     }
     if (normalizedMode === 'ai') {
-      return '配图硬约束：本页必须配图，优先使用AI图(aiGenerated)；若生成失败必须自动回退主题强调图(themeAccent)，禁止空白图片占位。';
+      return '配图硬约束：本页必须配图，优先使用AI图(aiGenerated)；若生成失败可回退主题强调图(themeAccent)。若无法取图，必须移除图片容器，禁止显示空占位框。';
     }
-    return '配图硬约束：本页必须使用主题强调图（Emphasize布局）并确保可见，不允许仅图标或空白图片占位。';
+    return '配图硬约束：本页优先使用主题强调图（Emphasize布局）并确保可见；若主题图不可用，改用网图或纯文字+图标版式，禁止空白图片占位。';
   }
 
   if (normalizedMode === 'web') {
-    return '配图硬约束：本页如配图，优先使用网图(webFreeToUseCommercially)；若检索失败必须自动回退为主题强调图(themeAccent)，禁止空白图片占位。';
+    return '配图硬约束：本页按语义择优配图，优先使用网图(webFreeToUseCommercially)；若检索失败可回退主题图或纯文字+图标，禁止空白图片占位。';
   }
 
   if (normalizedMode === 'ai') {
-    return '配图硬约束：本页如配图，优先使用AI图(aiGenerated)；若生成失败必须自动回退为主题强调图(themeAccent)，禁止空白图片占位。';
+    return '配图硬约束：本页按语义择优配图，优先使用AI图(aiGenerated)；若生成失败可回退主题图或纯文字+图标，禁止空白图片占位。';
   }
 
-  return '配图硬约束：本页必须出现可见主题图或视觉主图，不允许纯文字大白板或空白图片占位。';
+  return '配图硬约束：本页不强制上图；若使用图片必须可见且贴题，若图片不可用请直接改为图标+色块布局，禁止空白图片占位。';
 }
 
 // ========== V6 主函数：Markdown 组装引擎 ==========
@@ -185,7 +186,7 @@ export function buildMdV2(
       const isFirstChunk = chunkIndex === 0;
       const isLastChunk = chunkIndex === normalizedChunks.length - 1;
       const isContinuation = !isFirstChunk;
-      const imageHint = buildPerPageImageHint(imageMode, index, total, isContinuation);
+      const imageHint = buildPerPageImageHint(imageMode, index, total, isContinuation, slide.title);
 
       // 🚨 V6.1 修复：不再强制首页=封面、末页=结尾
       // 每一页都按正常内容页处理，让 Gamma 自己决定封面/结尾

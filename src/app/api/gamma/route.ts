@@ -264,6 +264,7 @@ function buildSmartImagePolicy(source: unknown): {
   keyPageHint: string;
   contentPageHint: string;
   allowThemeAccentOnKeyPages: boolean;
+  contentMustHaveImage: boolean;
 } {
   const normalized = String(source || '').trim();
   if (normalized === 'aiGenerated') {
@@ -271,6 +272,7 @@ function buildSmartImagePolicy(source: unknown): {
       keyPageHint: '结构页与内容页统一使用 AI 图（aiGenerated），确保首屏封面与结束页都有清晰主图',
       contentPageHint: '内容页默认使用 AI 图（aiGenerated）；仅在生成失败时回退为 themeAccent',
       allowThemeAccentOnKeyPages: false,
+      contentMustHaveImage: true,
     };
   }
   if (normalized === 'webFreeToUseCommercially') {
@@ -278,12 +280,14 @@ function buildSmartImagePolicy(source: unknown): {
       keyPageHint: '结构页与内容页统一使用网图（webFreeToUseCommercially），确保首屏封面与结束页都有清晰主图',
       contentPageHint: '内容页默认使用网图（webFreeToUseCommercially）；仅在检索失败时回退为 themeAccent',
       allowThemeAccentOnKeyPages: false,
+      contentMustHaveImage: true,
     };
   }
   return {
     keyPageHint: '结构页使用主题强调图（themeAccent / Emphasize布局）',
     contentPageHint: '内容页需按主题语义补足可见主图，必要时可使用 web/ai 获取更贴题图片，失败时回退 themeAccent',
     allowThemeAccentOnKeyPages: true,
+    contentMustHaveImage: false,
   };
 }
 
@@ -469,7 +473,10 @@ export async function POST(request: NextRequest) {
       + '\n\n【图标规范-统一风格】\n使用Gamma内置的图标系统(Icons),保持风格统一:简洁、线性、单色、与主题色一致。禁止混用不同风格的图标(不要同时使用emoji和线性图标)。每页2-4个图标,用于要点标记和视觉装饰。禁止出现无图标的页面。';
     const isThemeAccentMode = finalImageOptions?.source === 'themeAccent';
     const imagePolicy = buildSmartImagePolicy(finalImageOptions?.source);
-    finalAdditionalInstructions += `\n\n【图片策略-强制】\n1. 封面页、目录页、章节过渡页、结束页：必须配图，${imagePolicy.keyPageHint}。\n2. 内容页必须有可见图片主体（非纯图标），按“每页至少1个主视觉”执行，禁止纯文字白板。\n3. ${imagePolicy.contentPageHint}。\n4. 当来源为 web/ai 时，内容页一旦配图必须使用对应来源，不得偷偷替换为其它来源。\n5. 当来源为 web/ai 时，内容页中至少 70% 页面使用该来源配图（仅文字极密页可例外）。\n6. 任何页面都禁止空图片占位、灰框占位或无图输出；若失败必须即时回退 themeAccent 保证有图。\n7. ${buildContentImageGuidance({ source: finalImageOptions?.source, tone: finalTone, scene, inputText: finalInputText })}`;
+    const contentImageRule = imagePolicy.contentMustHaveImage
+      ? '内容页必须有可见图片主体（非纯图标），按“每页至少1个主视觉”执行，禁止纯文字白板。'
+      : '内容页不强制每页配图；若配图失败，必须删除图片容器并改用图标+色块排版，禁止灰色占位框。';
+    finalAdditionalInstructions += `\n\n【图片策略-强制】\n1. 封面页、目录页、章节过渡页、结束页：必须配图，${imagePolicy.keyPageHint}。\n2. ${contentImageRule}\n3. ${imagePolicy.contentPageHint}。\n4. 当来源为 web/ai 时，内容页一旦配图必须使用对应来源，不得偷偷替换为其它来源。\n5. 当来源为 web/ai 时，内容页中至少 70% 页面使用该来源配图（仅文字极密页可例外）。\n6. 任何页面都禁止空图片占位、灰框占位；若失败必须回退为可展示布局（主题图或纯文字+图标）。\n7. ${buildContentImageGuidance({ source: finalImageOptions?.source, tone: finalTone, scene, inputText: finalInputText })}`;
     if (normalized.textMode === 'preserve') {
       // 🚨 V6修复：追加CRITICAL强制指令，封锁Gamma的发散权限
       finalAdditionalInstructions += '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作、扩写或修改任何事实信息。严格按照提供的Markdown层级和\'---\'分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。保持所有 \'>\' 作为演讲者备注不做展示。';
