@@ -87,13 +87,10 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
 【配图规则】(主题套图=themeAccent主题强调图,精选网图=webFreeToUseCommercially)
-- 主题套图:使用Pexels高质量照片(专业摄影师,0 credits)
-- 精选网图:使用webFreeToUseCommercially(免版权商用图搜索)
-- 封面页和结尾页必须配高质量照片/网图
-- 内容页每页至少配1张相关图片,确保图文结合
-- 图片风格(必须包含):Minimalist, clean background, negative space, professional, high quality
-- 配图位置:右图或上图,禁止左图布局
-- 如文字内容少于40字/页,必须额外增加配图数量
+- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
+- source=themeAccent 时，优先主题强调图；如无法出图，改为纯文字+图标布局，不得保留空白图片框
+- source=web/ai 时，优先对应来源配图；若取图失败可回退主题图或无图文本布局
+- 禁止固定“右侧图片槽位”而没有实际图片内容
 
 【语言规则】
 - 所有文字使用简体中文
@@ -132,7 +129,7 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 【配图规则】
 - 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
 - 禁止与用户选择冲突：用户选网图/AI图时，不可改回纯文字页
-- 封面页、目录页、过渡页、结束页必须含图（至少主题强调图）
+- 结构页优先有图，但图片失败时必须移除图片容器，禁止空白占位框
 
 【语言规则】
 - 所有文字使用简体中文
@@ -265,6 +262,7 @@ function buildSmartImagePolicy(source: unknown): {
   contentPageHint: string;
   allowThemeAccentOnKeyPages: boolean;
   contentMustHaveImage: boolean;
+  keyPageMustHaveImage: boolean;
 } {
   const normalized = String(source || '').trim();
   if (normalized === 'aiGenerated') {
@@ -273,6 +271,7 @@ function buildSmartImagePolicy(source: unknown): {
       contentPageHint: '内容页默认使用 AI 图（aiGenerated）；仅在生成失败时回退为 themeAccent',
       allowThemeAccentOnKeyPages: false,
       contentMustHaveImage: true,
+      keyPageMustHaveImage: true,
     };
   }
   if (normalized === 'webFreeToUseCommercially') {
@@ -281,13 +280,15 @@ function buildSmartImagePolicy(source: unknown): {
       contentPageHint: '内容页默认使用网图（webFreeToUseCommercially）；仅在检索失败时回退为 themeAccent',
       allowThemeAccentOnKeyPages: false,
       contentMustHaveImage: true,
+      keyPageMustHaveImage: true,
     };
   }
   return {
-    keyPageHint: '结构页使用主题强调图（themeAccent / Emphasize布局）',
+    keyPageHint: '结构页优先使用主题强调图（themeAccent / Emphasize布局）；若主题图不可用，改为纯文字+图标布局',
     contentPageHint: '内容页需按主题语义补足可见主图，必要时可使用 web/ai 获取更贴题图片，失败时回退 themeAccent',
     allowThemeAccentOnKeyPages: true,
     contentMustHaveImage: false,
+    keyPageMustHaveImage: false,
   };
 }
 
@@ -473,15 +474,18 @@ export async function POST(request: NextRequest) {
       + '\n\n【图标规范-统一风格】\n使用Gamma内置的图标系统(Icons),保持风格统一:简洁、线性、单色、与主题色一致。禁止混用不同风格的图标(不要同时使用emoji和线性图标)。每页2-4个图标,用于要点标记和视觉装饰。禁止出现无图标的页面。';
     const isThemeAccentMode = finalImageOptions?.source === 'themeAccent';
     const imagePolicy = buildSmartImagePolicy(finalImageOptions?.source);
+    const keyPageImageRule = imagePolicy.keyPageMustHaveImage
+      ? '封面页、目录页、章节过渡页、结束页：必须配图。'
+      : '封面页、目录页、章节过渡页、结束页：优先配图，但若图片不可用必须改为无图文本布局，禁止空白图片容器。';
     const contentImageRule = imagePolicy.contentMustHaveImage
       ? '内容页必须有可见图片主体（非纯图标），按“每页至少1个主视觉”执行，禁止纯文字白板。'
       : '内容页不强制每页配图；若配图失败，必须删除图片容器并改用图标+色块排版，禁止灰色占位框。';
-    finalAdditionalInstructions += `\n\n【图片策略-强制】\n1. 封面页、目录页、章节过渡页、结束页：必须配图，${imagePolicy.keyPageHint}。\n2. ${contentImageRule}\n3. ${imagePolicy.contentPageHint}。\n4. 当来源为 web/ai 时，内容页一旦配图必须使用对应来源，不得偷偷替换为其它来源。\n5. 当来源为 web/ai 时，内容页中至少 70% 页面使用该来源配图（仅文字极密页可例外）。\n6. 任何页面都禁止空图片占位、灰框占位；若失败必须回退为可展示布局（主题图或纯文字+图标）。\n7. ${buildContentImageGuidance({ source: finalImageOptions?.source, tone: finalTone, scene, inputText: finalInputText })}`;
+    finalAdditionalInstructions += `\n\n【图片策略-强制】\n1. ${keyPageImageRule}${imagePolicy.keyPageHint}。\n2. ${contentImageRule}\n3. ${imagePolicy.contentPageHint}。\n4. 当来源为 web/ai 时，内容页一旦配图必须使用对应来源，不得偷偷替换为其它来源。\n5. 当来源为 web/ai 时，内容页中至少 70% 页面使用该来源配图（仅文字极密页可例外）。\n6. 任何页面都禁止空图片占位、灰框占位；若失败必须回退为可展示布局（主题图或纯文字+图标）。\n7. ${buildContentImageGuidance({ source: finalImageOptions?.source, tone: finalTone, scene, inputText: finalInputText })}`;
     if (normalized.textMode === 'preserve') {
       // 🚨 V6修复：追加CRITICAL强制指令，封锁Gamma的发散权限
       finalAdditionalInstructions += '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作、扩写或修改任何事实信息。严格按照提供的Markdown层级和\'---\'分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。保持所有 \'>\' 作为演讲者备注不做展示。';
       if (isThemeAccentMode && imagePolicy.allowThemeAccentOnKeyPages) {
-        finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页必须使用主题强调图；内容页默认图标+色块，只有内容稀疏时再加图。禁止输出无图页面。';
+        finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页优先使用主题强调图；若无法稳定出图，请切换为无图文本布局并增强图标/色块，不得保留空图片框。';
       }
       if (Boolean(strictPreserve)) {
         finalAdditionalInstructions += '\n\n【严格保真开关】\n禁止改写或重命名标题；禁止添加“续页”后缀；禁止在正文中注入填充提示语或额外说明。';
@@ -492,7 +496,7 @@ export async function POST(request: NextRequest) {
         }
       }
     } else if (isThemeAccentMode) {
-      finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页必须使用主题强调图；内容页按留白情况择优补图，不强制每页都上图，但禁止无图页面。';
+      finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页优先使用主题强调图；内容页按留白情况择优补图。若图片不可用，必须改成纯文字+图标布局，禁止空图片框。';
     } else {
       finalAdditionalInstructions += '\n\n【网图/AI图关键页策略】\n首屏封面、目录页、过渡页、结束页均需可见主图，不允许纯文字结构页；若本次图片源检索或生成失败，允许回退为 themeAccent 但仍必须有图。';
     }
