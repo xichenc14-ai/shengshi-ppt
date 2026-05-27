@@ -222,6 +222,14 @@ export function buildGammaImageOptions(
     return { ...merged, source: 'themeAccent' };
   }
 
+  // 关键修复：当图片源不是 aiGenerated 时，必须清除残留 AI 参数。
+  // 否则 source=themeAccent/web 但仍携带 model/style，可能诱发 Gamma 侧异常图片占位。
+  if (merged.source !== 'aiGenerated') {
+    delete (merged as Record<string, unknown>).model;
+    delete (merged as Record<string, unknown>).style;
+    delete (merged as Record<string, unknown>).prompt;
+  }
+
   return merged;
 }
 

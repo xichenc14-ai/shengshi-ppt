@@ -34,4 +34,17 @@ describe('ppt-param-adapter', () => {
     });
     expect(options.source).toBe('webFreeToUseCommercially');
   });
+
+  it('strips stale ai model/style fields when source is not aiGenerated', () => {
+    const options = buildGammaImageOptions('theme-img', 'consultant', {
+      source: 'aiGenerated',
+      model: 'imagen-3-pro',
+      style: 'cinematic',
+      prompt: 'custom prompt',
+    });
+    expect(options.source).toBe('themeAccent');
+    expect(options).not.toHaveProperty('model');
+    expect(options).not.toHaveProperty('style');
+    expect(options).not.toHaveProperty('prompt');
+  });
 });
