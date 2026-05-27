@@ -2,8 +2,10 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import { APP_VERSION } from '@/lib/version';
+import { useAuth } from '@/lib/auth-context';
 
 type AdminUser = {
   id: string;
@@ -41,6 +43,7 @@ type UsageRow = {
 };
 
 type Tab = 'users' | 'payments' | 'usage';
+const ADMIN_DASHBOARD_PATH = '/sx-admin-portal-7f3a';
 
 function fmtDate(v?: string | null): string {
   if (!v) return '-';
@@ -51,6 +54,9 @@ function fmtDate(v?: string | null): string {
 }
 
 export default function AdminPage() {
+  const pathname = usePathname();
+  const { user, openLogin } = useAuth();
+  const pathAllowed = pathname === ADMIN_DASHBOARD_PATH;
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
   const [notice, setNotice] = React.useState('');
@@ -74,6 +80,16 @@ export default function AdminPage() {
   const [grantReason, setGrantReason] = React.useState('');
 
   const loadData = React.useCallback(async () => {
+    if (!pathAllowed) {
+      setLoading(false);
+      setError('页面不存在');
+      return;
+    }
+    if (!user?.is_admin) {
+      setLoading(false);
+      setError('无后台权限');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -96,11 +112,41 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
     }
-  }, [query, planFilter, selectedUser]);
+  }, [query, planFilter, selectedUser, pathAllowed, user?.is_admin]);
 
   React.useEffect(() => {
     loadData();
   }, [loadData]);
+
+  if (!pathAllowed) {
+    return (
+      <div className="min-h-screen sx-shell">
+        <Navbar />
+        <div className="max-w-xl mx-auto px-4 py-24 text-center">
+          <h1 className="text-2xl font-black text-slate-900">404</h1>
+          <p className="mt-3 text-slate-500">页面不存在</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user?.is_admin) {
+    return (
+      <div className="min-h-screen sx-shell">
+        <Navbar />
+        <div className="max-w-xl mx-auto px-4 py-24 text-center">
+          <h1 className="text-2xl font-black text-slate-900">管理员登录</h1>
+          <p className="mt-3 text-slate-500">该模块仅限管理员账号访问。</p>
+          <button
+            onClick={openLogin}
+            className="mt-5 px-5 py-2.5 rounded-xl sx-primary-btn text-white text-sm font-bold"
+          >
+            立即登录
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const exportCsvHref = React.useMemo(() => {
     const qs = new URLSearchParams();

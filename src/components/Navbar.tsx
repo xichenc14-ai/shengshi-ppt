@@ -48,11 +48,6 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
           <Link href="/account" className="px-4 py-2 text-sm text-gray-500 hover:text-purple-600 hover:bg-purple-50/50 rounded-lg transition-all">
             用户中心
           </Link>
-          {user?.is_admin && (
-            <Link href="/admin" className="px-4 py-2 text-sm text-gray-500 hover:text-purple-600 hover:bg-purple-50/50 rounded-lg transition-all">
-              后台管理
-            </Link>
-          )}
         </div>
 
         {/* Right Side */}
@@ -120,14 +115,6 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
                         </div>
                         升级套餐
                       </Link>
-                      {user?.is_admin && (
-                        <Link href="/admin" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-3 px-4 py-2.5 mx-2 text-sm text-gray-600 hover:bg-purple-50/50 hover:text-purple-600 rounded-xl transition-all">
-                          <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center">
-                            <svg className="w-4 h-4 text-purple-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
-                          </div>
-                          后台管理
-                        </Link>
-                      )}
                       <div className="border-t border-gray-100 mt-2 pt-2">
                         <button onClick={() => { logout(); setUserMenuOpen(false); }} className="flex items-center gap-3 px-4 py-2.5 mx-2 text-sm text-red-500 hover:bg-red-50 rounded-xl transition-all">
                           <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center">
@@ -184,12 +171,6 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               用户中心
             </Link>
-            {user?.is_admin && (
-              <Link href="/admin" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm text-gray-700 hover:bg-purple-50/50 hover:text-purple-600 transition-colors font-medium">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
-                后台管理
-              </Link>
-            )}
           </div>
         </div>
       )}

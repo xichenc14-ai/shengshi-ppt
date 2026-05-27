@@ -402,11 +402,7 @@ export default function AccountPage() {
                   <Link href="/pricing" className="text-center px-4 py-2.5 rounded-xl sx-primary-btn text-white text-sm font-bold">升级套餐</Link>
                   <Link href="/pricing#credit-topup" className="text-center px-4 py-2.5 rounded-xl bg-white border border-indigo-200 text-indigo-700 text-sm font-bold">单独充值积分</Link>
                   <Link href="/pricing#single-pay" className="text-center px-4 py-2.5 rounded-xl bg-white border border-indigo-200 text-indigo-700 text-sm font-bold">单次按页付费</Link>
-                  {user?.is_admin ? (
-                    <Link href="/admin" className="text-center px-4 py-2.5 rounded-xl bg-white border border-indigo-200 text-indigo-700 text-sm font-bold">后台管理</Link>
-                  ) : (
-                    <Link href="/history" className="text-center px-4 py-2.5 rounded-xl bg-white border border-indigo-200 text-indigo-700 text-sm font-bold">查看完整历史</Link>
-                  )}
+                  <Link href="/history" className="text-center px-4 py-2.5 rounded-xl bg-white border border-indigo-200 text-indigo-700 text-sm font-bold">查看完整历史</Link>
                 </div>
               </div>
             )}
