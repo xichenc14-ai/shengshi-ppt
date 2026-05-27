@@ -161,6 +161,26 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
     expect(calledBody.imageOptions.source).toBe('webFreeToUseCommercially');
   });
 
+  it('BUG-2d: themeAccent should fallback to web source on high-risk light themes', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ generationId: 'test-gen-123' }),
+    });
+
+    const res = await POST(mockPostRequest({
+      inputText: '# Test',
+      imageMode: 'theme-img',
+      themeId: 'howlite',
+      tone: 'casual',
+    }));
+
+    expect(res.status).toBe(200);
+    const fetchCall = mockFetch.mock.calls[0];
+    const calledBody = JSON.parse(fetchCall[1].body as string);
+    expect(calledBody.imageOptions.source).toBe('webFreeToUseCommercially');
+  });
+
   // ===== Bug 3: textMode should be preserved =====
   it('BUG-3: textMode should always be preserve regardless of input', async () => {
     // Arrange

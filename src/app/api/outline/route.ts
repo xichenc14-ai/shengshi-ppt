@@ -265,6 +265,11 @@ function extractUserIntentOverrides(inputText: string): UserIntentOverrides {
     overrides.scene = '餐饮美食';
     if (!wantsDarkStyle && !overrides.tone) overrides.tone = 'casual';
     reasons.push('识别主题色系=餐饮场景(clementa)');
+  } else if (/白色简约|白色极简|纯白简约|简约白|极简白|白色风格/.test(text)) {
+    overrides.themeId = 'howlite';
+    overrides.scene = '清新简约';
+    if (!overrides.tone) overrides.tone = 'casual';
+    reasons.push('识别主题色系=白色简约(howlite)');
   } else if (/高端|奢华|质感/.test(text)) {
     overrides.themeId = 'aurum';
     reasons.push('识别主题色系=高端风(aurum)');

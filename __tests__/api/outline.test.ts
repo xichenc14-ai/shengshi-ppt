@@ -162,4 +162,28 @@ describe('POST /api/outline', () => {
     expect(data.imageMode).toBe('theme-img');
   });
 
+  it('should recognize white minimal style and prefer howlite theme in smart mode', async () => {
+    vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
+      title: '省心PPT介绍',
+      scene: '通用',
+      themeId: 'consultant',
+      tone: 'professional',
+      imageMode: 'theme-img',
+      slides: [{ title: '封面', content: ['测试'] }, { title: '结尾', content: ['完成'] }],
+    }));
+
+    const res = await POST(new Request('http://localhost/api/outline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '127.0.0.9' },
+      body: JSON.stringify({
+        inputText: '介绍省心ppt 5页 白色简约风',
+        auto: true,
+      }),
+    }) as unknown as NextRequest);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.themeId).toBe('howlite');
+    expect(data.imageMode).toBe('theme-img');
+  });
+
 });

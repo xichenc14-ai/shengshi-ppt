@@ -6,6 +6,13 @@ import { buildGammaImageOptions, normalizeUserInput } from '@/lib/adapters/ppt-p
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const THEMEACCENT_HIGH_RISK_THEMES = new Set([
+  'howlite',
+  'default-light',
+  'ash',
+  'breeze',
+  'commons',
+]);
 
 function buildUploadedFilesInstruction(uploadedFiles: unknown): string {
   if (!Array.isArray(uploadedFiles) || uploadedFiles.length === 0) return '';
@@ -457,6 +464,17 @@ export async function POST(request: NextRequest) {
     );
     if (finalImageOptions?.source === 'noImages') {
       finalImageOptions.source = 'themeAccent';
+    }
+    // 根因修复：在部分浅色极简主题上，themeAccent 更容易出现“生成图像错误/空占位框”。
+    // 对这些高风险主题自动切换到更稳定的商业可用网图源，避免空图占位。
+    if (
+      finalImageOptions?.source === 'themeAccent'
+      && THEMEACCENT_HIGH_RISK_THEMES.has(String(finalThemeId || '').toLowerCase())
+    ) {
+      finalImageOptions.source = 'webFreeToUseCommercially';
+      console.warn(
+        `[Gamma] THEMEACCENT_THEME_FALLBACK theme=${finalThemeId} source=themeAccent -> webFreeToUseCommercially`
+      );
     }
 
     const instructions = INSTRUCTION_TEMPLATES[finalTone] || INSTRUCTION_TEMPLATES.professional;
