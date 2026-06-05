@@ -17,6 +17,18 @@ describe('ppt-param-adapter', () => {
     expect(normalized.imageSource).toBe('web');
   });
 
+  it('treats mode=smart as auto workflow for legacy callers', () => {
+    const normalized = normalizeUserInput({
+      topic: '北京旅游完全指南',
+      mode: 'smart',
+      imageSource: 'smart',
+    });
+
+    expect(normalized.mode).toBe('smart');
+    expect(normalized.auto).toBe(true);
+    expect(normalized.imageSource).toBe('smart');
+  });
+
   it('maps app image modes to Gamma sources', () => {
     expect(buildGammaImageOptions('theme-img', 'consultant').source).toBe('themeAccent');
     expect(buildGammaImageOptions('theme-img', 'founder').source).toBe('themeAccent');

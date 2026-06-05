@@ -97,6 +97,7 @@ export function normalizeUserInput(raw: Record<string, unknown>): PptUserInput {
   const v = raw;
 
   const topic = firstNonEmptyString(v.topic, v.inputText, v.text);
+  const mode = firstNonEmptyString(v.mode, v.generateMode);
   const pageCount = firstNumber(v.pageCount, v.slideCount, v.numCards, v.pages);
   const textMode = firstNonEmptyString(v.textMode, v.contentStrategy);
   const themeId = firstNonEmptyString(v.themeId, v.templateId);
@@ -104,6 +105,7 @@ export function normalizeUserInput(raw: Record<string, unknown>): PptUserInput {
   const imageSource = firstNonEmptyString(v.imageSource, v.imgMode, v.imageMode, v.directImgMode);
   const additionalInstructions = firstNonEmptyString(v.additionalInstructions, v.extraInstructions);
   const exportAs = firstNonEmptyString(v.exportAs, v.format);
+  const auto = firstBoolean(v.auto, v.isSmartMode) || mode === 'smart';
 
   // 原始字段先铺底，canonical 字段最后覆盖，避免 slideCount/numCards 等别名被反向覆盖。
   return {
@@ -118,10 +120,11 @@ export function normalizeUserInput(raw: Record<string, unknown>): PptUserInput {
     templateId: themeId,
     tone,
     style: tone,
+    mode,
     imageSource,
     additionalInstructions,
     exportAs,
-    auto: firstBoolean(v.auto),
+    auto,
   } as PptUserInput;
 }
 

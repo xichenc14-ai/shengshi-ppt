@@ -1,0 +1,36 @@
+{
+  "next_authorization_packet": {
+    "packet_id": "pdf-test-runner-execution-auth-2026-05-06",
+    "type": "RUNNER_TEST_EXECUTION_SINGLE_FILE",
+    "purpose": "Validate PDF test file after path remediation",
+    "task": "V2_0_SHENGXIN_PPT_PDF_TEST_EXECUTION_VALIDATION",
+    "created_at": "2026-05-06T22:20:00+08:00",
+    "authorization_scope": {
+      "test_only": true,
+      "single_file": true,
+      "no_watch": true,
+      "no_install": true,
+      "no_build": true,
+      "no_deploy": true
+    },
+    "requested_command": "cd /Users/macmini/shengshi-ppt && npx vitest run __tests__/app/api/parse-file/route.test.ts",
+    "files_involved": [
+      "__tests__/app/api/parse-file/route.test.ts",
+      "src/app/api/parse-file/route.ts"
+    ],
+    "expected_outcome": {
+      "test_discovers": true,
+      "test_passes": "UNKNOWN (skeleton tests)",
+      "test_fails_gracefully": true
+    },
+    "potential_risks": [
+      "Test skeleton may reveal missing fixtures",
+      "PDF parsing may fail without proper mock",
+      "Vitest environment setup may be incomplete"
+    ],
+    "rollback_procedure": {
+      "action": "NO_ROLLBACK_NEEDED",
+      "reason": "Path remediation is independent of test execution result"
+    }
+  }
+}

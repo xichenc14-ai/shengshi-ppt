@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createHmac } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { isCallbackIPAllowed } from '@/lib/payment';
 import { verifyWechatPayCallback } from '@/lib/payment/wechat-verify';
 import { verifyAlipayCallback, normalizeAlipayPublicKey } from '@/lib/payment/alipay-verify';
-import type { TypedSupabaseClient, CreditTransactionInsert, UserRow } from '@/lib/supabase-types';
+import type { CreditTransactionInsert, UserRow } from '@/lib/supabase-types';
 import { createProviderOrderIntent } from '@/lib/payment/provider-adapter';
+import { getClientIP, rateLimit } from '@/lib/rate-limit';
+import { isPaymentFeatureEnabledServer } from '@/lib/payment-feature';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -103,9 +104,7 @@ export async function POST(req: NextRequest) {
   const sb = getSupabase();
   if (!sb) return NextResponse.json({ error: '服务未配置' }, { status: 503 });
 
-  const clientIP = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    || req.headers.get('x-real-ip')
-    || '0.0.0.0';
+  const clientIP = getClientIP(req) || 'unknown';
 
   try {
     const body = await req.json();
@@ -113,7 +112,22 @@ export async function POST(req: NextRequest) {
 
     // ===== 创建订单 =====
     if (action === 'create_order' || !action) {
+      if (!isPaymentFeatureEnabledServer()) {
+        return NextResponse.json({ error: '支付通道申请中，暂不可下单' }, { status: 503 });
+      }
       const { planId, payMethod, userId, billing = 'monthly' } = body;
+      const createOrderLimit = rateLimit(`payment:create_order:${clientIP}:${userId || 'anon'}`, { windowMs: 60 * 1000, maxRequests: 6 });
+      if (!createOrderLimit.allowed) {
+        return NextResponse.json(
+          { error: '请求过于频繁，请稍后再试' },
+          {
+            status: 429,
+            headers: {
+              'Retry-After': String(Math.max(1, Math.ceil((createOrderLimit.resetAt - Date.now()) / 1000))),
+            },
+          }
+        );
+      }
 
       if (!planId) return NextResponse.json({ error: '请选择套餐' }, { status: 400 });
 
@@ -126,7 +140,7 @@ export async function POST(req: NextRequest) {
 
       const orderNo = Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
 
-      const { data: order, error } = await sb
+      const { error } = await sb
         .from('orders')
         .insert({
           user_id: userId || '00000000-0000-0000-000000000000',
@@ -138,13 +152,17 @@ export async function POST(req: NextRequest) {
           pay_method: payMethod || 'wechat',
           metadata: { planId, payMethod, billing },
           expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-        })
-        .select()
-        .single();
+        });
 
       if (error) return NextResponse.json({ error: '创建订单失败' }, { status: 500 });
+      console.log(`[Payment][CreateOrder] created order=${orderNo} ip=${clientIP} user=${userId || 'anon'} plan=${planId} billing=${billing}`);
 
       const notifyUrl = process.env.PAYMENT_NOTIFY_URL || '';
+      if (process.env.NODE_ENV === 'production' && !/^https:\/\//i.test(notifyUrl)) {
+        return NextResponse.json({
+          error: 'PAYMENT_NOTIFY_URL 未配置为 https 地址，生产环境禁止下单',
+        }, { status: 503 });
+      }
       const intent = await createProviderOrderIntent({
         provider: (payMethod === 'alipay' ? 'alipay' : 'wechat'),
         orderNo,
@@ -153,6 +171,16 @@ export async function POST(req: NextRequest) {
         userId: userId || '',
         notifyUrl,
       });
+
+      // 商业化保护：生产环境禁止 mock 支付下单，避免形成“假支付可用”状态
+      if (process.env.NODE_ENV === 'production' && intent.mock) {
+        const reason = String((intent.raw as { reason?: string } | null)?.reason || 'payment_provider_unavailable');
+        return NextResponse.json({
+          error: '支付通道未完成生产接入，暂不可下单',
+          provider: intent.provider,
+          reason,
+        }, { status: 503 });
+      }
 
       return NextResponse.json({
         order_no: orderNo,
@@ -171,6 +199,20 @@ export async function POST(req: NextRequest) {
 
     // ===== 支付回调 webhook（已实现） =====
     if (action === 'callback') {
+      const callbackOrderNo = typeof body?.order_no === 'string' ? body.order_no : 'unknown';
+      const callbackLimit = rateLimit(`payment:callback:${clientIP}:${callbackOrderNo}`, { windowMs: 60 * 1000, maxRequests: 30 });
+      if (!callbackLimit.allowed) {
+        return NextResponse.json(
+          { error: '回调请求过于频繁' },
+          {
+            status: 429,
+            headers: {
+              'Retry-After': String(Math.max(1, Math.ceil((callbackLimit.resetAt - Date.now()) / 1000))),
+            },
+          }
+        );
+      }
+
       if (!isCallbackIPAllowed(clientIP)) {
         console.warn(`[Payment] 回调IP不在白名单: ${clientIP}`);
         return NextResponse.json({ error: '非法请求' }, { status: 403 });
@@ -220,6 +262,7 @@ export async function POST(req: NextRequest) {
 
       // 4. 验证签名（防止伪造）
       const wechatApiKey = process.env.WECHAT_PAY_API_KEY || '';
+      const isProd = process.env.NODE_ENV === 'production';
 
       if (pay_method === 'wechat' && wechatApiKey) {
         // 🚨 P2 Fix: 使用微信 V3 签名验证（从 HTTP 头提取）
@@ -228,6 +271,8 @@ export async function POST(req: NextRequest) {
           console.warn(`[Payment] 微信签名验证失败: ${verifyResult.reason}, order=${order_no}, ip=${clientIP}`);
           return NextResponse.json({ error: '签名验证失败' }, { status: 400 });
         }
+      } else if (pay_method === 'wechat' && isProd) {
+        return NextResponse.json({ error: '生产环境缺少微信回调验签配置' }, { status: 503 });
       } else if (pay_method === 'alipay' && sign) {
         // 🚨 P2 Fix: 使用支付宝 RSA2 签名验证
         const alipayPublicKey = normalizeAlipayPublicKey(process.env.ALIPAY_PUBLIC_KEY || '');
@@ -235,6 +280,31 @@ export async function POST(req: NextRequest) {
         if (!verifyResult.valid) {
           console.warn(`[Payment] 支付宝签名验证失败: ${verifyResult.reason}, order=${order_no}, ip=${clientIP}`);
           return NextResponse.json({ error: '签名验证失败' }, { status: 400 });
+        }
+      } else if (pay_method === 'alipay' && isProd) {
+        return NextResponse.json({ error: '生产环境缺少支付宝回调验签配置' }, { status: 503 });
+      }
+
+      // 4.1 金额一致性检查（生产/联调都启用，防止回调金额被篡改）
+      if (pay_method === 'wechat' && total_fee !== undefined && total_fee !== null) {
+        const callbackFen = Number(total_fee);
+        if (!Number.isFinite(callbackFen) || callbackFen <= 0) {
+          return NextResponse.json({ error: '微信回调金额无效' }, { status: 400 });
+        }
+        if (callbackFen !== Number(order.amount || 0)) {
+          console.warn(`[Payment] 微信回调金额不一致: order=${order_no}, orderAmount=${order.amount}, callback=${callbackFen}`);
+          return NextResponse.json({ error: '回调金额校验失败' }, { status: 400 });
+        }
+      }
+      if (pay_method === 'alipay' && amount !== undefined && amount !== null) {
+        const callbackYuan = Number(amount);
+        const orderYuan = Number(order.amount || 0) / 100;
+        if (!Number.isFinite(callbackYuan) || callbackYuan <= 0) {
+          return NextResponse.json({ error: '支付宝回调金额无效' }, { status: 400 });
+        }
+        if (Math.abs(callbackYuan - orderYuan) > 0.0001) {
+          console.warn(`[Payment] 支付宝回调金额不一致: order=${order_no}, orderAmount=${orderYuan}, callback=${callbackYuan}`);
+          return NextResponse.json({ error: '回调金额校验失败' }, { status: 400 });
         }
       }
 
@@ -262,7 +332,25 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, message: '未知状态' });
       }
 
-      // 6. 支付成功 → 开通会员 + 增加积分
+      // 6. 支付成功 → 按订单类型处理
+      const productType = String(order.product_type || 'subscription');
+      if (productType === 'download_once') {
+        await sb.from('orders').update({
+          status: 'completed',
+          paid_at: new Date().toISOString(),
+          trade_no: trade_no || null,
+          metadata: {
+            ...(order.metadata || {}),
+            fulfilled: false,
+            fulfilledAt: null,
+          },
+        }).eq('order_no', order_no);
+
+        console.log(`[Payment] ✅ 单次下载订单支付完成: order=${order_no}, user=${order.user_id}`);
+        return NextResponse.json({ success: true, message: '支付成功，单次下载订单已生效' });
+      }
+
+      // 订阅订单：开通会员 + 增加积分
       const targetUserId = user_id || order.user_id;
       const targetPlanId = plan_id || order.metadata?.planId;
       const targetBilling = billing || order.metadata?.billing || 'monthly';

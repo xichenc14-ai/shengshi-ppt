@@ -9,6 +9,20 @@ import { checkPermission } from '@/lib/membership';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const LIGHT_MINIMAL_STYLE_RE = /(白色简约|白色极简|纯白简约|简约白|极简白|白色风格|极简风|浅色极简|简约风|米绿|优雅米绿)/i;
+const PPTX_SAFE_ICON_RULES = `【PPTX安全图标与字体规范-最高优先级】
+- PPTX下载必须离线完整显示，禁止使用Gamma Icons、Font Awesome、Material Icons、Ionicons、web SVG图标、外部图片型图标或任何需要远程加载的装饰图标。
+- 要点标记必须使用PPTX稳定元素：圆形/胶囊形/数字徽章/短线/分隔线/色块/Unicode文字符号，确保导出PPTX后不出现破图、红叉、缺图图标。
+- 图标感可以用基础矢量形状组合实现，例如圆点+线条、序号圆牌、勾选符号、箭头符号；不要插入图片格式的小图标。
+- 字体层级必须符合国内PPT阅读习惯：主标题使用 # 一级标题且≥44pt；页面标题使用 ## 且≥32pt；核心要点使用 ### 或 #### 标题级大文本且≥24pt；禁止普通小字正文作为主要内容。`;
+
+function normalizePptxSafeInstructions(instructions: string): string {
+  const withoutFragileIconBlocks = String(instructions || '')
+    .replace(/【图标规则】[\s\S]*?(?=\n\n【配图规则】)/g, '')
+    .replace(/【图标规范-统一风格】[\s\S]*?(?=\n\n【|$)/g, '')
+    .replace(/【PPTX兼容性-图标规范】[\s\S]*?(?=\n\n【|$)/g, '');
+  return `${withoutFragileIconBlocks.trim()}\n\n${PPTX_SAFE_ICON_RULES}`;
+}
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -81,11 +95,11 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 【配图规则】(主题套图=themeAccent主题强调图)
 - 主题套图:使用Pexels高质量照片(专业摄影师拍摄,0 credits)
 - 精选网图:使用webFreeToUseCommercially(免版权商用图搜索)
-- 封面页和结尾页必须配高质量照片
-- 内容页每页至少配1张相关照片,确保图文结合
+- 封面页和结尾页优先配图,若图片不可用必须删除图片容器并改为图标/色块/大字布局
+- 内容页按信息密度决定是否配图,若图片不可用必须删除图片容器,不得保留空框、灰框或丢图图标
 - 照片风格(必须包含):Minimalist, clean background, negative space, professional, high quality
 - 配图位置:右图或上图,禁止左图布局
-- 如文字内容少于40字/页,必须额外增加配图数量
+- 如文字内容少于40字/页,优先使用图标、色块与留白增强,不要为了凑图而保留空图片容器
 
 【语言规则】
 - 所有文字使用简体中文
@@ -103,8 +117,8 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 
 【配图规则】
 - 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
-- 禁止与用户选择冲突：用户选网图/AI图时，不可改回纯文字页
-- 封面页、目录页、过渡页、结束页必须含图（至少主题强调图）
+- 用户选网图/AI图时，如对应来源失败，允许改为纯文字+图标+色块布局，但绝不允许切换成其它图片源
+- 封面页、目录页、过渡页、结束页优先含图；若取图失败，必须删除图片容器并改用无图布局
 - 可使用图标库(Font Awesome / Material Icons)
 
 【语言规则】
@@ -251,6 +265,13 @@ export async function POST(request: NextRequest) {
     if (imageOptions?.source === 'noImages') {
       imageOptions.source = 'themeAccent';
     }
+    if (
+      imageOptions?.source === 'themeAccent'
+      && LIGHT_MINIMAL_STYLE_RE.test(String(effectiveInputText || ''))
+    ) {
+      imageOptions.source = 'webFreeToUseCommercially';
+      console.warn('[GammaDirect] LIGHT_STYLE_THEMEACCENT_FALLBACK source=themeAccent -> webFreeToUseCommercially');
+    }
     const finalImageSource = String(imageOptions.source || 'themeAccent');
 
     // ===== Layer 4: Membership/Permission Check =====
@@ -313,7 +334,7 @@ export async function POST(request: NextRequest) {
       : '';
     // 免费套图:追加强调布局图指令
     const themeAppend = (finalImageSource === 'themeAccent')
-      ? `\n\n【主题套图-Pexels高质量照片】\n请为每一页配Pexels高质量照片,照片风格:professional, clean, minimalist, business context。每页使用不同的照片和Gamma内置的Emphasize强调布局,保持视觉丰富度。`
+      ? `\n\n【主题套图-Pexels高质量照片】\n优先使用Pexels高质量照片；只有在照片已成功加载且可见时才保留图片元素。若图片不可用，必须删除图片元素和图片容器，改用图标、色块或大字布局，禁止空图片框。`
       : '';
     const keyPageSourceHint =
       finalImageSource === 'webFreeToUseCommercially'
@@ -321,8 +342,8 @@ export async function POST(request: NextRequest) {
         : finalImageSource === 'aiGenerated'
           ? '优先使用 AI 图（aiGenerated）'
           : '使用主题强调图（themeAccent / Emphasize布局）';
-    const imageStrategy = `\n\n【图片策略-强制】\n封面页、目录页、章节过渡页、结束页必须配图，${keyPageSourceHint}。内容页遵循“少字优先补图”：仅在要点较少或留白较多时补图；若用户选择了网图/AI图，则内容页一旦配图必须使用对应来源（webFreeToUseCommercially 或 aiGenerated），不得替换为 themeAccent；仅在检索/生成失败时允许回退。非结构页中应有至少 50% 页面使用所选来源配图（文字密集页可例外）。任何页面禁止无图状态：至少有图标或配图；结构页必须有配图。若 web/ai 配图失败，必须自动回退 themeAccent，不允许输出空图片占位。所有页面至少有一个可见图片主体（不能仅图标）。`;
-    const finalInstructions = instructions + metaphorAppend + themeAppend + imageStrategy;
+    const imageStrategy = `\n\n【图片策略-强制】\n封面页、目录页、章节过渡页、结束页可用图则用图，${keyPageSourceHint}；若图片不可见，必须删除图片元素和图片容器，改用图标、色块和大字排版完成页面。内容页遵循“少字优先补图”：仅在图片真实可见时保留图片；若用户选择了网图/AI图，则内容页一旦配图必须使用对应来源（webFreeToUseCommercially 或 aiGenerated），不得替换为 themeAccent。若 web/ai 配图失败，必须直接删除图片容器，不允许自动回退 themeAccent，不允许输出空图片占位、灰框、浏览器缺图图标或丢图图标。`;
+    const finalInstructions = normalizePptxSafeInstructions(instructions + metaphorAppend + themeAppend + imageStrategy);
 
     // 🚨 V8.2：Gamma 固定使用 preserve 模式
     // gamma-direct 的 inputText 已经是前端处理好的 markdown
@@ -350,7 +371,7 @@ export async function POST(request: NextRequest) {
       exportAs,
       themeId: finalThemeId,
       cardSplit: undefined, // removed inputTextBreaks to avoid blank pages
-      additionalInstructions: finalInstructions + buildUploadedFilesInstruction(uploadedFiles) + '\n\n【PPTX兼容性-图标规范】\n所有图标和装饰元素必须使用Unicode符号/emoji代替web SVG图标。' + criticalInstruction + strictPreserveInstruction,
+      additionalInstructions: finalInstructions + buildUploadedFilesInstruction(uploadedFiles) + criticalInstruction + strictPreserveInstruction,
       textOptions: { amount: 'medium', tone: finalTone, language: 'zh-cn' },
       imageOptions,
       cardOptions: { dimensions: '16x9' },

@@ -3,6 +3,7 @@ import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/r
 import { selectBestKey, updateKeyBalance, recordKeyFailure, getAllKeys } from '@/lib/gamma-key-pool';
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
 import { buildGammaImageOptions, normalizeUserInput } from '@/lib/adapters/ppt-param-adapter';
+import { resolveSmartThemeId } from '@/lib/smart-theme-matcher';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -12,7 +13,35 @@ const THEMEACCENT_HIGH_RISK_THEMES = new Set([
   'ash',
   'breeze',
   'commons',
+  'finesse',
 ]);
+const LIGHT_MINIMAL_STYLE_RE = /(白色简约|白色极简|纯白简约|简约白|极简白|白底|白色风格|极简风|浅色极简|简约风|米绿|优雅米绿)/i;
+const PPTX_SAFE_ICON_RULES = `【PPTX安全图标与字体规范-最高优先级】
+- PPTX下载必须离线完整显示，禁止使用Gamma Icons、Font Awesome、Material Icons、Ionicons、web SVG图标、外部图片型图标或任何需要远程加载的装饰图标。
+- 要点标记必须使用PPTX稳定元素：圆形/胶囊形/数字徽章/短线/分隔线/色块/Unicode文字符号，确保导出PPTX后不出现破图、红叉、缺图图标。
+- 图标感可以用基础矢量形状组合实现，例如圆点+线条、序号圆牌、勾选符号、箭头符号；不要插入图片格式的小图标。
+- 字体层级必须符合国内PPT阅读习惯：主标题使用 # 一级标题且≥44pt；页面标题使用 ## 且≥32pt；核心要点使用 ### 或 #### 标题级大文本且≥24pt；禁止普通小字正文作为主要内容。`;
+
+function normalizePptxSafeInstructions(instructions: string): string {
+  const withoutFragileIconBlocks = String(instructions || '')
+    .replace(/【图标规则】[\s\S]*?(?=\n\n【配图规则】)/g, '')
+    .replace(/【图标规范-统一风格】[\s\S]*?(?=\n\n【|$)/g, '');
+  return `${withoutFragileIconBlocks.trim()}\n\n${PPTX_SAFE_ICON_RULES}`;
+}
+
+function resolveLockedThemeFromIntent(intentHints: unknown, currentThemeId: string): string {
+  if (!intentHints || typeof intentHints !== 'object') return currentThemeId;
+  const hints = intentHints as Record<string, unknown>;
+  if (!hints.themeLocked) return currentThemeId;
+
+  const label = String(hints.themeLabel || '').trim();
+  if (!label) return currentThemeId;
+
+  return resolveSmartThemeId({
+    text: label,
+    fallbackThemeId: currentThemeId,
+  })?.themeId || currentThemeId;
+}
 
 function buildUploadedFilesInstruction(uploadedFiles: unknown): string {
   if (!Array.isArray(uploadedFiles) || uploadedFiles.length === 0) return '';
@@ -96,7 +125,7 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 【配图规则】(主题套图=themeAccent主题强调图,精选网图=webFreeToUseCommercially)
 - 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
 - source=themeAccent 时，优先主题强调图；如无法出图，改为纯文字+图标布局，不得保留空白图片框
-- source=web/ai 时，优先对应来源配图；若取图失败可回退主题图或无图文本布局
+- source=web/ai 时，优先对应来源配图；若取图失败，必须删除图片容器并改用图标、色块或纯文字布局，不得回退其它图片源
 - 禁止固定“右侧图片槽位”而没有实际图片内容
 
 【语言规则】
@@ -135,8 +164,8 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 
 【配图规则】
 - 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
-- 禁止与用户选择冲突：用户选网图/AI图时，不可改回纯文字页
-- 结构页优先有图，但图片失败时必须移除图片容器，禁止空白占位框
+- 用户选网图/AI图时，如对应来源失败，允许改为纯文字+图标+色块布局，但绝不允许切换成其它图片源
+- 结构页优先有图，但图片失败时必须移除图片容器，禁止空白占位框、灰框或丢图图标
 
 【语言规则】
 - 所有文字使用简体中文
@@ -274,25 +303,25 @@ function buildSmartImagePolicy(source: unknown): {
   const normalized = String(source || '').trim();
   if (normalized === 'aiGenerated') {
     return {
-      keyPageHint: '结构页与内容页统一使用 AI 图（aiGenerated），确保首屏封面与结束页都有清晰主图',
-      contentPageHint: '内容页默认使用 AI 图（aiGenerated）；仅在生成失败时回退为 themeAccent',
+      keyPageHint: '结构页只有在 AI 图已成功生成且可见时才放图片；若生成失败，必须完全删除图片元素和图片容器，改用图标或色块布局，禁止保留空图槽',
+      contentPageHint: '内容页只有在 AI 图已成功生成且可见时才放图片；若生成失败，必须完全删除图片元素和图片容器，改用图标+色块排版',
       allowThemeAccentOnKeyPages: false,
-      contentMustHaveImage: true,
-      keyPageMustHaveImage: true,
+      contentMustHaveImage: false,
+      keyPageMustHaveImage: false,
     };
   }
   if (normalized === 'webFreeToUseCommercially') {
     return {
-      keyPageHint: '结构页与内容页统一使用网图（webFreeToUseCommercially），确保首屏封面与结束页都有清晰主图',
-      contentPageHint: '内容页默认使用网图（webFreeToUseCommercially）；仅在检索失败时回退为 themeAccent',
+      keyPageHint: '结构页只有在网图已成功检索且可见时才放图片；若检索失败，必须完全删除图片元素和图片容器，改用图标或色块布局，禁止保留空图槽',
+      contentPageHint: '内容页只有在网图已成功检索且可见时才放图片；若检索失败，必须完全删除图片元素和图片容器，改用图标+色块排版',
       allowThemeAccentOnKeyPages: false,
-      contentMustHaveImage: true,
-      keyPageMustHaveImage: true,
+      contentMustHaveImage: false,
+      keyPageMustHaveImage: false,
     };
   }
   return {
-    keyPageHint: '结构页优先使用主题强调图（themeAccent / Emphasize布局）；若主题图不可用，改为纯文字+图标布局',
-    contentPageHint: '内容页需按主题语义补足可见主图，必要时可使用 web/ai 获取更贴题图片，失败时回退 themeAccent',
+    keyPageHint: '结构页只有在主题强调图已成功加载且可见时才使用图片；若主题图不可用，必须完全删除图片元素和图片容器，改为纯文字+图标布局',
+    contentPageHint: '内容页不强制补图；若图片不可见，必须完全删除图片元素和图片容器，改用图标、色块或大字排版',
     allowThemeAccentOnKeyPages: true,
     contentMustHaveImage: false,
     keyPageMustHaveImage: false,
@@ -318,6 +347,7 @@ function buildContentImageGuidance(params: {
     data: '图表相关场景、分析看板、数据业务环境',
     annual: '年度回顾、里程碑、团队成果呈现',
     launch: '新品发布、科技感主视觉、舞台灯光氛围',
+    '旅游出行': '城市地标、旅行目的地、景点实拍、街区漫游、在地生活方式体验',
     traditional: '中式审美、传统文化元素、留白构图',
   };
   const toneHints: Record<string, string> = {
@@ -375,6 +405,7 @@ export async function POST(request: NextRequest) {
       textOptions,
       uploadedFiles,
       auto = false,
+      intentHints,
     } = body;
 
     // 🚨 D1: Normalize aliased fields → canonical PptUserInput
@@ -447,11 +478,25 @@ export async function POST(request: NextRequest) {
     const sceneConfig = SCENE_CONFIGS[scene] || SCENE_CONFIGS.biz;
     // 🚨 V10.14: 使用主题映射转换themeId
     const rawThemeId = themeId || sceneConfig.themeId;
-    const finalThemeId = getGammaThemeId(rawThemeId);
+    let finalThemeId = getGammaThemeId(rawThemeId);
     if (finalThemeId !== rawThemeId && rawThemeId !== sceneConfig.themeId) {
       console.warn(`[Gamma] ThemeId mapped: "${rawThemeId}" → "${finalThemeId}"`);
     }
     const finalTone = normalized.tone || tone || sceneConfig.tone;
+    const explicitThemeRequested = Boolean(
+      intentHints
+      && typeof intentHints === 'object'
+      && (intentHints as Record<string, unknown>).themeLocked
+    );
+    const explicitThemeLabel =
+      intentHints && typeof intentHints === 'object'
+        ? String((intentHints as Record<string, unknown>).themeLabel || '')
+        : '';
+    const lockedThemeId = resolveLockedThemeFromIntent(intentHints, finalThemeId);
+    if (lockedThemeId !== finalThemeId) {
+      console.warn(`[Gamma] INTENT_THEME_LOCK override "${finalThemeId}" -> "${lockedThemeId}" (${explicitThemeLabel || 'locked'})`);
+      finalThemeId = lockedThemeId;
+    }
 
     // 🚨 P0 Fix: 统一使用 mapImageSource 处理 imageOptions
     // 如果已传入完整的 imageOptions(省心模式)直接使用；否则从 imageMode 映射
@@ -476,6 +521,13 @@ export async function POST(request: NextRequest) {
         `[Gamma] THEMEACCENT_THEME_FALLBACK theme=${finalThemeId} source=themeAccent -> webFreeToUseCommercially`
       );
     }
+    if (
+      finalImageOptions?.source === 'themeAccent'
+      && LIGHT_MINIMAL_STYLE_RE.test(String(finalInputText || ''))
+    ) {
+      finalImageOptions.source = 'webFreeToUseCommercially';
+      console.warn('[Gamma] LIGHT_STYLE_THEMEACCENT_FALLBACK source=themeAccent -> webFreeToUseCommercially');
+    }
 
     const instructions = INSTRUCTION_TEMPLATES[finalTone] || INSTRUCTION_TEMPLATES.professional;
     // P0修复：追加全局视觉隐喻（如果提供）
@@ -483,40 +535,42 @@ export async function POST(request: NextRequest) {
       ? `\n\n【全局视觉隐喻】\n贯穿全演示的统一意象：${visualMetaphor}。\n所有配图、图标、色块风格应与此意象一致，配图描述中必须体现该意象关键词。`
       : '';    
     // 如果已传入 additionalInstructions（省心模式），直接使用；否则生成
-    const finalInstructions = additionalInstructions || (instructions + metaphorAppend);
+    const finalInstructions = normalizePptxSafeInstructions(additionalInstructions || (instructions + metaphorAppend));
 
     // 🚨 V8.2: Gamma 固定使用 preserve 模式（大纲已由 outline API 预处理）
     // 构建最终 additionalInstructions
     let finalAdditionalInstructions = finalInstructions
-      + buildUploadedFilesInstruction(uploadedFiles)
-      + '\n\n【图标规范-统一风格】\n使用Gamma内置的图标系统(Icons),保持风格统一:简洁、线性、单色、与主题色一致。禁止混用不同风格的图标(不要同时使用emoji和线性图标)。每页2-4个图标,用于要点标记和视觉装饰。禁止出现无图标的页面。';
+      + buildUploadedFilesInstruction(uploadedFiles);
+    if (explicitThemeRequested) {
+      finalAdditionalInstructions += `\n\n【用户显式主题要求-最高优先级】\n用户已明确指定主题风格/主题色为“${explicitThemeLabel || finalThemeId}”。整套PPT必须围绕该主题色展开：标题、强调色、图标、分隔线、配图氛围必须一致。禁止回退成白色极简、商务蓝默认风或其它无关主题。`;
+    }
     const isThemeAccentMode = finalImageOptions?.source === 'themeAccent';
     const imagePolicy = buildSmartImagePolicy(finalImageOptions?.source);
     const keyPageImageRule = imagePolicy.keyPageMustHaveImage
-      ? '封面页、目录页、章节过渡页、结束页：必须配图。'
-      : '封面页、目录页、章节过渡页、结束页：优先配图，但若图片不可用必须改为无图文本布局，禁止空白图片容器。';
+      ? '封面页、目录页、章节过渡页、结束页：只有在图片已成功加载且可见时才使用图片。'
+      : '封面页、目录页、章节过渡页、结束页：可用图则用图；图片不可用时必须改为无图文本布局，禁止空白图片容器。';
     const contentImageRule = imagePolicy.contentMustHaveImage
       ? '内容页必须有可见图片主体（非纯图标），按“每页至少1个主视觉”执行，禁止纯文字白板。'
       : '内容页不强制每页配图；若配图失败，必须删除图片容器并改用图标+色块排版，禁止灰色占位框。';
-    finalAdditionalInstructions += `\n\n【图片策略-强制】\n1. ${keyPageImageRule}${imagePolicy.keyPageHint}。\n2. ${contentImageRule}\n3. ${imagePolicy.contentPageHint}。\n4. 当来源为 web/ai 时，内容页一旦配图必须使用对应来源，不得偷偷替换为其它来源。\n5. 当来源为 web/ai 时，内容页中至少 70% 页面使用该来源配图（仅文字极密页可例外）。\n6. 任何页面都禁止空图片占位、灰框占位；若失败必须回退为可展示布局（主题图或纯文字+图标）。\n7. ${buildContentImageGuidance({ source: finalImageOptions?.source, tone: finalTone, scene, inputText: finalInputText })}`;
+    finalAdditionalInstructions += `\n\n【图片策略-强制】\n1. ${keyPageImageRule}${imagePolicy.keyPageHint}。\n2. ${contentImageRule}\n3. ${imagePolicy.contentPageHint}。\n4. 当来源为 web/ai 时，内容页一旦配图必须使用对应来源，不得偷偷替换为其它来源。\n5. 不要为了满足配图数量而创建空图片槽；宁可减少图片，也不得出现灰框、破图、加载失败图标或空白占位。\n6. 任何页面都禁止图片占位符、灰框占位、浏览器缺图图标、小山图标、文件破损图标；如果图片不可见，必须删除整个图片元素和其外层容器。\n7. 如果无法保证图片真实显示，请使用全文字、图标、色块、时间轴、卡片、数字看板等无图布局完成页面，不要保留图片区域。\n8. ${buildContentImageGuidance({ source: finalImageOptions?.source, tone: finalTone, scene, inputText: finalInputText })}`;
     if (normalized.textMode === 'preserve') {
       // 🚨 V6修复：追加CRITICAL强制指令，封锁Gamma的发散权限
       finalAdditionalInstructions += '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作、扩写或修改任何事实信息。严格按照提供的Markdown层级和\'---\'分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。保持所有 \'>\' 作为演讲者备注不做展示。';
       if (isThemeAccentMode && imagePolicy.allowThemeAccentOnKeyPages) {
-        finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页优先使用主题强调图；若无法稳定出图，请切换为无图文本布局并增强图标/色块，不得保留空图片框。';
+        finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页只有在主题强调图已真实显示时才使用图片；若无法稳定出图，请删除图片容器并切换为无图文本布局，增强图标/色块，不得保留空图片框。';
       }
       if (Boolean(strictPreserve)) {
         finalAdditionalInstructions += '\n\n【严格保真开关】\n禁止改写或重命名标题；禁止添加“续页”后缀；禁止在正文中注入填充提示语或额外说明。';
         if (isSmartFlow) {
-          finalAdditionalInstructions += '\n【省心模式保真补充】\n在不改写正文的前提下，必须执行图片策略：为结构页和关键页补足可见配图，禁止输出纯文字大白板。';
+    finalAdditionalInstructions += '\n【省心模式保真补充】\n在不改写正文的前提下，优先执行图片策略；若图片不可用，可退回为纯文字+图标+色块的完整布局，但绝不允许空图片容器、灰框或丢图图标。';
         } else {
           finalAdditionalInstructions += '\n【专业模式保真补充】\n保留Markdown结构即可，可按图片策略补图，但不要改变正文事实。';
         }
       }
     } else if (isThemeAccentMode) {
-      finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页优先使用主题强调图；内容页按留白情况择优补图。若图片不可用，必须改成纯文字+图标布局，禁止空图片框。';
+      finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页只有在主题强调图已真实显示时才使用图片；内容页按留白情况择优补图。若图片不可用，必须删除图片容器并改成纯文字+图标布局，禁止空图片框。';
     } else {
-      finalAdditionalInstructions += '\n\n【网图/AI图关键页策略】\n首屏封面、目录页、过渡页、结束页均需可见主图，不允许纯文字结构页；若本次图片源检索或生成失败，允许回退为 themeAccent 但仍必须有图。';
+      finalAdditionalInstructions += '\n\n【网图/AI图关键页策略】\n封面、目录页、过渡页、结束页优先使用当前所选图片来源作为主图；若检索或生成失败，直接删除图片容器并改用文字+图标+色块完成页面，不允许回退成 themeAccent，更不允许出现缺图图标、灰框或空白图片位。';
     }
 
     // 🚨 P0 Fix: 使用解构排除 slides，不使用 delete 语句

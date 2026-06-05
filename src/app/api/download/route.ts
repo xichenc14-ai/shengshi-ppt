@@ -3,6 +3,18 @@ import { createClient } from '@supabase/supabase-js';
 import { getClientIP, rateLimit } from '@/lib/rate-limit';
 import { checkDownloadPermission } from '@/lib/membership';
 
+type MutableUserCounters = {
+  plan_type?: string | null;
+  download_count_month?: number | null;
+  ppt_trial_count_month?: number | null;
+  download_reset_month?: string | null;
+  credits?: number | null;
+};
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -48,8 +60,8 @@ export async function GET(request: NextRequest) {
       pptTrialCount: user.ppt_trial_count_month || 0,
       resetMonth: user.download_reset_month,
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: getErrorMessage(e) }, { status: 500 });
   }
 }
 
@@ -101,16 +113,21 @@ export async function POST(request: NextRequest) {
       const permission = checkDownloadPermission(user, pageCount, 'pptx');
 
       if (permission.needPayment) {
-        // TODO: 接入支付系统
+        // 商业化路径：返回支付引导信息，由前端调用 /api/pay-once（credits/provider 两种模式）
         return NextResponse.json({
           needPayment: true,
           cost: permission.cost,
           message: permission.reason,
+          payment: {
+            endpoint: '/api/pay-once',
+            supportedModes: ['credits', 'provider'],
+            defaultMode: 'credits',
+          },
         });
       }
 
       // 更新计数
-      const updates: any = {};
+      const updates: Record<string, number> = {};
       if ((user.plan_type || 'free') === 'free') {
         updates.ppt_trial_count_month = (user.ppt_trial_count_month || 0) + 1;
       }
@@ -121,7 +138,7 @@ export async function POST(request: NextRequest) {
 
       // 统一记录下载行为（便于后台审计）
       try {
-        const latestBalance = Number((user as { credits?: number | null }).credits || 0);
+        const latestBalance = Number((user as MutableUserCounters).credits || 0);
         await sb.from('credit_transactions').insert({
           user_id: userId,
           amount: 0,
@@ -143,7 +160,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ error: '未知操作' }, { status: 400 });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: getErrorMessage(e) }, { status: 500 });
   }
 }

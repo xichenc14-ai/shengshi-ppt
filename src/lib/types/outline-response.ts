@@ -28,6 +28,13 @@ export interface OutlineMeta {
     forceRequestedMode?: boolean;
     strictPreserve?: boolean;
   };
+  intent?: {
+    themeLocked?: boolean;
+    themeLabel?: string;
+    pageCountLocked?: boolean;
+    imageModeLocked?: boolean;
+    toneLocked?: boolean;
+  };
   fallback?: boolean;
   _fallback?: boolean;
   _fromMarkdown?: boolean;

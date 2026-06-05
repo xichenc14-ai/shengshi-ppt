@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { isPaymentFeatureEnabledServer } from '@/lib/payment-feature';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -82,6 +83,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const sb = getSupabase();
   if (!sb) return NextResponse.json({ error: '服务未配置' }, { status: 503 });
+  if (!isPaymentFeatureEnabledServer()) {
+    return NextResponse.json({ error: '支付通道申请中，暂不可创建充值订单' }, { status: 503 });
+  }
   try {
     const { packageId } = await req.json();
     if (!packageId) return NextResponse.json({ error: '请选择充值包' }, { status: 400 });

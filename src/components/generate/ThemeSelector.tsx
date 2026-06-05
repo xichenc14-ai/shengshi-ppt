@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import type { CSSProperties } from 'react';
 
 interface ThemeSelectorProps {
   value: string;
@@ -39,54 +40,64 @@ const IMG_MODES = [
 ];
 
 export default function ThemeSelector({ value, onChange, tone, onToneChange, imgMode, onImgModeChange, pages, onPagesChange }: ThemeSelectorProps) {
-  const [showAll, setShowAll] = React.useState(false);
+  const [expanded, setExpanded] = React.useState<string | null>(null);
+
+  const selectedCategory = React.useMemo(() => {
+    return THEME_COLORS.find((c) => c.themes.includes(value))?.id ?? THEME_COLORS[0].id;
+  }, [value]);
+
+  const activeCategory = expanded ?? selectedCategory;
+  const activeThemes = THEME_COLORS.find((c) => c.id === activeCategory)?.themes ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* 主题色系 */}
       <div>
-        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 block">
+        <label className="text-[11px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2.5 sm:mb-3 block">
           主题色系
         </label>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="grid grid-cols-4 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-2">
           {THEME_COLORS.map((color) => (
             <button
               key={color.id}
-              onClick={() => setShowAll(!showAll)}
-              className="flex items-center gap-2 p-3 rounded-xl border-2 transition-all hover:border-purple-200"
+              onClick={() => setExpanded((prev) => (prev === color.id ? null : color.id))}
+              className="flex items-center gap-1.5 p-2 sm:gap-2 sm:p-3 rounded-lg sm:rounded-xl border sm:border-2 transition-all hover:border-purple-200 min-h-[44px] sm:min-h-[unset]"
               style={{
-                borderColor: showAll && THEME_COLORS.some(c => c.id === value) ? '#8b5cf6' : '#e4e4e7',
-                background: showAll && value === color.id ? '#f5f3ff' : 'white'
+                borderColor: activeCategory === color.id ? '#8b5cf6' : '#e4e4e7',
+                background: activeCategory === color.id ? '#f5f3ff' : 'white'
               }}
             >
-              <span className="text-lg">{color.emoji}</span>
-              <span className="text-xs font-medium text-gray-700">{color.name}</span>
+              <span className="text-base sm:text-lg">{color.emoji}</span>
+              <span className="text-[11px] sm:text-xs font-semibold text-gray-700 truncate">{color.name}</span>
             </button>
           ))}
         </div>
         
         {/* 展开的详细主题 */}
-        {showAll && (
-          <div className="mt-3 p-4 bg-gray-50 rounded-xl border border-gray-100 animate-fade-in">
-            <p className="text-xs text-gray-400 mb-3">选择具体主题</p>
-            <div className="flex flex-wrap gap-2">
-              {THEME_COLORS.find(c => c.id === value)?.themes.map((theme) => (
+        <div className="mt-2 sm:mt-3 p-2.5 sm:p-4 bg-gray-50 rounded-xl border border-gray-100 animate-fade-in">
+            <p className="text-[11px] sm:text-xs text-gray-500 mb-2 sm:mb-3 font-medium">选择具体主题</p>
+            <div className="grid grid-cols-4 sm:grid-cols-4 gap-1.5 sm:gap-2">
+              {activeThemes.map((theme) => (
                 <button
                   key={theme}
-                  onClick={() => { onChange(theme); setShowAll(false); }}
-                  className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-600 hover:border-purple-300 hover:text-purple-600 transition-all capitalize"
+                  onClick={() => onChange(theme)}
+                  className="px-2 py-1.5 sm:px-3 bg-white border border-gray-200 rounded-lg text-[11px] sm:text-xs font-medium text-gray-600 hover:border-purple-300 hover:text-purple-600 transition-all capitalize truncate min-h-[34px]"
+                  style={{
+                    borderColor: value === theme ? '#8b5cf6' : '#e5e7eb',
+                    background: value === theme ? '#f5f3ff' : 'white',
+                    color: value === theme ? '#5b21b6' : '#4b5563',
+                  }}
                 >
                   {theme.replace('-', ' ')}
                 </button>
               ))}
             </div>
-          </div>
-        )}
+        </div>
       </div>
 
       {/* 风格选择 */}
       <div>
-        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 block">
+        <label className="text-[11px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2.5 sm:mb-3 block">
           演示风格
         </label>
         <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
@@ -100,10 +111,10 @@ export default function ThemeSelector({ value, onChange, tone, onToneChange, img
                 background: tone === t.id ? `${t.color}10` : 'white'
               }}
             >
-              <p className="text-sm font-semibold" style={{ color: tone === t.id ? t.color : '#374151' }}>
+              <p className="text-[13px] sm:text-sm font-semibold" style={{ color: tone === t.id ? t.color : '#374151' }}>
                 {t.label}
               </p>
-              <p className="text-[10px] text-gray-400 mt-0.5">{t.desc}</p>
+              <p className="text-[11px] sm:text-[10px] text-gray-500 mt-0.5">{t.desc}</p>
             </button>
           ))}
         </div>
@@ -111,7 +122,7 @@ export default function ThemeSelector({ value, onChange, tone, onToneChange, img
 
       {/* 图片模式 */}
       <div>
-        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 block">
+        <label className="text-[11px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2.5 sm:mb-3 block">
           配图方案
         </label>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -125,10 +136,10 @@ export default function ThemeSelector({ value, onChange, tone, onToneChange, img
                 background: imgMode === img.id ? '#f5f3ff' : 'white'
               }}
             >
-              <p className="text-xl mb-1">{img.icon}</p>
-              <p className="text-sm font-semibold text-gray-800">{img.label}</p>
-              <p className="text-[10px] text-gray-400">{img.desc}</p>
-              <p className="text-[10px] font-medium mt-1" style={{ color: img.credits === '0' ? '#10b981' : '#f59e0b' }}>
+              <p className="text-lg sm:text-xl mb-1">{img.icon}</p>
+              <p className="text-[13px] sm:text-sm font-semibold text-gray-800">{img.label}</p>
+              <p className="text-[11px] sm:text-[10px] text-gray-500">{img.desc}</p>
+              <p className="text-[11px] sm:text-[10px] font-medium mt-1" style={{ color: img.credits === '0' ? '#10b981' : '#f59e0b' }}>
                 {img.credits === '0' ? '✓ 免费' : img.credits}
               </p>
             </button>
@@ -152,7 +163,7 @@ export default function ThemeSelector({ value, onChange, tone, onToneChange, img
             value={pages}
             onChange={(e) => onPagesChange(parseInt(e.target.value))}
             className="w-full"
-            style={{ '--range-progress': `${((pages - 4) / 26) * 100}%` } as any}
+            style={{ '--range-progress': `${((pages - 4) / 26) * 100}%` } as CSSProperties}
           />
           <div className="flex justify-between text-[10px] text-gray-400 mt-1">
             <span>4页</span>

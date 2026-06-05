@@ -11,13 +11,15 @@ describe('buildMdV2 image hint strategy', () => {
 
   it('uses web-first key-page hint when image mode is web', () => {
     const { markdown } = buildMdV2('测试', slides as any, 'web');
-    expect(markdown).toContain('本页必须配图，优先使用网图(webFreeToUseCommercially)');
-    expect(markdown).toContain('若无法取图，必须移除图片容器，禁止显示空占位框');
+    expect(markdown).toContain('只有在网图(webFreeToUseCommercially)已成功检索且可见时才放图片');
+    expect(markdown).toContain('必须删除图片元素和图片容器');
+    expect(markdown).not.toContain('本页必须配图');
   });
 
   it('keeps themeAccent key-page hint when image mode is theme', () => {
     const { markdown } = buildMdV2('测试', slides as any, 'theme-img');
-    expect(markdown).toContain('本页优先使用主题强调图（Emphasize布局）');
-    expect(markdown).toContain('若主题图不可用，改用网图或纯文字+图标版式');
+    expect(markdown).toContain('只有在主题强调图已成功加载且可见时才放图片');
+    expect(markdown).toContain('必须删除图片元素和图片容器');
+    expect(markdown).not.toContain('改用网图');
   });
 });

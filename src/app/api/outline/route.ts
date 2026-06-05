@@ -3,6 +3,7 @@ import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
 import { callWithFallback } from '@/lib/ai/fallback-orchestrator';
 import { getGammaThemeId, isValidGammaTheme } from '@/lib/gamma-theme-mapping';
 import { generateMinimalOutline, normalizeUserInput, parseMarkdownOutline } from '@/lib/ppt-param-adapter';
+import { resolveSmartThemeId } from '@/lib/smart-theme-matcher';
 import type { OutlineSlide, OutlineMeta, OutlineResponse } from '@/lib/types/outline-response';
 import { LIMITS } from '@/lib/input-validation';
 
@@ -48,6 +49,31 @@ type UploadedFileMeta = {
   passthrough?: boolean;
 };
 
+type OutlineLikeSlide = {
+  title?: string;
+  content?: unknown;
+  bullets?: unknown;
+  notes?: unknown;
+  speakerNotes?: unknown;
+  [key: string]: unknown;
+};
+
+type ParsedOutlineLike = {
+  title?: string;
+  scene?: string;
+  themeId?: string;
+  tone?: string;
+  imageMode?: string;
+  slides?: OutlineLikeSlide[];
+  _fallback?: boolean;
+  _fromMarkdown?: boolean;
+  [key: string]: unknown;
+};
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 type SmartMaterialKind = 'chat-screenshot' | 'document' | 'ppt-draft' | 'table' | 'image' | 'other';
 
 const TABLE_INTENT_RE = /(处理表格|解析表格|表格数据|数据表|明细表|excel|xlsx|csv|sheet|透视表|图表数据)/i;
@@ -56,12 +82,15 @@ const CHAT_SCREENSHOT_RE = /(聊天|微信|群聊|对话|聊天记录|截图|截
 function normalizeUploadedFiles(raw: unknown): UploadedFileMeta[] {
   if (!Array.isArray(raw)) return [];
   return raw
-    .map((file: any) => ({
-      name: typeof file?.name === 'string' ? file.name : '未命名附件',
-      type: typeof file?.type === 'string' ? file.type : '',
-      size: typeof file?.size === 'number' ? file.size : 0,
-      passthrough: Boolean(file?.passthrough),
-    }))
+    .map((file: unknown) => {
+      const f = (file ?? {}) as Record<string, unknown>;
+      return {
+        name: typeof f.name === 'string' ? f.name : '未命名附件',
+        type: typeof f.type === 'string' ? f.type : '',
+        size: typeof f.size === 'number' ? f.size : 0,
+        passthrough: Boolean(f.passthrough),
+      };
+    })
     .slice(0, LIMITS.MAX_FILE_COUNT);
 }
 
@@ -116,6 +145,8 @@ type UserIntentOverrides = {
   textMode?: 'generate' | 'condense' | 'preserve';
   imageMode?: 'theme-img' | 'web' | 'ai';
   themeId?: string;
+  themeLocked?: boolean;
+  themeLabel?: string;
   scene?: string;
   tone?: 'professional' | 'casual' | 'creative' | 'bold' | 'traditional';
   reasons: string[];
@@ -154,14 +185,25 @@ function normalizeOutlineImageMode(raw: unknown): 'theme-img' | 'web' | 'ai' {
   return 'theme-img';
 }
 
+function isSmartAutoImageSource(raw: unknown): boolean {
+  const value = String(raw || '').trim().toLowerCase();
+  return value === 'smart' || value === 'auto';
+}
+
 function resolveSmartDefaultImageMode(params: {
   detectedScene: string;
   finalTone: string;
   topic: string;
-}): 'theme-img' {
-  void params;
-  // 省心模式默认回归主题套图，只有用户明确声明全局网图/AI图才切换。
-  return 'theme-img';
+}): 'web' | 'ai' {
+  const scene = String(params.detectedScene || '');
+  const tone = String(params.finalTone || '');
+  const text = String(params.topic || '').toLowerCase();
+
+  const preferAiScene = new Set(['创意方案', '产品发布', '科技AI', '中国风', '婚礼庆典']);
+  if (preferAiScene.has(scene)) return 'ai';
+  if (tone === 'creative' || tone === 'bold' || tone === 'traditional') return 'ai';
+  if (/插画|拟人|概念图|视觉隐喻|未来感|科幻|国风|古风|海报/.test(text)) return 'ai';
+  return 'web';
 }
 
 function normalizeThemeToGamma(themeId: string | undefined | null): string {
@@ -181,7 +223,7 @@ function extractUserIntentOverrides(inputText: string): UserIntentOverrides {
   const pageMatch = text.match(/(?:生成|做|输出|整理|控制)?\s*(\d{1,2})\s*页/);
   if (pageMatch) {
     const parsed = Number(pageMatch[1]);
-    if (Number.isFinite(parsed) && parsed >= 3 && parsed <= 30) {
+    if (Number.isFinite(parsed) && parsed >= 3 && parsed <= 40) {
       overrides.pageCount = parsed;
       reasons.push(`识别页数=${parsed}`);
     }
@@ -205,6 +247,7 @@ function extractUserIntentOverrides(inputText: string): UserIntentOverrides {
   }
 
   const sceneSignals: Array<{ scene: string; patterns: RegExp[]; score: number }> = [
+    { scene: '旅游出行', patterns: [/旅游|旅行|出行|景点|攻略|citywalk|city walk|打卡|自由行|目的地|路线|游玩/g], score: 0 },
     { scene: '餐饮美食', patterns: [/咖啡|拿铁|美式|手冲|咖啡豆|咖啡馆|咖啡店|咖啡文化|餐饮|美食|菜品|烘焙|甜品|饮品|奶茶/g], score: 0 },
     { scene: '中国风', patterns: [/古风|国风|中式|传统文化|潮汕|岭南|非遗|汉服|诗词|国学/g], score: 0 },
     { scene: '科技AI', patterns: [/科技|ai|人工智能|数字化|互联网|大模型|算法|软件/g], score: 0 },
@@ -245,34 +288,30 @@ function extractUserIntentOverrides(inputText: string): UserIntentOverrides {
   else if (/传统|国风|庄重|古风/.test(text)) overrides.tone = 'traditional';
   if (overrides.tone) reasons.push(`识别语气=${overrides.tone}`);
 
-  // 风格与主题优先识别（强信号）
   if (/古村|古镇|村落|乡村|田园|文旅|山村|岭南古村|潮汕古村|古风|国风|中式|传统文化|潮汕|岭南|非遗/.test(text)) {
-    overrides.themeId = /古村|古镇|村落|乡村|田园|文旅|山村/.test(text) ? 'finesse' : 'chisel';
-    if (!overrides.tone) overrides.tone = 'traditional';
     overrides.scene = '中国风';
-    reasons.push(`识别主题色系=中国风(${overrides.themeId})`);
+    if (!overrides.tone) overrides.tone = 'traditional';
   } else if (/科技|未来|ai|数字化|互联网/.test(text)) {
-    overrides.themeId = 'aurora';
     overrides.scene = '科技AI';
-    reasons.push('识别主题色系=科技风(aurora)');
-  } else if (/咖啡|拿铁|美式|手冲|咖啡豆|咖啡馆|咖啡店|咖啡文化/.test(text)) {
-    overrides.themeId = 'finesse';
+  } else if (/咖啡|拿铁|美式|手冲|咖啡豆|咖啡馆|咖啡店|咖啡文化|餐饮|美食|菜品|烘焙|甜品|饮品|奶茶/.test(text)) {
     overrides.scene = '餐饮美食';
     if (!wantsDarkStyle && !overrides.tone) overrides.tone = 'casual';
-    reasons.push('识别主题色系=咖啡场景(finesse)');
-  } else if (/餐饮|美食|菜品|烘焙|甜品|饮品|奶茶/.test(text)) {
-    overrides.themeId = 'clementa';
-    overrides.scene = '餐饮美食';
-    if (!wantsDarkStyle && !overrides.tone) overrides.tone = 'casual';
-    reasons.push('识别主题色系=餐饮场景(clementa)');
   } else if (/白色简约|白色极简|纯白简约|简约白|极简白|白色风格/.test(text)) {
-    overrides.themeId = 'howlite';
     overrides.scene = '清新简约';
     if (!overrides.tone) overrides.tone = 'casual';
-    reasons.push('识别主题色系=白色简约(howlite)');
-  } else if (/高端|奢华|质感/.test(text)) {
-    overrides.themeId = 'aurum';
-    reasons.push('识别主题色系=高端风(aurum)');
+  }
+
+  const smartTheme = resolveSmartThemeId({
+    text,
+    scene: overrides.scene,
+    tone: overrides.tone,
+    fallbackThemeId: 'consultant',
+  });
+  if (smartTheme) {
+    overrides.themeId = smartTheme.themeId;
+    overrides.themeLocked = smartTheme.locked;
+    overrides.themeLabel = smartTheme.themeLabel;
+    reasons.push(smartTheme.reason);
   }
 
   return overrides;
@@ -354,7 +393,7 @@ ${materialLines}
 }
 
 // ===== JSON 解析函数（带多层修复 + Markdown fallback） =====
-function tryParseJson(rawContent: string): any | null {
+function tryParseJson(rawContent: string): ParsedOutlineLike | null {
   if (!rawContent || typeof rawContent !== 'string') return null;
 
   let cleaned = rawContent.trim();
@@ -413,7 +452,7 @@ function tryParseJson(rawContent: string): any | null {
   // 通过正则提取所有完整的 { ... "title" ... } 对象
   const slideMatches = cleaned.match(/\{[^{}]*"title"[^{}]*\}(?=\s*,|\s*\]|\s*\}|$)/g);
   if (slideMatches && slideMatches.length > 0) {
-    const extractedSlides: any[] = [];
+    const extractedSlides: OutlineLikeSlide[] = [];
     for (const match of slideMatches) {
       try {
         const slide = JSON.parse(match);
@@ -461,7 +500,7 @@ function tryParseJson(rawContent: string): any | null {
   return null;
 }
 
-function enforceSlideCount(slides: any[], target: number, options?: { strictPreserve?: boolean }): any[] {
+function enforceSlideCount(slides: OutlineLikeSlide[], target: number, options?: { strictPreserve?: boolean }): OutlineLikeSlide[] {
   const safeTarget = Number.isFinite(target) && target > 0 ? Math.floor(target) : 8;
   const strictPreserve = Boolean(options?.strictPreserve);
   const list = Array.isArray(slides) ? slides : [];
@@ -474,7 +513,7 @@ function enforceSlideCount(slides: any[], target: number, options?: { strictPres
     }
     const overflow = list.slice(safeTarget);
     const overflowSummary = overflow
-      .map((s: any, i: number) => `- ${s?.title || `溢出页${i + 1}`}`)
+      .map((s: OutlineLikeSlide, i: number) => `- ${s?.title || `溢出页${i + 1}`}`)
       .join('\n');
     const last = head[head.length - 1] || {};
     const lastNotes = typeof last.notes === 'string' ? last.notes : '';
@@ -537,9 +576,9 @@ function buildFallbackBullets(topicKeyword: string, slideTitle: string): string[
   ];
 }
 
-function refineOutlineSlides(slides: any[], topic: string): any[] {
+function refineOutlineSlides(slides: OutlineLikeSlide[], topic: string): OutlineLikeSlide[] {
   const topicKeyword = deriveTopicKeyword(topic);
-  return (Array.isArray(slides) ? slides : []).map((slide: any, index: number) => {
+  return (Array.isArray(slides) ? slides : []).map((slide: OutlineLikeSlide, index: number) => {
     const title = String(slide?.title || `第${index + 1}页`).trim() || `第${index + 1}页`;
     const baseBullets = normalizeOutlineBullets(slide?.content ?? slide?.bullets).filter((item) => !isPlaceholderBullet(item));
     const noteBullets = normalizeOutlineBullets(slide?.notes).filter((item) => !isPlaceholderBullet(item));
@@ -814,7 +853,7 @@ ${promptInputText}`
       : `请根据以下内容生成PPT大纲（${numCards}页）。\n优先级要求：用户输入中的题目、关键要点、重要声明为最高优先级，不得丢失或改写核心事实。\n\n${promptInputText}`;
 
     // ===== 调用 AI（统一 fallback orchestrator） =====
-    let parsed: any = null;
+    let parsed: ParsedOutlineLike | null = null;
     let aiError = '';
 
     try {
@@ -842,8 +881,8 @@ ${promptInputText}`
           console.warn('[Outline]', aiError);
         }
       }
-    } catch (e: any) {
-      aiError = `Fallback orchestrator: ${e.message}`;
+    } catch (e: unknown) {
+      aiError = `Fallback orchestrator: ${getErrorMessage(e)}`;
       console.warn('[Outline] Fallback orchestrator error:', aiError);
     }
 
@@ -871,7 +910,8 @@ ${promptInputText}`
     }
 
     // 统一页数：强制对齐目标页数，避免模型返回页数漂移
-    parsed.slides = enforceSlideCount(parsed.slides, numCards, { strictPreserve });
+    const parsedSlides = Array.isArray(parsed.slides) ? parsed.slides : [];
+    parsed.slides = enforceSlideCount(parsedSlides, numCards, { strictPreserve });
     // 质量补全：清理占位词并确保每页至少有3条可用要点（最多4条）
     parsed.slides = refineOutlineSlides(parsed.slides, topic);
 
@@ -885,7 +925,7 @@ ${promptInputText}`
 
     // ===== 构建返回结果（D2: 添加 meta 字段） =====
     const topicText = String(topic || '').toLowerCase();
-    const fullText = `${topic || ''} ${parsed.title || ''} ${(parsed.slides || []).map((s: any) => s.title).join(' ')}`.toLowerCase();
+    const fullText = `${topic || ''} ${parsed.title || ''} ${(parsed.slides || []).map((s: OutlineLikeSlide) => s.title || '').join(' ')}`.toLowerCase();
     const topicDetectedScene = detectScene(topicText);
     const fullDetectedScene = detectScene(fullText);
     const aiScene = typeof parsed.scene === 'string' && parsed.scene.trim() ? parsed.scene.trim() : '';
@@ -925,9 +965,9 @@ ${promptInputText}`
         : (auto ? (userIntentOverrides.tone || '') : '');
     const aiTone = typeof parsed.tone === 'string' ? parsed.tone : '';
     const finalTone = requestedTone || aiTone || sceneConfig.tone;
-    const requestedImageMode = (typeof rawImageMode === 'string' && rawImageMode.trim())
+    const requestedImageMode = (typeof rawImageMode === 'string' && rawImageMode.trim() && !isSmartAutoImageSource(rawImageMode))
       ? normalizeOutlineImageMode(rawImageMode)
-      : (typeof normalized.imageSource === 'string' && normalized.imageSource.trim())
+      : (typeof normalized.imageSource === 'string' && normalized.imageSource.trim() && !isSmartAutoImageSource(normalized.imageSource))
         ? normalizeOutlineImageMode(normalized.imageSource)
         : (auto ? (userIntentOverrides.imageMode || '') : '');
     const aiImageMode = typeof parsed.imageMode === 'string' ? normalizeOutlineImageMode(parsed.imageMode) : '';
@@ -939,23 +979,32 @@ ${promptInputText}`
     const finalImageMode = normalizeOutlineImageMode(
       requestedImageMode || (auto ? smartDefaultImageMode : '') || aiImageMode || sceneConfig.imageMode
     );
+    const normalizedPurpose = typeof purpose === 'string' ? purpose : '';
 
     // D2: 构建 canonical slides（带 index/bullets 字段）
-    const slides: OutlineSlide[] = (parsed.slides || []).map((s: any, i: number) => ({
-      index: i + 1,
-      title: s.title || `第${i + 1}页`,
-      bullets: s.content || s.bullets || [],
-      content: s.content || s.bullets || [], // 兼容旧字段
-      speakerNotes: s.notes || s.speakerNotes,
-      notes: s.notes || s.speakerNotes, // 兼容旧字段
-    }));
+    const slides: OutlineSlide[] = (parsed.slides || []).map((s: OutlineLikeSlide, i: number) => {
+      const normalizedBullets = normalizeOutlineBullets(s.content ?? s.bullets);
+      const normalizedNotes = typeof s.notes === 'string'
+        ? s.notes
+        : typeof s.speakerNotes === 'string'
+          ? s.speakerNotes
+          : undefined;
+      return {
+        index: i + 1,
+        title: s.title || `第${i + 1}页`,
+        bullets: normalizedBullets,
+        content: normalizedBullets, // 兼容旧字段
+        speakerNotes: normalizedNotes,
+        notes: normalizedNotes, // 兼容旧字段
+      };
+    });
 
     // D2: 构建 meta 字段
     const meta: OutlineMeta = {
       topic,
       pageCount: slides.length,
       style: finalTone,
-      purpose: detectedScene || purpose,
+      purpose: detectedScene || normalizedPurpose,
       imageMode: finalImageMode,
       contentStrategy: finalTextMode,
       mode: auto ? 'auto' : (finalTextMode as 'generate' | 'condense' | 'preserve'),
@@ -967,6 +1016,13 @@ ${promptInputText}`
         autoAdjusted: auto ? (preferredMode === 'preserve' && finalTextMode !== 'preserve') : false,
         forceRequestedMode,
         strictPreserve,
+      },
+      intent: {
+        themeLocked: Boolean(userIntentOverrides.themeLocked),
+        themeLabel: userIntentOverrides.themeLabel,
+        pageCountLocked: typeof userIntentOverrides.pageCount === 'number',
+        imageModeLocked: Boolean(userIntentOverrides.imageMode),
+        toneLocked: Boolean(userIntentOverrides.tone),
       },
     };
 
@@ -982,9 +1038,9 @@ ${promptInputText}`
     }));
 
     // D2: 返回 canonical outline（title + slides[] + meta）
-    const response: OutlineResponse & { slides: any[] } = {
+    const response: OutlineResponse & { slides: OutlineSlide[] } = {
       title: parsed.title || topic || 'PPT',
-      slides: frontendSlides,
+      slides: frontendSlides as unknown as OutlineSlide[],
       meta,
       // 兼容旧字段
       themeId: validThemeId,
@@ -999,8 +1055,8 @@ ${promptInputText}`
     }
 
     return NextResponse.json(response);
-  } catch (error: any) {
-    console.error('[Outline] Error:', error);
+  } catch (error: unknown) {
+    console.error('[Outline] Error:', getErrorMessage(error));
     if (fallbackTopic) {
       const minimal = generateMinimalOutline(fallbackTopic, fallbackPageCount);
       return NextResponse.json({
@@ -1017,13 +1073,14 @@ ${promptInputText}`
         _fallback: true,
       });
     }
-    return NextResponse.json({ error: error.message || '大纲生成失败' }, { status: 500 });
+    return NextResponse.json({ error: getErrorMessage(error) || '大纲生成失败' }, { status: 500 });
   }
 }
 
 function detectScene(text: string): string {
   const normalizedText = (text || '').toLowerCase();
   const keywords: Record<string, string[]> = {
+    '旅游出行': ['旅游', '旅行', '出行', '景点', '攻略', 'citywalk', 'city walk', '自由行', '打卡', '目的地', '行程', '游玩'],
     '餐饮美食': ['咖啡', '拿铁', '美式', '手冲', '咖啡豆', '咖啡馆', '咖啡店', '咖啡文化', '餐饮', '美食', '菜品', '烘焙', '甜品', '饮品', '奶茶'],
     '中国风': ['古风', '国风', '中式', '传统文化', '潮汕', '岭南', '非遗', '汉服', '国学', '古村', '古镇', '村落', '乡村', '田园', '文旅', '山村'],
     '美妆时尚': ['美妆', '时尚', '穿搭', '潮流', '彩妆', '护肤', '服装', '搭配'],

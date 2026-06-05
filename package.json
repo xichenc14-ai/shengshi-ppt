@@ -1,6 +1,6 @@
 {
   "name": "demo",
-  "version": "10.80.1",
+  "version": "10.83.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,7 +9,21 @@
     "lint": "eslint",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "env:commercial": "node scripts/commercial-env-check.mjs",
+    "env:commercial:doctor": "node scripts/commercial-env-doctor.mjs",
+    "go-live:commercial": "node scripts/commercial-go-live-check.mjs",
+    "preflight:commercial": "node scripts/commercial-preflight.mjs",
+    "audit:commercial": "node scripts/commercial-audit-report.mjs",
+    "env:commercial:doctor:report": "node scripts/commercial-env-doctor.mjs",
+    "env:commercial:assert": "node scripts/commercial-env-assert.mjs",
+    "release-gate:commercial": "node scripts/commercial-release-gate.mjs",
+    "audit:objective:commercial": "node scripts/commercial-objective-audit.mjs",
+    "dashboard:commercial": "node scripts/commercial-dashboard.mjs",
+    "env:commercial:export": "node scripts/commercial-env-export.mjs",
+    "handoff:commercial": "node scripts/commercial-handoff-summary.mjs",
+    "audit:mobile-ui": "node scripts/mobile-ui-audit.mjs",
+    "release-gate:nonpayment": "node scripts/nonpayment-release-gate.mjs"
   },
   "dependencies": {
     "@alicloud/dypnsapi20170525": "^2.0.0",

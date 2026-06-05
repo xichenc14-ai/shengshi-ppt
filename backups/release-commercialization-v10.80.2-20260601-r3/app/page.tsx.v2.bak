@@ -1,0 +1,492 @@
+'use client';
+
+import React, { useState, useCallback, useRef } from 'react';
+
+/* ==================== 配置 ==================== */
+
+const GEN_MODES = [
+  { id: 'generate', name: 'AI创作', icon: '🤖', desc: '从零生成' },
+  { id: 'condense', name: '智能摘要', icon: '📝', desc: '提炼要点' },
+  { id: 'preserve', name: '原文排版', icon: '📄', desc: '美化原文' },
+];
+
+const COLOR_THEMES = [
+  { id: 'auto', name: '智能', colors: ['#5B4FE9', '#8B5CF6', '#C4B5FD'] },
+  { id: 'consultant', name: '商务蓝', colors: ['#1E40AF', '#3B82F6', '#93C5FD'] },
+  { id: 'electric', name: '活力橙', colors: ['#EA580C', '#F97316', '#FDBA74'] },
+  { id: 'chisel', name: '大地棕', colors: ['#78350F', '#A16207', '#FDE68A'] },
+  { id: 'blues', name: '高级金', colors: ['#1E3A5F', '#C9A96E', '#F5E6CC'] },
+  { id: 'gleam', name: '科技青', colors: ['#0F766E', '#14B8A6', '#99F6E4'] },
+  { id: 'founder', name: '路演紫', colors: ['#5B4FE9', '#8B5CF6', '#C4B5FD'] },
+  { id: 'default-light', name: '极简白', colors: ['#F1F5F9', '#CBD5E1', '#64748B'] },
+];
+
+const TONES = [
+  { id: 'professional', name: '正式', icon: '💼' },
+  { id: 'casual', name: '轻松', icon: '😊' },
+  { id: 'creative', name: '创意', icon: '💡' },
+  { id: 'traditional', name: '古风', icon: '🏯' },
+];
+
+const IMAGE_MODES = [
+  { id: 'auto', name: '自动', desc: '智能配图' },
+  { id: 'none', name: '无图', desc: '纯文字' },
+  { id: 'web', name: '精选', desc: '商用图' },
+];
+
+type UploadedFile = { name: string; type: string; size: number; content?: string };
+type SlideItem = { id: string; title: string; content?: string[]; notes?: string };
+
+export default function Home() {
+  const [phase, setPhase] = useState<'input' | 'outline' | 'generating' | 'result'>('input');
+  const [showPro, setShowPro] = useState(false);
+
+  const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [topic, setTopic] = useState('');
+  const [dragging, setDragging] = useState(false);
+  const fRef = useRef<HTMLInputElement>(null);
+
+  const [genMode, setGenMode] = useState('generate');
+  const [theme, setTheme] = useState('auto');
+  const [tone, setTone] = useState('professional');
+  const [imgMode, setImgMode] = useState('auto');
+  const [pages, setPages] = useState(10);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [stepText, setStepText] = useState('');
+  const [outlineResult, setOutlineResult] = useState<{ title: string; slides: SlideItem[]; themeId?: string } | null>(null);
+  const [editedSlides, setEditedSlides] = useState<SlideItem[]>([]);
+  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; dlUrl: string } | null>(null);
+
+  const [showLogin, setShowLogin] = useState(false);
+  const [loginPhone, setLoginPhone] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [user, setUser] = useState<{ id: string; phone: string; nickname: string; credits: number; plan_type: string; is_new: boolean } | null>(null);
+
+  const processFiles = useCallback(async (fl: FileList | File[]) => {
+    const r: UploadedFile[] = [];
+    for (const file of Array.from(fl)) {
+      const i: UploadedFile = { name: file.name, type: file.type, size: file.size };
+      if (file.type === 'text/plain' || /\.(md|txt|csv)$/.test(file.name)) i.content = await file.text();
+      r.push(i);
+    }
+    return r;
+  }, []);
+
+  const onDrop = useCallback(async (e: React.DragEvent) => { e.preventDefault(); setDragging(false); if (e.dataTransfer.files.length > 0) { const processed = await processFiles(e.dataTransfer.files); setFiles(p => [...p, ...processed]); } }, [processFiles]);
+  const onFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files?.length) { const processed = await processFiles(e.target.files); setFiles(p => [...p, ...processed]); } e.target.value = ''; }, [processFiles]);
+  const rmFile = useCallback((i: number) => setFiles(p => p.filter((_, j) => j !== i)), []);
+  const fmtS = (b: number) => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
+  const collectText = () => { const p: string[] = []; files.forEach(f => p.push(f.content ? `[${f.name}]\n${f.content}` : `[${f.name}]`)); if (topic.trim()) p.push(topic.trim()); return p.join('\n\n'); };
+  const hasInput = files.length > 0 || topic.trim();
+
+  // Step 1: 生成大纲
+  const generateOutline = useCallback(async () => {
+    const inputText = collectText();
+    if (!inputText.trim()) return;
+    if (!user) { setShowLogin(true); return; }
+    setLoading(true); setError('');
+    setStepText('AI 正在分析需求，生成大纲...');
+    try {
+      const isEasy = !showPro;
+      const tm = isEasy ? 'generate' : genMode;
+      const oRes = await fetch('/api/outline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputText, slideCount: pages, textMode: tm, auto: isEasy }),
+      });
+      if (!oRes.ok) { const d = await oRes.json(); throw new Error(d.error || '大纲生成失败'); }
+      const od = await oRes.json();
+      setOutlineResult(od);
+      setEditedSlides(od.slides || []);
+      setPhase('outline');
+    } catch (e: any) { setError(e.message); }
+    setLoading(false);
+  }, [user, files, topic, showPro, genMode, pages, collectText]);
+
+  // Step 2: 用户确认大纲后，生成 PPT
+  const confirmAndGenerate = useCallback(async () => {
+    if (!outlineResult || !user) return;
+    setLoading(true); setError('');
+    setPhase('generating');
+    setStepText('AI 正在渲染 PPT，请稍候...');
+
+    try {
+      const isEasy = !showPro;
+      const tm = isEasy ? 'generate' : genMode;
+
+      // 扣积分
+      const deductRes = await fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'deduct', userId: user.id, mode: tm, numPages: editedSlides.length }) });
+      const deductData = await deductRes.json();
+      if (!deductRes.ok || deductData.error) throw new Error(deductData.error === '积分不足' ? `积分不足！需要${deductData.needed}积分` : deductData.error || '积分扣除失败');
+      setUser(prev => prev ? { ...prev, credits: deductData.balance } : null);
+
+      const md = buildMd(outlineResult.title, editedSlides);
+      const gRes = await fetch('/api/gamma', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inputText: md, textMode: tm, format: 'presentation',
+          numCards: editedSlides.length, exportAs: 'pptx',
+          themeId: isEasy ? undefined : (theme === 'auto' ? outlineResult.themeId : theme),
+          scene: isEasy ? 'biz' : (tone === 'traditional' ? 'traditional' : 'biz'),
+          tone: isEasy ? 'professional' : tone,
+          imageMode: isEasy ? 'auto' : imgMode,
+        }),
+      });
+      if (!gRes.ok) throw new Error('PPT 生成失败');
+      const gd = await gRes.json();
+
+      if (gd.generationId) {
+        let c = 0;
+        await new Promise<void>((resolve, reject) => {
+          const t = setInterval(async () => {
+            c++;
+            try {
+              const r = await fetch(`/api/gamma?id=${gd.generationId}`);
+              if (!r.ok) return;
+              const d = await r.json();
+              if (d.status === 'completed') { clearInterval(t); resolve(); }
+              else if (d.status === 'failed') { clearInterval(t); reject(new Error('PPT 生成失败')); }
+              else setStepText(`AI 渲染中... (${c * 5}s)`);
+            } catch (e: any) { if (e.message?.includes('失败')) { clearInterval(t); reject(e); } }
+          }, 5000);
+          setTimeout(() => { clearInterval(t); reject(new Error('PPT 生成超时')); }, 240000);
+        });
+
+        const finalRes = await fetch(`/api/gamma?id=${gd.generationId}`);
+        const finalData = await finalRes.json();
+        setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalData.exportUrl || '' });
+        setPhase('result');
+      }
+    } catch (e: any) { setError(e.message); setPhase('outline'); }
+    setLoading(false);
+  }, [user, outlineResult, editedSlides, showPro, genMode, theme, tone, imgMode]);
+
+  const reset = () => { setLoading(false); setError(''); setResult(null); setOutlineResult(null); setEditedSlides([]); setFiles([]); setTopic(''); setShowPro(false); setPhase('input'); };
+  const backToInput = () => { setPhase('input'); setOutlineResult(null); setEditedSlides([]); setError(''); };
+  const updateSlide = (idx: number, field: 'title' | 'content', val: string) => {
+    setEditedSlides(prev => prev.map((s, i) => i === idx ? (field === 'title' ? { ...s, title: val } : { ...s, content: val.split('\n').filter(Boolean) }) : s));
+  };
+  const addSlide = () => setEditedSlides(prev => [...prev, { id: `new-${Date.now()}`, title: '新幻灯片', content: [] }]);
+  const removeSlide = (idx: number) => setEditedSlides(prev => prev.filter((_, i) => i !== idx));
+  const moveSlide = (idx: number, dir: -1 | 1) => {
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= editedSlides.length) return;
+    setEditedSlides(prev => { const arr = [...prev]; [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]]; return arr; });
+  };
+
+  const handleLogin = async () => {
+    if (!loginPhone || !/^1[3-9]\d{9}$/.test(loginPhone)) return;
+    setLoginLoading(true); setLoginError('');
+    try {
+      const res = await fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'login', phone: loginPhone }) });
+      const data = await res.json();
+      if (data.error) { setLoginError(data.error); setLoginLoading(false); return; }
+      if (data.user) { setUser(data.user); setShowLogin(false); setLoginPhone(''); localStorage.setItem('sx_user', JSON.stringify(data.user)); }
+    } catch { setLoginError('登录失败'); }
+    setLoginLoading(false);
+  };
+
+  React.useEffect(() => { try { const s = localStorage.getItem('sx_user'); if (s) setUser(JSON.parse(s)); } catch {} }, []);
+
+  return (
+    <div className="min-h-screen bg-[#FAFBFE] flex flex-col">
+      {/* === 顶部导航 === */}
+      <nav className="h-14 bg-white/90 backdrop-blur-xl border-b border-gray-100/60 px-6 flex items-center justify-between sticky top-0 z-50">
+        <button onClick={() => phase !== 'input' ? reset() : null} className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#5B4FE9] to-[#8B5CF6] flex items-center justify-center"><span className="text-white text-xs font-bold">P</span></div>
+          <span className="text-sm font-bold text-gray-900 tracking-tight">省心PPT</span>
+        </button>
+        <div className="flex items-center gap-2">
+          {phase !== 'input' && <button onClick={phase === 'outline' ? backToInput : reset} className="text-xs text-gray-400 hover:text-gray-600 transition-colors">← 返回</button>}
+          {user ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-gray-400">{user.nickname}</span>
+              <div className="px-2 py-1 bg-amber-50 border border-amber-100 rounded-lg text-[10px] font-bold text-amber-600">🪙 {user.credits}</div>
+            </div>
+          ) : (
+            <button onClick={() => setShowLogin(true)} className="px-3 py-1.5 text-[11px] font-medium text-white bg-[#5B4FE9] rounded-lg hover:bg-[#4F46E5] transition-colors">登录</button>
+          )}
+        </div>
+      </nav>
+
+      <div className="flex-1 relative">
+        {/* === Loading Overlay === */}
+        {loading && (
+          <div className="fixed inset-0 bg-white/90 backdrop-blur flex items-center justify-center z-50">
+            <div className="text-center">
+              <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-[#EDE9FE] to-[#DDD6FE] flex items-center justify-center">
+                <div className="w-10 h-10 rounded-full border-[3px] border-[#C4B5FD] border-t-[#5B4FE9] animate-spin" />
+              </div>
+              <p className="text-sm font-semibold text-gray-800 mb-1">{phase === 'input' ? '生成大纲中' : 'AI 渲染 PPT 中'}</p>
+              <p className="text-xs text-gray-400">{stepText}</p>
+              <button onClick={() => { setLoading(false); setError('已取消'); }} className="mt-6 text-[10px] text-gray-300 hover:text-gray-500">取消</button>
+            </div>
+          </div>
+        )}
+
+        {/* === Login Modal === */}
+        {showLogin && !user && (
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowLogin(false)}>
+            <div className="bg-white rounded-2xl shadow-xl p-6 w-80" onClick={e => e.stopPropagation()}>
+              <div className="text-center mb-5">
+                <div className="w-10 h-10 mx-auto mb-2 rounded-xl bg-gradient-to-br from-[#5B4FE9] to-[#8B5CF6] flex items-center justify-center"><span className="text-white font-bold">P</span></div>
+                <h3 className="text-sm font-bold text-gray-900">登录省心PPT</h3>
+                <p className="text-[10px] text-gray-400 mt-0.5">登录即送 100 积分</p>
+              </div>
+              <input type="tel" value={loginPhone} onChange={e => setLoginPhone(e.target.value)} placeholder="手机号" maxLength={11} className="w-full px-3 py-2.5 rounded-xl bg-gray-50 border border-gray-200 focus:border-[#5B4FE9] outline-none text-sm mb-3" />
+              <button onClick={handleLogin} disabled={!loginPhone || !/^1[3-9]\d{9}$/.test(loginPhone) || loginLoading} className="w-full py-2.5 bg-[#5B4FE9] text-white rounded-xl text-sm font-medium disabled:opacity-40">
+                {loginLoading ? '...' : '登录 / 注册'}
+              </button>
+              {loginError && <p className="text-center text-[10px] text-red-500 mt-2">{loginError}</p>}
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* === INPUT PHASE === */}
+        {/* ============================================================ */}
+        {phase === 'input' && !loading && (
+          <div className="max-w-3xl mx-auto px-6 pt-12 pb-16">
+            {/* Hero — 极简 */}
+            <div className="text-center mb-10">
+              <h1 className="text-3xl md:text-4xl font-extrabold text-gray-900 mb-2 tracking-tight">
+                一句话，生成<span className="bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] bg-clip-text text-transparent">精美 PPT</span>
+              </h1>
+              <p className="text-sm text-gray-400">拖入文件或输入主题，AI 自动完成内容创作与排版</p>
+            </div>
+
+            {/* 输入卡片 */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+              {/* 文本输入 */}
+              <textarea
+                value={topic}
+                onChange={e => setTopic(e.target.value)}
+                placeholder="输入你想创建的 PPT 主题，例如：2024年度营销策略汇报"
+                className="w-full px-4 py-3 rounded-xl bg-[#FAFBFE] border border-gray-200/80 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none resize-none text-sm text-gray-800 placeholder:text-gray-300 transition-all"
+                rows={3}
+              />
+
+              {/* 文件上传区 — 紧凑 */}
+              <div
+                onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={onDrop}
+                onClick={() => fRef.current?.click()}
+                className={`mt-3 border border-dashed rounded-xl py-3 px-4 flex items-center gap-3 cursor-pointer transition-all ${dragging ? 'border-[#8B5CF6] bg-[#F5F3FF]/30' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50'}`}
+              >
+                <span className="text-gray-400 text-sm">📎</span>
+                <span className="text-xs text-gray-400">拖拽或点击上传文件</span>
+                <span className="text-[10px] text-gray-300 ml-auto">PPT / Word / PDF / Excel / 图片</span>
+              </div>
+              <input ref={fRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={onFile} className="hidden" />
+
+              {/* 已上传文件 */}
+              {files.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {files.map((f, i) => (
+                    <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#F5F3FF] rounded-lg text-[11px] text-[#4338CA] font-medium">
+                      {f.type.startsWith('image/') ? '🖼️' : /\.(xls|csv)/.test(f.name) ? '📊' : '📄'} {f.name}
+                      <span className="text-gray-400">{fmtS(f.size)}</span>
+                      <button onClick={() => rmFile(i)} className="text-gray-300 hover:text-red-400 ml-0.5">×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* 分隔 */}
+              <div className="border-t border-gray-100 my-4" />
+
+              {/* 专业模式折叠 */}
+              <button onClick={() => setShowPro(!showPro)} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                <span className={`text-[10px] transition-transform duration-200 inline-block ${showPro ? 'rotate-90' : ''}`}>▸</span>
+                <span>专业模式</span>
+                <span className="text-[10px]">自定义生成参数</span>
+              </button>
+
+              {showPro && (
+                <div className="mt-4 space-y-4 animate-fade-in">
+                  {/* 生成模式 */}
+                  <div>
+                    <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">生成模式</div>
+                    <div className="flex gap-2">
+                      {GEN_MODES.map(m => (
+                        <button key={m.id} onClick={() => setGenMode(m.id)} className={`flex-1 py-2 px-3 rounded-xl border text-center transition-all cursor-pointer ${genMode === m.id ? 'border-[#5B4FE9] bg-[#F5F3FF]/60' : 'border-gray-100 hover:border-gray-200'}`}>
+                          <span className="text-sm">{m.icon}</span>
+                          <div className={`text-[10px] font-semibold ${genMode === m.id ? 'text-[#4338CA]' : 'text-gray-600'}`}>{m.name}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 主题色系 */}
+                  <div>
+                    <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">主题色系</div>
+                    <div className="flex gap-2 flex-wrap">
+                      {COLOR_THEMES.map(t => (
+                        <button key={t.id} onClick={() => setTheme(t.id)} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer ${theme === t.id ? 'border-[#5B4FE9] bg-[#F5F3FF]/60' : 'border-gray-100 hover:border-gray-200'}`}>
+                          <div className="flex gap-0.5">{t.colors.map((c, i) => <div key={i} className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c }} />)}</div>
+                          <span className={`text-[10px] font-medium ${theme === t.id ? 'text-[#4338CA]' : 'text-gray-500'}`}>{t.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 语气 + 配图 */}
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">语气</div>
+                      <div className="flex gap-1.5">
+                        {TONES.map(t => (
+                          <button key={t.id} onClick={() => setTone(t.id)} className={`flex-1 py-1.5 rounded-lg border text-center transition-all cursor-pointer ${tone === t.id ? 'border-[#5B4FE9] bg-[#F5F3FF]/60' : 'border-gray-100 hover:border-gray-200'}`}>
+                            <span className="text-xs">{t.icon}</span>
+                            <div className={`text-[10px] font-medium ${tone === t.id ? 'text-[#4338CA]' : 'text-gray-500'}`}>{t.name}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">配图</div>
+                      <div className="flex gap-1.5">
+                        {IMAGE_MODES.map(m => (
+                          <button key={m.id} onClick={() => setImgMode(m.id)} className={`flex-1 py-1.5 rounded-lg border text-center transition-all cursor-pointer ${imgMode === m.id ? 'border-[#5B4FE9] bg-[#F5F3FF]/60' : 'border-gray-100 hover:border-gray-200'}`}>
+                            <div className={`text-[10px] font-medium ${imgMode === m.id ? 'text-[#4338CA]' : 'text-gray-500'}`}>{m.name}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 页数 Slider */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">页数</div>
+                      <div className="text-xs font-bold text-[#5B4FE9]">{pages} 页</div>
+                    </div>
+                    <input type="range" min={3} max={30} value={pages} onChange={e => setPages(Number(e.target.value))} className="w-full h-1.5 bg-gray-100 rounded-full appearance-none cursor-pointer accent-[#5B4FE9]" />
+                    <div className="flex justify-between text-[9px] text-gray-300 mt-0.5"><span>3</span><span>30</span></div>
+                  </div>
+                </div>
+              )}
+
+              {error && <div className="mt-3 px-3 py-2 bg-red-50 text-red-500 rounded-lg text-xs">❌ {error}</div>}
+            </div>
+
+            {/* 底部特性 */}
+            <div className="mt-12 grid grid-cols-3 gap-4 text-center">
+              <div><div className="text-xl mb-1">⚡</div><div className="text-[10px] text-gray-400">分钟级生成</div></div>
+              <div><div className="text-xl mb-1">🎨</div><div className="text-[10px] text-gray-400">8+ 精选主题</div></div>
+              <div><div className="text-xl mb-1">🔒</div><div className="text-[10px] text-gray-400">隐私安全</div></div>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* === OUTLINE PHASE — 大纲预览与编辑 === */}
+        {/* ============================================================ */}
+        {phase === 'outline' && !loading && outlineResult && (
+          <div className="max-w-3xl mx-auto px-6 pt-8 pb-16">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">{outlineResult.title}</h2>
+                <p className="text-xs text-gray-400 mt-0.5">共 {editedSlides.length} 页 · 可编辑标题和内容</p>
+              </div>
+            </div>
+
+            {/* 大纲列表 */}
+            <div className="space-y-2 mb-6">
+              {editedSlides.map((slide, idx) => (
+                <div key={slide.id} className="bg-white rounded-xl border border-gray-100 p-3 group">
+                  <div className="flex items-start gap-2">
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[#F5F3FF] text-[#5B4FE9] text-[10px] font-bold flex items-center justify-center mt-0.5">{idx + 1}</div>
+                    <div className="flex-1 min-w-0">
+                      <input
+                        value={slide.title}
+                        onChange={e => updateSlide(idx, 'title', e.target.value)}
+                        className="w-full text-sm font-semibold text-gray-800 bg-transparent border-b border-transparent focus:border-[#5B4FE9] outline-none py-0.5"
+                      />
+                      {slide.content && slide.content.length > 0 && (
+                        <textarea
+                          value={slide.content.join('\n')}
+                          onChange={e => updateSlide(idx, 'content', e.target.value)}
+                          rows={Math.min(slide.content.length, 4)}
+                          className="w-full mt-1 text-xs text-gray-500 bg-gray-50 rounded-lg px-2.5 py-1.5 border border-transparent focus:border-[#5B4FE9] outline-none resize-none"
+                        />
+                      )}
+                    </div>
+                    <div className="flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => moveSlide(idx, -1)} className="w-6 h-6 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 text-[10px]">↑</button>
+                      <button onClick={() => moveSlide(idx, 1)} className="w-6 h-6 rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 text-[10px]">↓</button>
+                      <button onClick={() => removeSlide(idx)} className="w-6 h-6 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 text-[10px]">✕</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <button onClick={addSlide} className="w-full py-2.5 border border-dashed border-gray-200 rounded-xl text-xs text-gray-400 hover:text-[#5B4FE9] hover:border-[#5B4FE9] transition-colors">+ 添加幻灯片</button>
+            </div>
+
+            {error && <div className="mb-4 px-3 py-2 bg-red-50 text-red-500 rounded-lg text-xs">❌ {error}</div>}
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* === RESULT PHASE === */}
+        {/* ============================================================ */}
+        {phase === 'result' && result && !loading && (
+          <div className="max-w-2xl mx-auto px-6 pt-12 text-center animate-fade-in">
+            <div className="text-4xl mb-3">🎉</div>
+            <h2 className="text-xl font-bold text-gray-900 mb-1">PPT 已生成！</h2>
+            <p className="text-xs text-gray-400 mb-8">{result.title} · {result.slides.length} 页</p>
+            <div className="flex items-center justify-center gap-3">
+              {result.dlUrl && (
+                <a href={result.dlUrl} download className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg transition-all">📥 下载 PPT</a>
+              )}
+              <button onClick={reset} className="px-5 py-3 text-gray-400 hover:text-gray-600 text-sm">继续创建</button>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* === 固定右侧魔法按钮 === */}
+        {/* ============================================================ */}
+        {!loading && (phase === 'input' || phase === 'outline') && (
+          <div className="fixed right-6 top-1/2 -translate-y-1/2 z-40">
+            <button
+              onClick={phase === 'input' ? generateOutline : confirmAndGenerate}
+              disabled={phase === 'input' && !hasInput}
+              className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#5B4FE9] to-[#8B5CF6] shadow-xl shadow-purple-300/40 hover:shadow-2xl hover:shadow-purple-400/50 hover:scale-105 active:scale-95 transition-all flex flex-col items-center justify-center disabled:opacity-30 disabled:hover:scale-100 disabled:hover:shadow-xl"
+            >
+              <span className="text-lg">✨</span>
+              <span className="text-[8px] text-white/80 font-medium leading-none mt-0.5">
+                {phase === 'input' ? '生成' : '确认'}
+              </span>
+            </button>
+            {phase === 'input' && !hasInput && (
+              <div className="absolute right-full mr-3 top-1/2 -translate-y-1/2 whitespace-nowrap bg-gray-900 text-white text-[10px] px-2.5 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none">
+                先输入内容
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function buildMd(title: string, slides: any[]): string {
+  const p: string[] = [];
+  p.push(`# ${title}\n`);
+  for (let i = 0; i < slides.length; i++) {
+    const s = slides[i];
+    p.push('---\n');
+    if (i === slides.length - 1 && (/感谢|谢谢|总结/.test(s.title))) { p.push(`# ${s.title}\n`); if (s.content?.length) p.push(`> ${s.content.join('；')}\n`); continue; }
+    if (i === 1 && (/目录|概览/.test(s.title))) { p.push(`## ${s.title}\n\n`); s.content?.forEach((c: string, ci: number) => { p.push(`${ci + 1}. **${c.trim()}**\n`); }); continue; }
+    p.push(`## ${s.title}\n\n`);
+    if (s.content?.length) { if (s.content.length <= 4) { for (const pt of s.content) { if (pt.trim()) p.push(`- **${pt.trim()}**\n\n`); } } else { for (const pt of s.content) { if (pt.trim()) p.push(`### ${pt.trim()}\n\n`); } } }
+    if (s.notes) p.push(`> ${s.notes}\n`);
+  }
+  return p.join('\n');
+}

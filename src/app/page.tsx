@@ -1,9 +1,10 @@
 'use client';
 
 import '@/lib/dommatrix-polyfill';
-import React, { useState, useCallback, useRef, useEffect, Suspense } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useRouter, useSearchParams } from 'next/navigation';
+import ResponsivePdfPreview from '@/components/ResponsivePdfPreview';
 
 import AnnouncementBar, { getLatestAnnouncement } from '@/components/AnnouncementBar';
 import Navbar from '@/components/Navbar';
@@ -55,11 +56,19 @@ type OutlinePreprocessInfo = {
 type OutlineResultState = {
   title: string;
   slides: SlideItem[];
+  scene?: string;
   themeId?: string;
   tone?: string;
   imageMode?: string;
   meta?: {
     preprocess?: OutlinePreprocessInfo;
+    intent?: {
+      themeLocked?: boolean;
+      themeLabel?: string;
+      pageCountLocked?: boolean;
+      imageModeLocked?: boolean;
+      toneLocked?: boolean;
+    };
     [key: string]: unknown;
   };
 };
@@ -368,7 +377,7 @@ export default function Home() {
 
   // Dual-track mode
   const [mode, setMode] = useState<'direct' | 'smart'>('direct');
-  const [directTheme, setDirectTheme] = useState('consultant');
+  const [directTheme, setDirectTheme] = useState('finesse');
   const [directTone, setDirectTone] = useState('professional');
   const [directImgMode, setDirectImgMode] = useState('theme-img');
   const [directTextMode, setDirectTextMode] = useState<'generate' | 'condense' | 'preserve'>('generate');
@@ -383,6 +392,7 @@ export default function Home() {
   // Pro mode
   const [showPro, setShowPro] = useState(false);
   const [showDirectAdvanced, setShowDirectAdvanced] = useState(false);
+  const [showPagePicker, setShowPagePicker] = useState(false);
 
   const [genMode, setGenMode] = useState('preserve');
   const [theme, setTheme] = useState('auto');
@@ -416,10 +426,30 @@ export default function Home() {
   const [smartAutoGeneratePending, setSmartAutoGeneratePending] = useState(false);
   const [strictPreserve, setStrictPreserve] = useState(true);
   const [forceRequestedModeOnce, setForceRequestedModeOnce] = useState(false);
+  const pagePickerRef = useRef<HTMLDivElement | null>(null);
+  const pagePickerListRef = useRef<HTMLDivElement | null>(null);
   // 🚨 D3 Fix Q4: 使用 ref 同步 editedSlides，防止 confirmAndGenerate 闭包读取陈旧值
   const editedSlidesRef = useRef<SlideItem[]>(editedSlides);
   useEffect(() => { editedSlidesRef.current = editedSlides; }, [editedSlides]);
   const [streamingSlides, setStreamingSlides] = useState<SlideItem[]>([]);
+
+  useEffect(() => {
+    if (!showPagePicker) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!pagePickerRef.current) return;
+      if (!pagePickerRef.current.contains(event.target as Node)) {
+        setShowPagePicker(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [showPagePicker]);
+
+  useEffect(() => {
+    if (!showPagePicker || !pagePickerListRef.current) return;
+    const selected = pagePickerListRef.current.querySelector(`[data-page-option="${pageCount}"]`) as HTMLElement | null;
+    selected?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [showPagePicker, pageCount]);
 
   // Drag-and-drop state for outline reordering
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -445,11 +475,14 @@ export default function Home() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
   const [previewPdfUrl, setPreviewPdfUrl] = useState('');
+  const [previewPdfFetchUrl, setPreviewPdfFetchUrl] = useState('');
 
   const fileRef = useRef<HTMLInputElement>(null);
   const topicInputRef = useRef<HTMLTextAreaElement>(null);
   const previewLoadedGenerationRef = useRef('');
   const previewBlobUrlRef = useRef<string>('');
+  const pptxWarmupPromiseRef = useRef<Promise<string> | null>(null);
+  const pptxWarmupGenerationRef = useRef('');
   const restoringResumeRef = useRef(false);
   const triedResumeRef = useRef(false);
   const navigatingAwayRef = useRef(false);
@@ -562,6 +595,7 @@ export default function Home() {
     setPreviewLoading(false);
     setPreviewError('');
     setPreviewPdfUrl('');
+    setPreviewPdfFetchUrl('');
   }, []);
 
   // 🚨 V6新增：积分回滚工具（生成失败/超时时调用）
@@ -587,7 +621,12 @@ export default function Home() {
   }, [user, updateCredits]);
 
   const hasInput = files.length > 0 || getTopicValue().trim().length > 0;
-  const planMaxPages = Math.min(30, getPlan(user?.plan_type || 'free').maxPages);
+  const planMaxPages = Math.min(40, getPlan(user?.plan_type || 'free').maxPages);
+  const pickerMaxPages = 40;
+  const pageOptions = useMemo(
+    () => Array.from({ length: Math.max(0, pickerMaxPages - 2) }, (_, idx) => idx + 3),
+    [pickerMaxPages]
+  );
   const outlineTargetPages = Math.max(1, outlineResult?.slides?.length || pageCount);
   const outlineGeneratedPages = streamingSlides.length;
   const outlineStage = resolveOutlineStage(stepText, outlineGeneratedPages, outlineTargetPages);
@@ -609,16 +648,17 @@ export default function Home() {
   const applyPageCountChange = useCallback((rawValue: number) => {
     if (!Number.isFinite(rawValue)) return false;
     const normalizedValue = Math.round(rawValue);
-    const boundedValue = Math.max(3, Math.min(30, normalizedValue));
-    const maxP = Math.min(30, getPlan(user?.plan_type || 'free').maxPages);
+    const boundedValue = Math.max(3, Math.min(40, normalizedValue));
+    const maxP = Math.min(40, getPlan(user?.plan_type || 'free').maxPages);
     if (boundedValue > maxP) {
-      const planInfo = getPlan(PLAN_LIST.find(p => p.maxPages >= boundedValue)?.id || 'shengxin');
+      const requiredPlanId = boundedValue <= 20 ? 'shengxin' : 'advanced';
+      const planInfo = getPlan(requiredPlanId);
       openPayment({
         id: planInfo.id,
         name: `${planInfo.name} · ${planInfo.emoji}`,
         price: `¥${planInfo.priceMonthly}/月`,
         billing: 'monthly',
-        reason: `${boundedValue}页需要${planInfo.name}或更高套餐`,
+        reason: `${boundedValue}页为${planInfo.name}专享能力。当前套餐支持至${maxP}页，开通后可提升到${planInfo.maxPages}页。`,
       });
       return false;
     }
@@ -837,7 +877,7 @@ export default function Home() {
         const pageMatch = inputText.match(/(\d+)\s*页/);
         if (pageMatch) {
           const extractedPages = parseInt(pageMatch[1], 10);
-          if (extractedPages >= 3 && extractedPages <= 30) {
+          if (extractedPages >= 3 && extractedPages <= 40) {
             effectivePages = extractedPages;
             setPageCount(extractedPages);
             console.log('[SmartMode] 从输入中提取页数:', extractedPages);
@@ -903,7 +943,7 @@ export default function Home() {
         const gammaImageSource = toGammaImageSource(directImgMode);
         setImgMode(directImgMode);
         setSmartGammaPayload({
-          themeId: directTheme !== 'default-light' ? directTheme : (od.themeId || 'consultant'),
+          themeId: directTheme !== 'default-light' ? directTheme : (od.themeId || 'finesse'),
           tone: directTone,
           imageOptions: { source: gammaImageSource },
         });
@@ -1061,7 +1101,7 @@ export default function Home() {
       ? ((theme !== 'auto' && smartThemeTouched)
         ? theme
         : (smartGammaPayload?.themeId || (theme !== 'auto' ? theme : outlineResult.themeId) || 'consultant'))
-      : (directTheme || outlineResult.themeId || 'consultant');
+      : (directTheme || outlineResult.themeId || 'finesse');
     const finalTone = mode === 'smart'
       ? (smartToneTouched
         ? tone
@@ -1199,10 +1239,12 @@ export default function Home() {
         numCards: renderPageCount,
         exportAs: 'pdf',
         themeId: finalThemeId,
+        scene: outlineResult.scene || outlineResult.meta?.scene || undefined,
         tone: finalTone,
         imageMode: finalImageSource,
         imageOptions: finalImageOptions,
         visualMetaphor,
+        intentHints: outlineResult.meta?.intent,
         uploadedFiles: files.map(({ name, type, size, passthrough }) => ({ name, type, size, passthrough: Boolean(passthrough) })),
         originalTextMode: mode === 'direct' ? directTextMode : undefined,
       };
@@ -1729,6 +1771,30 @@ export default function Home() {
     return newGenerationId;
   }, [pollGammaUntilComplete, result?.generationId, result?.pptxGenerationId, result?.pptxSeedBody, result?.pptxSeedEndpoint]);
 
+  const warmupPptxGenerationId = useCallback(() => {
+    if (!result?.generationId || !result.pptxSeedBody || result.pptxGenerationId) return null;
+    if (
+      pptxWarmupGenerationRef.current === result.generationId
+      && pptxWarmupPromiseRef.current
+    ) {
+      return pptxWarmupPromiseRef.current;
+    }
+
+    pptxWarmupGenerationRef.current = result.generationId;
+    const warmupPromise = ensurePptxGenerationId()
+      .catch((error) => {
+        console.warn('[Export] PPTX 预热失败:', error);
+        throw error;
+      })
+      .finally(() => {
+        if (pptxWarmupGenerationRef.current === result.generationId) {
+          pptxWarmupPromiseRef.current = null;
+        }
+      });
+    pptxWarmupPromiseRef.current = warmupPromise;
+    return warmupPromise;
+  }, [ensurePptxGenerationId, result?.generationId, result?.pptxGenerationId, result?.pptxSeedBody]);
+
   // 🚨 v10.6+: PPTX 导出处理函数
   const handleExportPPT = async () => {
     if (!user) { openLogin(); return; }
@@ -1759,8 +1825,18 @@ export default function Home() {
 
       const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
       const fallbackFilename = `${safeTitle}.pptx`;
+      let exportGenerationId = result.pptxGenerationId || result.generationId;
+      if (!result.pptxGenerationId && result.pptxSeedBody) {
+        try {
+          const warmedGenerationId = await warmupPptxGenerationId();
+          if (warmedGenerationId) exportGenerationId = warmedGenerationId;
+        } catch {
+          exportGenerationId = result.generationId;
+        }
+      }
+
       let downloadRes = await fetch(
-        `/api/export-pptx?generationId=${result.generationId}&name=${encodeURIComponent(fallbackFilename)}`
+        `/api/export-pptx?generationId=${exportGenerationId}&name=${encodeURIComponent(fallbackFilename)}`
       );
       let contentType = (downloadRes.headers.get('Content-Type') || '').toLowerCase();
 
@@ -1901,6 +1977,7 @@ export default function Home() {
 
       const pdfFilename = `${safeTitle}.pdf`;
       const pdfPath = buildPreviewApiPath(generationId, 'pdf', pdfFilename, true);
+      setPreviewPdfFetchUrl(pdfPath);
       const pdfRes = await fetch(pdfPath);
       const contentType = (pdfRes.headers.get('Content-Type') || '').toLowerCase();
       if (!pdfRes.ok || contentType.includes('application/json')) {
@@ -1912,8 +1989,8 @@ export default function Home() {
       const blobUrl = URL.createObjectURL(blob);
       previewBlobUrlRef.current = blobUrl;
       setPreviewPdfUrl(blobUrl);
-    } catch (e: any) {
-      setPreviewError(e.message || '在线预览加载失败');
+    } catch (e: unknown) {
+      setPreviewError(e instanceof Error ? e.message : '在线预览加载失败');
     } finally {
       setPreviewLoading(false);
     }
@@ -1937,8 +2014,20 @@ export default function Home() {
   }, [phase, result?.generationId, loadInlinePreview]);
 
   useEffect(() => {
+    if (phase !== 'result') return;
+    if (!result?.generationId || !result.pptxSeedBody || result.pptxGenerationId) return;
+    void warmupPptxGenerationId();
+  }, [phase, result?.generationId, result?.pptxGenerationId, result?.pptxSeedBody, warmupPptxGenerationId]);
+
+  useEffect(() => {
     if (!result?.generationId) return;
   }, [result?.generationId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!['outline', 'generating', 'result'].includes(phase)) return;
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [phase]);
 
   const downloadBlob = (blob: Blob, filename: string) => {
     const blobUrl = URL.createObjectURL(blob);
@@ -2300,7 +2389,7 @@ export default function Home() {
       {/* ===== GENERATE FLOW ===== */}
       {(phase === 'input' || phase === 'outline') && (
         <div className="flex-1 sx-shell min-h-screen relative overflow-hidden">
-          <div className="relative max-w-7xl mx-auto px-4 md:px-8 pt-5 pb-24">
+          <div className="relative max-w-7xl mx-auto px-4 md:px-8 pt-3 md:pt-5 pb-24">
 
             {phase === 'input' && (
               <>
@@ -2309,18 +2398,16 @@ export default function Home() {
                   <span className="sx-crystal hidden md:block" style={{ '--size': '46px', '--rotate': '21deg', '--opacity': '0.46', right: '68px', top: '92px' } as React.CSSProperties} />
                   <div className="sx-orbit hidden lg:block w-[760px] h-[170px] right-[-80px] top-[214px]" />
 
-                  <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-7 lg:gap-10 items-center mb-4 md:mb-0">
-                    <div className="sx-appear pt-4 md:pt-8 lg:pt-3 text-center lg:text-left">
-                      <h1 className="text-4xl md:text-6xl lg:text-7xl font-black tracking-tight leading-[1.04] sx-gradient-text">
-                        创建你的 PPT
-                      </h1>
-                      <p className="mt-4 text-xl md:text-2xl font-extrabold text-slate-900">
-                        AI 让演示<span className="sx-accent-text">更快、更智能、更精美</span>
+                  <div className="max-w-[840px] mx-auto mb-1 md:mb-0">
+                    <div className="sx-appear pt-0 md:pt-8 lg:pt-3 text-center">
+                      <h1 className="text-[30px] md:text-6xl lg:text-7xl font-black tracking-tight leading-[1.04] sx-gradient-text">创建你的 PPT</h1>
+                      <p className="mt-1.5 md:mt-4 text-[17px] md:text-2xl font-extrabold text-slate-900">
+                        <span className="sx-accent-text">省心PPT让演示更快，更精美，更省心！</span>
                       </p>
-                      <p className="mt-4 max-w-xl mx-auto lg:mx-0 text-sm md:text-base text-slate-500 leading-relaxed">
+                      <p className="mt-2.5 md:mt-4 max-w-xl mx-auto text-[13px] md:text-base text-slate-500 leading-relaxed">
                         输入主题，AI 自动完成大纲、版式、配色和配图，让每一次表达都有专业设计感。
                       </p>
-                      <div className="mt-6 flex flex-wrap justify-center lg:justify-start gap-3">
+                      <div className="mt-5 hidden md:flex flex-wrap justify-center gap-3">
                         {[
                           ['智能结构梳理', 'M7 9h10M7 13h6M5 5h14v14H5z'],
                           ['统一配色主题', 'M12 3l2.5 5 5.5.8-4 3.9.9 5.5L12 15.8 7.1 18l.9-5.5-4-3.9 5.5-.8z'],
@@ -2332,7 +2419,7 @@ export default function Home() {
                           </span>
                         ))}
                       </div>
-                      <div className="mt-7 grid grid-cols-4 gap-3 max-w-lg mx-auto lg:mx-0">
+                      <div className="mt-6 hidden md:grid grid-cols-4 gap-3 max-w-lg mx-auto">
                         {[
                           ['30秒', '平均生成时间'],
                           ['50+', '精选主题'],
@@ -2346,36 +2433,9 @@ export default function Home() {
                         ))}
                       </div>
                     </div>
-
-                    <div className="sx-product-stage sx-appear sx-appear-delay-1 hidden md:block">
-                      <div className="sx-product-screen">
-                        <div className="sx-slide-preview" />
-                      </div>
-                      <div className="sx-floating-panel left-[6%] top-[112px] w-32 h-24 p-4" style={{ animationDelay: '0.35s' }}>
-                        <p className="text-[10px] font-bold text-slate-500 mb-3">配色主题</p>
-                        <div className="flex gap-2">
-                          <span className="w-5 h-5 rounded-full bg-[#3d5afe]" />
-                          <span className="w-5 h-5 rounded-full bg-[#7c5cff]" />
-                          <span className="w-5 h-5 rounded-full bg-[#39cfff]" />
-                        </div>
-                      </div>
-                      <div className="sx-floating-panel right-[2%] top-[78px] w-36 h-40 p-4" style={{ animationDelay: '0.8s' }}>
-                        <p className="text-[10px] font-bold text-indigo-600 mb-3">智能大纲</p>
-                        <div className="sx-mini-lines">
-                          <span style={{ width: '92%' }} />
-                          <span style={{ width: '76%' }} />
-                          <span style={{ width: '86%' }} />
-                          <span style={{ width: '62%' }} />
-                        </div>
-                      </div>
-                      <div className="sx-floating-panel left-[24%] bottom-[34px] w-28 h-16 p-3" style={{ animationDelay: '1.15s' }}>
-                        <p className="text-[10px] font-bold text-slate-500 mb-2">智能配图</p>
-                        <div className="h-5 rounded-full bg-gradient-to-r from-indigo-100 via-violet-100 to-sky-100" />
-                      </div>
-                    </div>
                   </div>
 
-                  <div id="hero-input" className="sx-glass-strong relative rounded-[28px] p-4 sm:p-5 md:p-6 max-w-[1040px] mx-auto sx-appear sx-appear-delay-2">
+                  <div id="hero-input" className="sx-glass-strong relative rounded-[28px] p-3.5 sm:p-5 md:p-6 max-w-[1040px] mx-auto sx-appear sx-appear-delay-2">
                   {/* Textarea - full width */}
                   <div className="relative">
                     <textarea
@@ -2384,7 +2444,7 @@ export default function Home() {
                       onChange={e => setTopic(e.target.value)}
                       onInput={e => setTopic((e.target as HTMLTextAreaElement).value)}
                       placeholder="输入PPT主题，如：2024年度工作汇报、咖啡品牌推广方案"
-                      className="w-full min-h-[132px] md:min-h-[148px] px-5 py-4 pb-12 rounded-2xl bg-white/78 border border-indigo-100/80 focus:border-[#6C5CFF] focus:ring-4 focus:ring-indigo-100/70 focus:bg-white outline-none resize-none text-sm md:text-base text-slate-800 placeholder:text-slate-400 transition-all shadow-inner shadow-indigo-50/40"
+                      className="w-full min-h-[118px] md:min-h-[148px] px-4 md:px-5 py-3.5 md:py-4 pb-11 md:pb-12 rounded-2xl bg-white/78 border border-indigo-100/80 focus:border-[#6C5CFF] focus:ring-4 focus:ring-indigo-100/70 focus:bg-white outline-none resize-none text-sm md:text-base text-slate-800 placeholder:text-slate-400 transition-all shadow-inner shadow-indigo-50/40"
                     />
                     {/* Attach button inside textarea (bottom-left) */}
                     <button
@@ -2476,36 +2536,24 @@ export default function Home() {
                     </button>
                   </div>
 
-                  {mode === 'smart' && (
-                    <div className="mt-3 flex justify-end">
-                      <button
-                        onClick={() => setShowPro(true)}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white sx-primary-btn border border-indigo-200/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
-                      >
-                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3l2.5 5 5.5.8-4 3.9.9 5.5L12 15.8 7.1 18l.9-5.5-4-3.9 5.5-.8z"/></svg>
-                        高级参数
-                      </button>
-                    </div>
-                  )}
-
                   {mode === 'direct' && (
                     <div className="mt-3 flex justify-end">
                       <button
                         onClick={() => setShowDirectAdvanced(v => !v)}
-                        className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.98] ${
+                        className={`inline-flex items-center justify-center gap-2 h-9 px-3.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98] ${
                           showDirectAdvanced
-                            ? 'text-white sx-primary-btn border border-indigo-200/30 shadow-lg'
-                            : 'text-indigo-700 bg-white border border-indigo-200 hover:bg-indigo-50 shadow-sm'
+                            ? 'text-white sx-primary-btn border border-indigo-200/30'
+                            : 'text-indigo-700 bg-white border border-indigo-200 hover:bg-indigo-50'
                         }`}
                       >
-                        <span className={`w-2 h-2 rounded-full ${showDirectAdvanced ? 'bg-white/90' : 'bg-indigo-500 animate-pulse'}`} />
-                        {showDirectAdvanced ? '收起高级选项' : '展开高级选项'}
+                        <span className={`w-2 h-2 rounded-full ${showDirectAdvanced ? 'bg-white/90' : 'bg-indigo-500'}`} />
+                        高级选项
                       </button>
                     </div>
                   )}
 
                   {((mode === 'direct' && directTextMode === 'preserve') || (mode === 'smart' && genMode === 'preserve')) && (
-                    <div className="mt-3 rounded-xl border border-purple-100 bg-[#FAF7FF] px-3 py-2.5 flex items-start justify-between gap-3">
+                    <div className="mt-3 rounded-2xl border border-purple-100 bg-[#FAF7FF] px-4 py-3 flex items-start justify-between gap-3">
                       <div>
                         <p className="text-xs font-semibold text-[#5B4FE9]">严格保真</p>
                         <p className="text-[11px] text-gray-500 mt-0.5">禁止改标题、禁止自动续页命名、禁止自动填充提示语。</p>
@@ -2524,17 +2572,17 @@ export default function Home() {
 
                   {/* Direct mode: show ThemeSelector + params */}
                   {mode === 'direct' && showDirectAdvanced && (
-                    <div className="mt-4 pt-4 border-t border-gray-100 space-y-5 max-h-[55vh] overflow-y-auto -mx-1 px-1">
+                    <div className="mt-4 pt-4 border-t border-gray-100 space-y-5 -mx-1 px-1">
                       {/* 主题色系 */}
                       <div>
-                        <h3 className="text-sm font-bold text-gray-800 mb-3">主题色系</h3>
+                        <h3 className="text-[15px] font-semibold text-gray-800 mb-3">主题色系</h3>
                         <ThemeSelector value={directTheme} onChange={setDirectTheme} />
                       </div>
 
                       {/* 文本处理 */}
                       <div>
-                        <h3 className="text-sm font-bold text-gray-800 mb-3">文本处理</h3>
-                        <div className="grid grid-cols-3 gap-3">
+                        <h3 className="text-[15px] font-semibold text-gray-800 mb-3">文本处理</h3>
+                        <div className="grid grid-cols-3 gap-2.5 md:gap-3">
                           {[
                             { value: 'generate', label: '扩充文本', desc: 'AI丰富内容' },
                             { value: 'condense', label: '总结提炼', desc: 'AI精简核心' },
@@ -2547,17 +2595,17 @@ export default function Home() {
                                 setDirectTextMode(nextMode);
                                 if (nextMode === 'preserve') setStrictPreserve(true);
                               }}
-                              className={`relative py-3 px-3 rounded-xl border text-center transition-all ${
+                              className={`relative h-11 md:h-12 px-2 rounded-xl border-2 text-center transition-all ${
                                 directTextMode === opt.value
-                                  ? 'border-[#5B4FE9]/40 bg-[#F5F3FF] shadow-sm'
-                                  : 'border-gray-100 bg-white hover:border-gray-200'
+                                  ? 'border-[#5B4FE9] bg-[#F5F3FF] shadow-sm'
+                                  : 'border-gray-200 bg-white hover:border-gray-300'
                               }`}
                             >
                               {directTextMode === opt.value && (
-                                <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-[#5B4FE9]" />
+                                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#5B4FE9]" />
                               )}
-                              <div className={`text-xs font-bold ${directTextMode === opt.value ? 'text-[#4338CA]' : 'text-gray-600'}`}>{opt.label}</div>
-                              <div className="text-[10px] text-gray-400 mt-1">{opt.desc}</div>
+                              <div className={`text-[13px] md:text-sm font-semibold leading-tight ${directTextMode === opt.value ? 'text-[#4338CA]' : 'text-gray-700'}`}>{opt.label}</div>
+                              <div className="hidden md:block text-[11px] text-gray-500 mt-0.5">{opt.desc}</div>
                             </button>
                           ))}
                         </div>
@@ -2565,71 +2613,65 @@ export default function Home() {
 
                       {/* 生成参数 */}
                       <div>
-                        <h3 className="text-sm font-bold text-gray-800 mb-3">生成参数</h3>
-                        <div className="grid grid-cols-3 gap-5">
+                        <h3 className="text-[15px] font-semibold text-gray-800 mb-3">生成参数</h3>
+                        <div className="grid grid-cols-3 gap-2.5 md:gap-5">
                           <div>
-                            <label className="text-xs text-gray-500 mb-2 block font-medium">页数</label>
-                            <div className="relative">
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={customPageInput}
-                                onChange={(e) => {
-                                  const digitsOnly = e.target.value.replace(/[^\d]/g, '');
-                                  setCustomPageInput(digitsOnly);
-                                }}
-                                onBlur={() => {
-                                  if (!customPageInput.trim()) {
-                                    setCustomPageInput(String(pageCount));
-                                    return;
-                                  }
-                                  const val = Number(customPageInput);
-                                  const ok = applyPageCountChange(val);
-                                  if (!ok) setCustomPageInput(String(Math.min(pageCount, planMaxPages)));
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key !== 'Enter') return;
-                                  e.preventDefault();
-                                  if (!customPageInput.trim()) {
-                                    setCustomPageInput(String(pageCount));
-                                    return;
-                                  }
-                                  const val = Number(customPageInput);
-                                  const ok = applyPageCountChange(val);
-                                  if (!ok) setCustomPageInput(String(Math.min(pageCount, planMaxPages)));
-                                }}
-                                className="w-full px-3 py-2.5 pr-16 rounded-xl border border-gray-200 text-sm bg-white focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] outline-none transition-all"
-                              />
-                              <span className="pointer-events-none absolute right-11 top-1/2 -translate-y-1/2 text-xs text-slate-400">页</span>
-                              <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-8 w-7 flex-col overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                <button
-                                  type="button"
-                                  aria-label="增加页数"
-                                  onClick={() => {
-                                    const ok = applyPageCountChange(pageCount + 1);
-                                    if (!ok) setCustomPageInput(String(Math.min(pageCount, planMaxPages)));
-                                  }}
-                                  className="flex h-4 items-center justify-center text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 active:bg-indigo-100"
-                                >
-                                  <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
-                                </button>
-                                <button
-                                  type="button"
-                                  aria-label="减少页数"
-                                  onClick={() => {
-                                    const ok = applyPageCountChange(pageCount - 1);
-                                    if (!ok) setCustomPageInput(String(Math.min(pageCount, planMaxPages)));
-                                  }}
-                                  className="flex h-4 items-center justify-center border-t border-slate-200 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 active:bg-indigo-100"
-                                >
-                                  <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
-                                </button>
-                              </div>
+                            <label className="text-[11px] md:text-xs text-gray-500 mb-1.5 block font-medium">页数</label>
+                            <div className="relative" ref={pagePickerRef}>
+                              <button
+                                type="button"
+                                onClick={() => setShowPagePicker(v => !v)}
+                                className="w-full h-11 md:h-12 px-3 rounded-xl border border-gray-200 bg-white flex items-center justify-between hover:border-indigo-200 transition-colors"
+                              >
+                                <span className="text-[14px] md:text-[15px] font-semibold text-gray-800">{pageCount}</span>
+                                <span className="text-[11px] md:text-xs text-slate-400">页</span>
+                              </button>
+
+                              {showPagePicker && (
+                                <div className="absolute z-20 left-0 top-[calc(100%+8px)] w-full rounded-2xl border border-indigo-100 bg-white/95 backdrop-blur p-2 shadow-lg shadow-indigo-100/50">
+                                  <div
+                                    ref={pagePickerListRef}
+                                    className="max-h-40 overflow-y-auto rounded-xl border border-slate-100 bg-white/70 p-1"
+                                  >
+                                    {pageOptions.map((page) => {
+                                      const isLocked = page > planMaxPages;
+                                      const tierBadge = page <= 8
+                                        ? ''
+                                        : page <= 20
+                                          ? '✨'
+                                          : '👑';
+                                      return (
+                                        <button
+                                          key={page}
+                                          data-page-option={page}
+                                          type="button"
+                                          onClick={() => {
+                                            const ok = applyPageCountChange(page);
+                                            if (ok) setShowPagePicker(false);
+                                          }}
+                                          className={`w-full h-8 rounded-lg text-sm transition-colors flex items-center justify-between px-2 ${
+                                            page === pageCount
+                                              ? 'bg-[#EEF2FF] text-[#4338CA] font-semibold'
+                                              : isLocked
+                                                ? 'text-slate-400 hover:bg-rose-50'
+                                                : 'text-slate-600 hover:bg-slate-50'
+                                          }`}
+                                        >
+                                          <span>{page}</span>
+                                          <span className={`text-[10px] ${isLocked ? 'text-rose-400' : 'text-slate-400'}`}>
+                                            {isLocked ? `🔒${tierBadge}` : tierBadge}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                  <div className="mt-1.5 text-center text-[10px] text-indigo-500 font-medium">上下滑动并点击，精确到每一页</div>
+                                </div>
+                              )}
                             </div>
-                            <p className="mt-1.5 text-[10px] text-slate-400">可输入或用箭头调整（3-{planMaxPages}页）</p>
                           </div>
                           <div>
-                            <label className="text-xs text-gray-500 mb-2 block font-medium">配图风格</label>
+                            <label className="text-[11px] md:text-xs text-gray-500 mb-1.5 block font-medium">配图风格</label>
                             <select
                               value={directImgMode}
                               onChange={e => {
@@ -2657,7 +2699,7 @@ export default function Home() {
                                 // 同步 imgMode 状态，确保 confirmAndGenerate 使用正确的值
                                 setImgMode(val);
                               }}
-                              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-white focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] outline-none transition-all appearance-none cursor-pointer"
+                              className="w-full h-11 md:h-12 px-2.5 rounded-xl border border-gray-200 text-[13px] md:text-sm bg-white focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] outline-none transition-all appearance-none cursor-pointer"
                               style={{backgroundImage: 'url(\"data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3e%3cpath stroke=\'%236b7280\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'M6 8l4 4 4-4\'/%3e%3c/svg%3e\")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', paddingRight: '2.5rem'}}
                             >
                               <option value="theme-img">主题套图</option>
@@ -2667,11 +2709,11 @@ export default function Home() {
                             </select>
                           </div>
                           <div>
-                            <label className="text-xs text-gray-500 mb-2 block font-medium">语气风格</label>
+                            <label className="text-[11px] md:text-xs text-gray-500 mb-1.5 block font-medium">语气风格</label>
                             <select
                               value={directTone}
                               onChange={e => setDirectTone(e.target.value)}
-                              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-white focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] outline-none transition-all appearance-none cursor-pointer"
+                              className="w-full h-11 md:h-12 px-2.5 rounded-xl border border-gray-200 text-[13px] md:text-sm bg-white focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] outline-none transition-all appearance-none cursor-pointer"
                               style={{backgroundImage: 'url(\"data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3e%3cpath stroke=\'%236b7280\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'M6 8l4 4 4-4\'/%3e%3c/svg%3e\")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', paddingRight: '2.5rem'}}
                             >
                               <option value="professional">专业</option>
@@ -2688,7 +2730,7 @@ export default function Home() {
                   {error && <div className="mt-4 px-4 py-2.5 bg-red-50 text-red-600 rounded-xl text-xs font-medium">{error}</div>}
 
                   {/* Generate action row */}
-                  <div className="mt-5 flex flex-col md:flex-row md:items-center gap-3">
+                  <div className="mt-5 flex flex-col md:flex-row md:items-center gap-3 pb-[calc(env(safe-area-inset-bottom)+6px)]">
                     <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-white/70 border border-indigo-100 px-3 py-1.5">高级设置</span>
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-white/70 border border-indigo-100 px-3 py-1.5">页数 {pageCount} 页</span>
@@ -2697,7 +2739,7 @@ export default function Home() {
                     <button
                       onClick={() => { if (!user) { openLogin(); return; } handleGeneratePPT(); }}
                       disabled={!hasInput}
-                      className={`md:ml-auto min-w-[210px] px-7 py-4 rounded-2xl text-sm font-black transition-all ${
+                      className={`md:ml-auto w-full md:w-[260px] h-[52px] rounded-2xl text-[15px] font-black transition-all ${
                         hasInput
                           ? 'sx-primary-btn text-white active:scale-[0.98]'
                           : 'bg-slate-100 text-slate-400 cursor-not-allowed'
@@ -3114,13 +3156,13 @@ export default function Home() {
                   <div className="text-xs text-slate-400">电脑/手机均可横竖屏查看</div>
                 </div>
 
-                <div className="relative rounded-2xl overflow-hidden border border-indigo-100 bg-[#0f1020] min-h-[72vh] md:min-h-[78vh]">
+                <div className="relative rounded-2xl overflow-hidden border border-indigo-100 bg-[#0f1020] md:min-h-[78vh]">
                   {previewLoading ? (
-                    <div className="w-full min-h-[72vh] md:min-h-[78vh] flex items-center justify-center text-white text-sm">
+                    <div className="w-full min-h-[62vh] md:min-h-[78vh] flex items-center justify-center text-white text-sm">
                       正在加载 PDF 预览...
                     </div>
                   ) : previewError ? (
-                    <div className="w-full min-h-[72vh] md:min-h-[78vh] flex flex-col items-center justify-center text-white gap-4 px-6 text-center">
+                    <div className="w-full min-h-[62vh] md:min-h-[78vh] flex flex-col items-center justify-center text-white gap-4 px-6 text-center">
                       <p className="text-sm text-red-300">{previewError}</p>
                       <button
                         onClick={() => {
@@ -3133,13 +3175,13 @@ export default function Home() {
                       </button>
                     </div>
                   ) : previewPdfUrl ? (
-                    <iframe
+                    <ResponsivePdfPreview
                       src={previewPdfUrl}
-                      className="w-full h-[72vh] md:h-[78vh] bg-white"
+                      fetchSrc={previewPdfFetchUrl}
                       title={result?.title || 'PDF 预览'}
                     />
                   ) : (
-                    <div className="w-full min-h-[72vh] md:min-h-[78vh] flex items-center justify-center text-white text-sm">
+                    <div className="w-full min-h-[62vh] md:min-h-[78vh] flex items-center justify-center text-white text-sm">
                       暂无可预览内容
                     </div>
                   )}

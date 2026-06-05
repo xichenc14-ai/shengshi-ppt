@@ -11,10 +11,7 @@ interface HeroInputProps {
   setTopic: (t: string) => void;
   files: UploadedFile[];
   setFiles: (f: UploadedFile[] | ((prev: UploadedFile[]) => UploadedFile[])) => void;
-  hasInput: boolean;
   error: string;
-  directTheme: string;
-  setDirectTheme: (v: string) => void;
   directTone: string;
   setDirectTone: (v: string) => void;
   directImgMode: string;
@@ -31,8 +28,8 @@ const fmtSize = (b: number) => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).to
 
 export default React.memo(function HeroInput({
   mode, setMode, topic, setTopic, files, setFiles,
-  hasInput, error,
-  directTheme, setDirectTheme, directTone, setDirectTone,
+  error,
+  directTone, setDirectTone,
   directImgMode, setDirectImgMode, directTextMode, setDirectTextMode,
   pages, setPages, onBackToLanding, fileProcess,
 }: HeroInputProps) {
@@ -65,7 +62,7 @@ export default React.memo(function HeroInput({
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
             </svg>
           </button>
-          <input ref={fileRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={async e => { if (e.target.files?.length) { const processed = await fileProcess(e.target.files); setFiles((prev: any[]) => [...prev, ...processed]); } e.target.value = ''; }} className="hidden" />
+          <input ref={fileRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={async e => { if (e.target.files?.length) { const processed = await fileProcess(e.target.files); setFiles((prev: UploadedFile[]) => [...prev, ...processed]); } e.target.value = ''; }} className="hidden" />
 
           {files.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -73,7 +70,7 @@ export default React.memo(function HeroInput({
                 <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#F5F3FF] rounded-lg text-[11px] text-[#4338CA] font-medium">
                   {f.type.startsWith('image/') ? '🖼️' : /\.(xls|csv)/.test(f.name) ? '📊' : '📄'} {f.name}
                   <span className="text-gray-400">{fmtSize(f.size)}</span>
-                  <button onClick={() => setFiles((prev: any[]) => prev.filter((_, j) => j !== i))} className="text-gray-300 hover:text-red-400">×</button>
+                  <button onClick={() => setFiles((prev: UploadedFile[]) => prev.filter((_, j) => j !== i))} className="text-gray-300 hover:text-red-400">×</button>
                 </span>
               ))}
             </div>
@@ -110,7 +107,7 @@ export default React.memo(function HeroInput({
             <div className="mt-4 pt-4 border-t border-gray-100">
               {/* Text processing modes */}
               <div className="mt-3">
-                <label className="text-xs text-gray-500 mb-2 block">文本处理模式</label>
+                <label className="text-[11px] sm:text-xs text-gray-600 mb-2 block font-medium">文本处理模式</label>
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { value: 'generate', label: '🚀 扩充文本', desc: 'AI丰富内容' },
@@ -120,14 +117,14 @@ export default React.memo(function HeroInput({
                     <button
                       key={opt.value}
                       onClick={() => setDirectTextMode(opt.value as 'generate' | 'condense' | 'preserve')}
-                      className={`py-2.5 px-2 rounded-xl border-2 text-center transition-all ${
+                      className={`py-2 px-1.5 sm:py-2.5 sm:px-2 rounded-xl border-2 text-center transition-all min-h-[56px] sm:min-h-[unset] ${
                         directTextMode === opt.value
                           ? 'border-[#5B4FE9] bg-[#F5F3FF] shadow-sm'
                           : 'border-gray-100 hover:border-gray-200 bg-white'
                       }`}
                     >
-                      <div className={`text-xs font-semibold ${directTextMode === opt.value ? 'text-[#4338CA]' : 'text-gray-600'}`}>{opt.label}</div>
-                      <div className="text-[9px] text-gray-400 mt-0.5">{opt.desc}</div>
+                      <div className={`text-[11px] sm:text-xs font-semibold leading-tight ${directTextMode === opt.value ? 'text-[#4338CA]' : 'text-gray-700'}`}>{opt.label}</div>
+                      <div className="text-[10px] sm:text-[9px] text-gray-500 mt-0.5 leading-tight">{opt.desc}</div>
                     </button>
                   ))}
                 </div>
@@ -136,11 +133,11 @@ export default React.memo(function HeroInput({
               {/* Simplified params */}
               <div className="grid grid-cols-2 gap-3 mt-3">
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">配图模式</label>
+                  <label className="text-[11px] sm:text-xs text-gray-600 mb-1 block font-medium">配图模式</label>
                   <select
                     value={directImgMode}
                     onChange={e => setDirectImgMode(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                    className="w-full px-2.5 py-2 rounded-lg border border-gray-200 text-[13px] sm:text-sm bg-white"
                   >
                     <option value="theme-img">主题套图</option>
                     <option value="web">搜索配图</option>
@@ -148,11 +145,11 @@ export default React.memo(function HeroInput({
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">语气风格</label>
+                  <label className="text-[11px] sm:text-xs text-gray-600 mb-1 block font-medium">语气风格</label>
                   <select
                     value={directTone}
                     onChange={e => setDirectTone(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                    className="w-full px-2.5 py-2 rounded-lg border border-gray-200 text-[13px] sm:text-sm bg-white"
                   >
                     <option value="professional">专业</option>
                     <option value="casual">轻松</option>
@@ -162,7 +159,7 @@ export default React.memo(function HeroInput({
                 </div>
               </div>
               <div className="mt-3">
-                <label className="text-xs text-gray-500 mb-1 block">页数</label>
+                <label className="text-[11px] sm:text-xs text-gray-600 mb-1 block font-medium">页数</label>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setPages(Math.max(5, pages - 1))}
@@ -176,9 +173,9 @@ export default React.memo(function HeroInput({
                     max="30"
                     value={pages}
                     onChange={e => setPages(Math.min(30, Math.max(5, Number(e.target.value))))}
-                    className="w-16 h-8 text-center border border-gray-200 rounded-lg text-sm font-medium text-gray-700 outline-none focus:border-[#5B4FE9]"
+                    className="w-16 h-8 text-center border border-gray-200 rounded-lg text-[13px] sm:text-sm font-medium text-gray-700 outline-none focus:border-[#5B4FE9]"
                   />
-                  <span className="text-xs text-gray-400">页</span>
+                  <span className="text-[11px] sm:text-xs text-gray-500">页</span>
                   <button
                     onClick={() => setPages(Math.min(30, pages + 1))}
                     className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:border-[#5B4FE9] hover:text-[#5B4FE9] transition-colors"

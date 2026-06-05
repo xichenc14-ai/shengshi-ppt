@@ -56,13 +56,13 @@ export default function ThemePickerModal({ open, currentThemeId, currentTone, cu
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in" onClick={onClose}>
-      <div className="bg-white rounded-3xl shadow-2xl w-[420px] max-w-[92vw] max-h-[85vh] overflow-y-auto animate-modal-in" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-[400px] max-w-[96vw] max-h-[88vh] overflow-y-auto animate-modal-in" onClick={(e) => e.stopPropagation()}>
         {/* 顶部渐变装饰条 */}
         <div className="h-1.5 bg-gradient-to-r from-[#5B4FE9] via-[#7C3AED] to-[#8B5CF6]" />
 
-        <div className="p-5">
+        <div className="p-3 sm:p-5">
           {/* Header */}
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center justify-between mb-4 sm:mb-5">
             <div className="flex items-center gap-2">
               <span className="text-lg">🎨</span>
               <h3 className="text-base font-bold text-gray-900">调整生成参数</h3>
@@ -76,18 +76,18 @@ export default function ThemePickerModal({ open, currentThemeId, currentTone, cu
           </div>
 
           {/* 主题选择 */}
-          <div className="mb-5">
+          <div className="mb-4 sm:mb-5">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5">🎨 主题色系</p>
-            <div className="mb-3 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
+            <div className="mb-2.5 sm:mb-3 rounded-xl border border-indigo-100 bg-indigo-50/60 p-2 sm:p-3">
               <p className="text-xs font-semibold text-indigo-700 mb-2">当前配色预览 · {currentTheme.name}</p>
               <div className="rounded-lg bg-white border border-indigo-100 p-2">
                 <p className="text-[11px] font-bold text-slate-600 mb-1.5">大色块预览（背景/强调/字体）</p>
-                <div className="relative h-24 rounded-lg border border-slate-200 p-3 overflow-hidden" style={{ backgroundColor: bgColor }}>
-                  <div className="absolute top-2.5 right-2.5 rounded-md px-2.5 py-1 border border-white/40 shadow-sm" style={{ backgroundColor: accentColor }}>
-                    <span className="text-xs font-semibold" style={{ color: fontColor }}>强调色</span>
+                <div className="relative h-14 sm:h-24 rounded-lg border border-slate-200 p-1.5 sm:p-3 overflow-hidden" style={{ backgroundColor: bgColor }}>
+                  <div className="absolute top-2 right-2 sm:top-2.5 sm:right-2.5 rounded-md px-2 py-0.5 sm:px-2.5 sm:py-1 border border-white/40 shadow-sm" style={{ backgroundColor: accentColor }}>
+                    <span className="text-[10px] sm:text-xs font-semibold" style={{ color: fontColor }}>强调色</span>
                   </div>
-                  <div className="absolute left-3 bottom-3">
-                    <p className="text-xl font-black leading-none" style={{ color: fontColor }}>省心PPT</p>
+                  <div className="absolute left-2 bottom-2 sm:left-3 sm:bottom-3">
+                    <p className="text-xs sm:text-xl font-black leading-none" style={{ color: fontColor }}>省心PPT</p>
                     <p className="text-[10px] mt-1 opacity-85" style={{ color: fontColor }}>色彩展示更直观</p>
                   </div>
                 </div>
@@ -98,12 +98,12 @@ export default function ThemePickerModal({ open, currentThemeId, currentTone, cu
                 </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-5 sm:grid-cols-3 gap-1 sm:gap-2">
               {COLOR_THEMES.map(t => (
                 <button
                   key={t.id}
                   onClick={() => { onThemeChange(t.id); }}
-                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 transition-all ${
+                  className={`flex flex-col items-center justify-center gap-0.5 px-0.5 py-1 sm:flex-row sm:justify-start sm:gap-1.5 sm:px-3 sm:py-2.5 rounded-lg sm:rounded-xl border transition-all sm:border-2 ${
                     currentThemeId === t.id
                       ? 'border-[#5B4FE9] bg-[#F5F3FF] shadow-sm'
                       : 'border-gray-100 hover:border-gray-200'
@@ -111,12 +111,12 @@ export default function ThemePickerModal({ open, currentThemeId, currentTone, cu
                 >
                   <div className="flex gap-0.5 flex-shrink-0">
                     {t.colors.map((c, i) => (
-                      <div key={i} className="w-3.5 h-3.5 rounded-full border border-gray-200/50" style={{ backgroundColor: c }} />
-                    ))}
+                    <div key={i} className="w-2 h-2 sm:w-3.5 sm:h-3.5 rounded-full border border-gray-200/50" style={{ backgroundColor: c }} />
+                  ))}
                   </div>
-                  <span className={`text-xs font-medium ${currentThemeId === t.id ? 'text-[#4338CA]' : 'text-gray-600'}`}>{t.name}</span>
+                  <span className={`text-[7px] sm:text-xs font-medium truncate max-w-full ${currentThemeId === t.id ? 'text-[#4338CA]' : 'text-gray-600'}`}>{t.name}</span>
                   {currentThemeId === t.id && (
-                    <svg className="w-3.5 h-3.5 text-[#5B4FE9] ml-auto flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg>
+                    <svg className="hidden sm:block w-3.5 h-3.5 text-[#5B4FE9] ml-auto flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg>
                   )}
                 </button>
               ))}

@@ -1,0 +1,41 @@
+{
+  "generatedAt": "2026-06-01T09:23:38.142Z",
+  "readiness": {
+    "coreReady": false,
+    "notifyHttps": false,
+    "wechatReady": false,
+    "alipayReady": false,
+    "overallReady": false
+  },
+  "missing": {
+    "core": [
+      "PAYMENT_NOTIFY_URL",
+      "PAYMENT_NOTIFY_SECRET",
+      "ALLOWED_CALLBACK_IPS"
+    ],
+    "wechatSdk": [
+      "WECHAT_PAY_MCH_ID",
+      "WECHAT_PAY_APP_ID",
+      "WECHAT_PAY_API_V3_KEY"
+    ],
+    "alipaySdk": [
+      "ALIPAY_APP_ID",
+      "ALIPAY_PRIVATE_KEY",
+      "ALIPAY_PUBLIC_KEY"
+    ],
+    "minimalTemplatePath": [
+      "PAYMENT_NOTIFY_URL",
+      "PAYMENT_NOTIFY_SECRET",
+      "ALLOWED_CALLBACK_IPS",
+      "PAYMENT_WECHAT_URL_TEMPLATE",
+      "PAYMENT_ALIPAY_URL_TEMPLATE"
+    ]
+  },
+  "suggestions": {
+    "nextCommands": [
+      "npm run -s env:commercial:assert",
+      "npm run -s env:commercial:doctor",
+      "npm run -s release-gate:commercial"
+    ]
+  }
+}

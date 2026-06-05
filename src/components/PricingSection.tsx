@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { isPaymentFeatureEnabledClient } from '@/lib/payment-feature';
 
 type PlanFeature = { text: string; included: boolean; highlight?: boolean };
 
@@ -20,6 +21,23 @@ type Plan = {
   features: PlanFeature[];
   cta: string;
   ctaDisabled: boolean;
+};
+
+type PaymentPlanInput = {
+  id: string;
+  name: string;
+  price: string;
+  billing?: string;
+  credits?: number;
+};
+
+type PlanCardProps = {
+  plan: Plan;
+  user: { id: string } | null;
+  openPayment: (plan: PaymentPlanInput) => void;
+  openLogin: () => void;
+  isSelected?: boolean;
+  onSelect?: () => void;
 };
 
 const PLANS: Plan[] = [
@@ -113,14 +131,19 @@ const PLANS: Plan[] = [
   },
 ];
 
-function PlanCard({ plan, user, openPayment, openLogin, isSelected, onSelect }: { plan: Plan; user: any; openPayment: any; openLogin: any; isSelected?: boolean; onSelect?: () => void }) {
+function PlanCard({ plan, user, openPayment, openLogin, isSelected, onSelect }: PlanCardProps) {
   const [isAnnual, setIsAnnual] = React.useState(false);
   const currentPrice = isAnnual ? plan.prices.annualMonthly : plan.prices.monthly;
   const period = isAnnual ? '/月 (年付)' : '/月';
+  const paymentEnabled = isPaymentFeatureEnabledClient();
 
   const handleCta = () => {
     if (plan.id === 'free') return;
     if (!user) { openLogin(); return; }
+    if (!paymentEnabled) {
+      alert('支付通道申请中，会员开通暂不可用。');
+      return;
+    }
     onSelect?.();
     openPayment({
       id: plan.id,
@@ -252,6 +275,7 @@ function PlanCard({ plan, user, openPayment, openLogin, isSelected, onSelect }: 
 export default function PricingSection() {
   const { user, openPayment, openLogin } = useAuth();
   const [selectedPlan, setSelectedPlan] = React.useState<string | null>(null);
+  const paymentEnabled = isPaymentFeatureEnabledClient();
 
   return (
     <section className="py-20 md:py-28 relative overflow-hidden" id="pricing">
@@ -271,6 +295,11 @@ export default function PricingSection() {
           <p className="text-gray-500 max-w-md mx-auto">
             按积分计费，用多少扣多少 · 免费试用，满意再付费
           </p>
+          {!paymentEnabled && (
+            <p className="mt-3 text-xs font-semibold text-amber-600">
+              支付通道申请中：当前仅开放非支付功能体验
+            </p>
+          )}
         </div>
 
         {/* Plans */}

@@ -1,0 +1,52 @@
+ M .DS_Store
+ M .env.vercel
+ M .gitignore
+ M __tests__/api/parse-file.test.ts
+ M eslint.config.mjs
+ M next.config.ts
+ M package.json
+ M src/app/admin/page.tsx
+ M src/app/api/admin/overview/route.ts
+ M src/app/api/diagnostic/route.ts
+ M src/app/api/download/route.ts
+ M src/app/api/export-pptx/route.ts
+ M src/app/api/export/route.ts
+ M src/app/api/gamma-balance/route.ts
+ M src/app/api/gamma-direct/route.ts
+ M src/app/api/gamma/route.ts
+ M src/app/api/generate/route.ts
+ M src/app/api/history/route.ts
+ M src/app/api/outline/route.ts
+ M src/app/api/outline/stream/route.ts
+ M src/app/api/parse-file/route.ts
+ M src/app/api/payment/route.ts
+ M src/app/history/page.tsx
+ M src/app/page.tsx
+ M src/components/ThemePickerModal.tsx
+ M src/components/ThemeSelector.tsx
+ M src/components/p3-charts/charts/components/PieChart.tsx
+ M src/components/p3-charts/charts/components/RadarChart.tsx
+ M src/components/p3-charts/charts/components/ScatterChart.tsx
+ M src/lib/deepseek-client.ts
+ M src/lib/minimax-client.ts
+ M src/lib/supabase-types.ts
+ M src/lib/verify-attempts.ts
+ M src/lib/version.ts
+?? __tests__/.DS_Store
+?? analyze-eslint.cjs
+?? backups/.DS_Store
+?? backups/release-precommercial-v10.80.2-20260601-r2/
+?? backups/release-preprod-v10.80.2-20260601/
+?? docs/.DS_Store
+?? docs/user/RELEASE-BACKUP-v10.80.2-20260601.md
+?? docs/user/RELEASE-NOTES-v10.80.2.md
+?? docs/user/SESSION-HANDOFF-v10.80.1.md
+?? eslint-report.json
+?? projects/.DS_Store
+?? public/.DS_Store
+?? solutions/.DS_Store
+?? src/.DS_Store
+?? src/app/api/feedback/
+?? supabase-migrations/02-ppt-feedback.sql
+?? supabase/.DS_Store
+?? supabase/.temp/

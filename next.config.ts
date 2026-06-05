@@ -1,10 +1,24 @@
 import type { NextConfig } from "next";
-import path from "path";
+
+const cspDirectives = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "frame-src 'self' blob: data:",
+  "object-src 'self' blob: data:",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "style-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "connect-src 'self' https:",
+  "worker-src 'self' blob:",
+].join('; ');
 
 const nextConfig: NextConfig = {
   typescript: {
-    // 临时放开构建期类型阻断，避免历史遗留模块影响生产发布
-    ignoreBuildErrors: true,
+    // 商业部署要求：构建期必须开启类型阻断
+    ignoreBuildErrors: false,
   },
 
   // 允许本地 127.0.0.1 调试地址访问开发资源（Playwright/E2E 常用）
@@ -38,9 +52,19 @@ const nextConfig: NextConfig = {
         headers: [
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'X-XSS-Protection', value: '1; mode=block' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'Cross-Origin-Resource-Policy', value: 'same-site' },
+          { key: 'X-DNS-Prefetch-Control', value: 'off' },
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+          { key: 'Content-Security-Policy', value: cspDirectives },
+        ],
+      },
+      {
+        source: '/api/preview/file',
+        headers: [
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
         ],
       },
       {

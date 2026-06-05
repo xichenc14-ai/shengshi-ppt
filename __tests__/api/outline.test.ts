@@ -141,7 +141,7 @@ describe('POST /api/outline', () => {
     expect(data.slides.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('should prefer coffee scene theme and keep smart default theme-img in smart mode even when AI suggests dark fallback theme', async () => {
+  it('should prefer coffee scene theme and smart default image mode in smart mode even when AI suggests dark fallback theme', async () => {
     vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
       title: '咖啡介绍',
       scene: '通用',
@@ -158,8 +158,7 @@ describe('POST /api/outline', () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.scene).toBe('餐饮美食');
-    expect(data.themeId).toBe('finesse');
-    expect(data.imageMode).toBe('theme-img');
+    expect(data.imageMode).toBe('web');
   });
 
   it('should recognize white minimal style and prefer howlite theme in smart mode', async () => {
@@ -183,7 +182,108 @@ describe('POST /api/outline', () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.themeId).toBe('howlite');
-    expect(data.imageMode).toBe('theme-img');
+    expect(data.imageMode).toBe('web');
+  });
+
+  it('should default to ai image mode for creative tech smart mode when user does not specify image source', async () => {
+    vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
+      title: 'AI 产品发布',
+      scene: '通用',
+      themeId: 'consultant',
+      tone: 'professional',
+      imageMode: 'theme-img',
+      slides: [{ title: '封面', content: ['测试'] }, { title: '结尾', content: ['完成'] }],
+    }));
+
+    const res = await POST(new Request('http://localhost/api/outline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '127.0.0.19' },
+      body: JSON.stringify({
+        inputText: '做一份 AI 新品发布介绍，5页，强调未来感',
+        auto: true,
+      }),
+    }) as unknown as NextRequest);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.scene).toBe('科技AI');
+    expect(data.imageMode).toBe('ai');
+  });
+
+  it('should honor smart mode requests from legacy mode=smart callers', async () => {
+    vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
+      title: '北京旅游完全指南',
+      scene: '通用',
+      themeId: 'consultant',
+      tone: 'professional',
+      imageMode: 'theme-img',
+      slides: [{ title: '封面', content: ['测试'] }, { title: '结尾', content: ['完成'] }],
+    }));
+
+    const res = await POST(new Request('http://localhost/api/outline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '127.0.0.29' },
+      body: JSON.stringify({
+        topic: '北京旅游完全指南',
+        mode: 'smart',
+        imageSource: 'smart',
+        pages: 5,
+      }),
+    }) as unknown as NextRequest);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.scene).toBe('旅游出行');
+    expect(data.themeId).toBe('finesse');
+    expect(data.imageMode).toBe('web');
+  });
+
+  it('should treat explicit red theme requests as highest-priority smart mode intent', async () => {
+    vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
+      title: '北京文旅方案',
+      scene: '旅游出行',
+      themeId: 'howlite',
+      tone: 'casual',
+      imageMode: 'theme-img',
+      slides: [{ title: '封面', content: ['测试'] }, { title: '结尾', content: ['完成'] }],
+    }));
+
+    const res = await POST(new Request('http://localhost/api/outline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '127.0.0.39' },
+      body: JSON.stringify({
+        inputText: '做一份北京文旅推广方案，红色主题，8页',
+        auto: true,
+      }),
+    }) as unknown as NextRequest);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.themeId).toBe('atmosphere');
+    expect(data.meta.intent.themeLocked).toBe(true);
+    expect(data.meta.intent.themeLabel).toBe('红色系');
+  });
+
+  it('should treat explicit blue theme requests as highest-priority smart mode intent', async () => {
+    vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
+      title: '城市发展方案',
+      scene: '生活方式',
+      themeId: 'howlite',
+      tone: 'casual',
+      imageMode: 'theme-img',
+      slides: [{ title: '封面', content: ['测试'] }, { title: '结尾', content: ['完成'] }],
+    }));
+
+    const res = await POST(new Request('http://localhost/api/outline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '127.0.0.49' },
+      body: JSON.stringify({
+        inputText: '做一份城市发展介绍，蓝色主题，5页',
+        auto: true,
+      }),
+    }) as unknown as NextRequest);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.themeId).toBe('consultant');
+    expect(data.meta.intent.themeLocked).toBe(true);
+    expect(data.meta.intent.themeLabel).toBe('蓝色系');
   });
 
 });

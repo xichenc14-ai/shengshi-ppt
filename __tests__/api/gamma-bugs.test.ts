@@ -20,6 +20,24 @@ vi.mock('@/lib/gamma-key-pool', () => ({
 
 vi.mock('@/lib/gamma-theme-mapping', () => ({
   getGammaThemeId: vi.fn((id: string) => id || 'consultant'),
+  getAllGammaThemes: vi.fn().mockReturnValue([
+    'consultant',
+    'blues',
+    'blue-steel',
+    'breeze',
+    'cornflower',
+    'howlite',
+    'commons',
+    'finesse',
+    'clementa',
+    'atmosphere',
+    'coral-glow',
+    'ashrose',
+    'aurora',
+    'electric',
+    'chisel',
+    'aurum',
+  ]),
 }));
 
 vi.mock('@/lib/rate-limit', () => ({
@@ -179,6 +197,78 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
     const fetchCall = mockFetch.mock.calls[0];
     const calledBody = JSON.parse(fetchCall[1].body as string);
     expect(calledBody.imageOptions.source).toBe('webFreeToUseCommercially');
+  });
+
+  it('BUG-2e: explicit web mode should not instruct key pages to fallback to themeAccent', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ generationId: 'test-gen-123' }),
+    });
+
+    const res = await POST(mockPostRequest({
+      inputText: '# Test',
+      imageMode: 'webFreeToUseCommercially',
+      themeId: 'consultant',
+      tone: 'professional',
+    }));
+
+    expect(res.status).toBe(200);
+    const fetchCall = mockFetch.mock.calls[0];
+    const calledBody = JSON.parse(fetchCall[1].body as string);
+    expect(String(calledBody.additionalInstructions)).not.toContain('允许回退为 themeAccent');
+    expect(String(calledBody.additionalInstructions)).toContain('不允许回退成 themeAccent');
+    expect(String(calledBody.additionalInstructions)).not.toContain('若取图失败可回退主题图');
+  });
+
+  it('BUG-2f: locked blue-theme intent should override conflicting white theme payload', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ generationId: 'test-gen-locked-blue' }),
+    });
+
+    const res = await POST(mockPostRequest({
+      inputText: '# Test',
+      imageMode: 'webFreeToUseCommercially',
+      themeId: 'howlite',
+      tone: 'professional',
+      intentHints: {
+        themeLocked: true,
+        themeLabel: '蓝色系',
+      },
+    }));
+
+    expect(res.status).toBe(200);
+    const fetchCall = mockFetch.mock.calls[0];
+    const calledBody = JSON.parse(fetchCall[1].body as string);
+    expect(calledBody.themeId).toBe('consultant');
+    expect(String(calledBody.additionalInstructions)).toContain('蓝色系');
+  });
+
+  it('BUG-2g: additional instructions should forbid PPTX-fragile external icon libraries', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ generationId: 'test-gen-pptx-safe-icons' }),
+    });
+
+    const res = await POST(mockPostRequest({
+      inputText: '# Test\n\n---\n\n## Slide\n\n### 要点一',
+      imageMode: 'webFreeToUseCommercially',
+      themeId: 'consultant',
+      tone: 'professional',
+    }));
+
+    expect(res.status).toBe(200);
+    const fetchCall = mockFetch.mock.calls[0];
+    const calledBody = JSON.parse(fetchCall[1].body as string);
+    const instructions = String(calledBody.additionalInstructions);
+    expect(instructions).toContain('PPTX安全图标与字体规范');
+    expect(instructions).toContain('数字徽章');
+    expect(instructions).toContain('禁止使用Gamma Icons');
+    expect(instructions).not.toContain('每一页都必须包含2-5个 Icons');
+    expect(instructions).not.toContain('推荐图标库');
   });
 
   // ===== Bug 3: textMode should be preserved =====

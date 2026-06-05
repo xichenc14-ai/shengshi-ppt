@@ -3,8 +3,14 @@ import { NextRequest, NextResponse } from 'next/server';
 // 支付确认通知 - 发送 TG 消息给管理员
 export async function POST(req: NextRequest) {
   try {
+    const internalKey = process.env.PAYMENT_NOTIFY_SECRET || '';
+    const providedKey = req.headers.get('x-payment-notify-secret') || '';
+    if (process.env.NODE_ENV === 'production' && (!internalKey || providedKey !== internalKey)) {
+      return NextResponse.json({ success: false, error: 'unauthorized' }, { status: 403 });
+    }
+
     const body = await req.json();
-    const { userId, userName, planId, planName, price, billing, payMethod } = body;
+    const { userId, userName, planName, price, billing, payMethod } = body;
 
     // 检查 TG 配置
     const botToken = process.env.TELEGRAM_BOT_TOKEN;

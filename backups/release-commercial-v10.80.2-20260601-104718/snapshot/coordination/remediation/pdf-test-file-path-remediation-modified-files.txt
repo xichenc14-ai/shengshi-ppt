@@ -1,0 +1,57 @@
+# PDF Test File Path Remediation - Modified Files List
+
+> **Stage:** R2
+> **Batch:** V2_0_SHENGXIN_PPT_PDF_TEST_FILE_PATH_REMEDIATION_NO_RUNNER
+> **Date:** 2026-05-06T22:20:00+08:00
+
+---
+
+## Files Created (1)
+
+| File Path | Type | Purpose |
+|-----------|------|---------|
+| `__tests__/app/api/parse-file/route.test.ts` | TEST FILE | Relocated test skeleton |
+
+---
+
+## Files Modified (0)
+
+| File Path | Modification |
+|-----------|--------------|
+| (none) | - |
+
+---
+
+## Files Deleted (0)
+
+| File Path | Reason |
+|-----------|--------|
+| (none) | - |
+
+---
+
+## Files Preserved/Unchanged (Important)
+
+| File Path | Status | Reason |
+|-----------|--------|--------|
+| `src/app/api/parse-file/route.test.ts` | PRESERVED | Original location, no deletion |
+| `src/app/api/parse-file/route.ts` | UNCHANGED | Production code |
+| `vitest.config.ts` | UNCHANGED | No config modification |
+| `package.json` | UNCHANGED | No package changes |
+| `__tests__/setup.ts` | PRESUMED | Existing test setup (if any) |
+
+---
+
+## Directory Structure Created
+
+```
+__tests__/
+└── app/
+    └── api/
+        └── parse-file/
+            └── route.test.ts  ← NEW FILE
+```
+
+---
+
+**End of Modified Files List**

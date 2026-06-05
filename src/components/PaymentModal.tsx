@@ -1,7 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { isPaymentFeatureEnabledClient } from '@/lib/payment-feature';
 
 // 收款码图片映射
 const QR_CODE_MAP: Record<string, Record<'monthly' | 'annual', string>> = {
@@ -43,58 +46,117 @@ interface PaymentModalProps {
 }
 
 type Step = 'select' | 'confirm';
+type CreatedOrder = {
+  orderNo: string;
+  providerOrderId?: string;
+  payUrl?: string;
+  qrCodeUrl?: string;
+  providerMock?: boolean;
+};
 
 export default function PaymentModal({ open, onClose, plan }: PaymentModalProps) {
   const { user } = useAuth();
   const [payMethod, setPayMethod] = useState<'wechat' | 'alipay'>('wechat');
   const [step, setStep] = useState<Step>('select');
   const [submitting, setSubmitting] = useState(false);
+  const [order, setOrder] = useState<CreatedOrder | null>(null);
+  const [orderError, setOrderError] = useState('');
+  const [statusHint, setStatusHint] = useState('');
+  const isProd = process.env.NODE_ENV === 'production';
+  const paymentEnabled = isPaymentFeatureEnabledClient();
 
-  // 重置状态当Modal打开时
+  // 重置状态当Modal打开时（延后到下一帧，避免 effect 内同步 setState）
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+    const frameId = requestAnimationFrame(() => {
       setStep('select');
       setPayMethod('wechat');
       setSubmitting(false);
-    }
+      setOrder(null);
+      setOrderError('');
+      setStatusHint('');
+    });
+    return () => cancelAnimationFrame(frameId);
   }, [open]);
 
   const handleNext = useCallback(async () => {
-    if (!plan) return;
-    setStep('confirm');
-    // 人工确认模式：直接显示收款码，不创建订单
-  }, [plan]);
+    if (!plan || !user) return;
+    setSubmitting(true);
+    setOrderError('');
+    try {
+      const res = await fetch('/api/payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create_order',
+          planId: plan.id,
+          payMethod,
+          userId: user.id,
+          billing: plan.billing || 'monthly',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setOrderError(data?.error || '创建订单失败，请稍后重试');
+        return;
+      }
+      setOrder({
+        orderNo: String(data.order_no || ''),
+        providerOrderId: typeof data.provider_order_id === 'string' ? data.provider_order_id : undefined,
+        payUrl: typeof data.pay_url === 'string' ? data.pay_url : undefined,
+        qrCodeUrl: typeof data.qr_code_url === 'string' ? data.qr_code_url : undefined,
+        providerMock: Boolean(data.provider_mock),
+      });
+      setStep('confirm');
+    } catch {
+      setOrderError('创建订单失败，请检查网络后重试');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [plan, payMethod, user]);
 
   const handleClose = useCallback(() => {
     setStep('select');
+    setOrder(null);
+    setOrderError('');
+    setStatusHint('');
     onClose();
   }, [onClose]);
 
   const handlePaymentConfirm = useCallback(async () => {
-    if (!plan || !user) {
+    if (!plan || !user || !order?.orderNo) {
       handleClose();
       return;
     }
     setSubmitting(true);
+    setStatusHint('');
     try {
-      await fetch('/api/payment-notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          userName: user.nickname || user.phone,
-          planId: plan.id,
-          planName: plan.name,
-          price: plan.price,
-          billing: plan.billing || 'monthly',
-          payMethod,
-        }),
-      });
-    } catch (e) {
-      // 忽略错误，继续关闭
+      const statusRes = await fetch(`/api/payment?order_no=${encodeURIComponent(order.orderNo)}`);
+      const data = await statusRes.json();
+      if (!statusRes.ok) {
+        setStatusHint(data?.error || '查询订单状态失败，请稍后重试');
+        return;
+      }
+      const orderStatus = String(data?.order?.status || '');
+      if (orderStatus === 'completed') {
+        handleClose();
+        return;
+      }
+      if (orderStatus === 'pending') {
+        setStatusHint('订单尚未完成支付，请完成付款后再点击检查状态');
+        return;
+      }
+      if (orderStatus === 'expired') {
+        setStatusHint('订单已过期，请返回上一步重新创建订单');
+        return;
+      }
+      setStatusHint(`当前订单状态：${orderStatus || '未知'}，请稍后再试`);
+    } catch {
+      setStatusHint('状态检查失败，请检查网络后重试');
+    } finally {
+      setSubmitting(false);
     }
-    handleClose();
-  }, [plan, user, payMethod, handleClose]);
+  }, [plan, user, order?.orderNo, handleClose]);
 
   // ESC key
   React.useEffect(() => {
@@ -106,21 +168,53 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
 
   if (!open || !plan) return null;
 
+  if (!paymentEnabled) {
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in" onClick={handleClose}>
+        <div className="bg-white rounded-3xl shadow-2xl w-[420px] max-w-[94vw] animate-modal-in overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="h-1.5 bg-gradient-to-r from-[#5B4FE9] via-[#7C3AED] to-[#8B5CF6]" />
+          <div className="p-5 sm:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base sm:text-lg font-bold text-gray-900">支付通道申请中</h3>
+              <button
+                onClick={handleClose}
+                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-all active:scale-90"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <p className="text-sm text-slate-600 leading-6">
+              当前版本已先行上线非支付功能。会员开通与充值将在支付资质完成后开放。
+            </p>
+            <button
+              onClick={handleClose}
+              className="mt-5 w-full py-3 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-all"
+            >
+              我知道了
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const isWechat = payMethod === 'wechat';
+  const fallbackQr = getQRCode(plan.id, (plan.billing as 'monthly' | 'annual') || 'monthly');
+  const finalQr = order?.qrCodeUrl || (!isProd ? fallbackQr : null);
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in" onClick={handleClose}>
-      <div className="bg-white rounded-3xl shadow-2xl w-[420px] max-w-[92vw] animate-modal-in overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-3xl shadow-2xl w-[420px] max-w-[94vw] animate-modal-in overflow-hidden" onClick={e => e.stopPropagation()}>
 
         {/* 顶部渐变装饰条 */}
         <div className="h-1.5 bg-gradient-to-r from-[#5B4FE9] via-[#7C3AED] to-[#8B5CF6]" />
 
         {/* Step 1: 选择支付方式 */}
         {step === 'select' && (
-          <div className="p-6 animate-fade-in">
+          <div className="p-4 sm:p-6 animate-fade-in">
             {/* Header */}
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-bold text-gray-900">开通套餐</h3>
+            <div className="flex items-center justify-between mb-4 sm:mb-5">
+              <h3 className="text-base sm:text-lg font-bold text-gray-900">开通套餐</h3>
               <button
                 onClick={handleClose}
                 className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-all active:scale-90"
@@ -144,30 +238,30 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
             )}
 
             {/* 套餐信息卡片 */}
-            <div className="bg-gradient-to-br from-[#F5F3FF] to-[#EDE9FE] rounded-2xl p-4 mb-5 border border-purple-100/50">
+            <div className="bg-gradient-to-br from-[#F5F3FF] to-[#EDE9FE] rounded-2xl p-3 sm:p-4 mb-4 sm:mb-5 border border-purple-100/50">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-bold text-gray-900">{plan.name}</p>
                   <p className="text-[10px] text-gray-400 mt-0.5">立即生效 · 按月自动续费 · 随时取消</p>
                 </div>
-                <div className="text-2xl font-extrabold text-[#5B4FE9]">{plan.price}</div>
+                <div className="text-xl sm:text-2xl font-extrabold text-[#5B4FE9]">{plan.price}</div>
               </div>
             </div>
 
             {/* 支付方式选择 */}
             <p className="text-xs font-medium text-gray-500 mb-2.5">选择支付方式</p>
-            <div className="space-y-2.5 mb-5">
+            <div className="space-y-2 mb-4 sm:mb-5">
               <button
                 onClick={() => setPayMethod('wechat')}
-                className={`w-full flex items-center gap-3.5 p-3.5 rounded-2xl border-2 transition-all duration-200 ${
+                className={`w-full flex items-center gap-2.5 sm:gap-3.5 p-3 sm:p-3.5 rounded-2xl border-2 transition-all duration-200 ${
                   isWechat ? 'border-[#07C160] bg-green-50/60 shadow-sm shadow-green-100/50' : 'border-gray-100 hover:border-gray-200'
                 }`}
               >
-                <div className="w-10 h-10 rounded-xl bg-[#07C160] flex items-center justify-center text-white text-sm font-bold shadow-sm">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#07C160] flex items-center justify-center text-white text-sm font-bold shadow-sm">
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05a6.293 6.293 0 0 1-.261-1.82c0-3.572 3.193-6.468 7.13-6.468.239 0 .473.016.706.034C16.879 4.707 13.163 2.188 8.691 2.188zm5.396 16.496c-.254 0-.507-.018-.758-.04l.042-.002c-.093.007-.187.013-.282.013a7.942 7.942 0 0 1-2.395-.37.644.644 0 0 0-.537.073l-1.428.838a.246.246 0 0 1-.125.04.22.22 0 0 1-.218-.221c0-.054.022-.108.036-.16l.293-1.114a.444.444 0 0 0-.16-.5C6.883 16.14 5.86 14.485 5.86 12.626c0-3.393 3.086-6.14 6.9-6.14 3.815 0 6.9 2.747 6.9 6.14 0 3.393-3.085 6.058-6.573 6.058z"/></svg>
                 </div>
                 <div className="flex-1 text-left">
-                  <p className="text-sm font-semibold text-gray-800">微信支付</p>
+                  <p className="text-xs sm:text-sm font-semibold text-gray-800">微信支付</p>
                   <p className="text-[10px] text-gray-400">推荐 · 即时到账</p>
                 </div>
                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
@@ -179,15 +273,15 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
 
               <button
                 onClick={() => setPayMethod('alipay')}
-                className={`w-full flex items-center gap-3.5 p-3.5 rounded-2xl border-2 transition-all duration-200 ${
+                className={`w-full flex items-center gap-2.5 sm:gap-3.5 p-3 sm:p-3.5 rounded-2xl border-2 transition-all duration-200 ${
                   !isWechat ? 'border-[#1677FF] bg-blue-50/60 shadow-sm shadow-blue-100/50' : 'border-gray-100 hover:border-gray-200'
                 }`}
               >
-                <div className="w-10 h-10 rounded-xl bg-[#1677FF] flex items-center justify-center text-white text-sm font-bold shadow-sm">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#1677FF] flex items-center justify-center text-white text-sm font-bold shadow-sm">
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M21.422 13.477C21.422 13.477 19.948 12.507 18.765 11.813C19.37 10.576 19.668 9.132 19.668 7.552C19.668 3.5 16.842 0.5 13.334 0.5C9.826 0.5 7 3.5 7 7.552C7 11.603 9.826 14.603 13.334 14.603C14.556 14.603 15.698 14.2 16.67 13.5C17.6 14.04 19.08 14.93 19.08 14.93C19.38 15.1 19.76 15 19.9 14.7L21.4 13.477C21.54 13.177 21.542 12.677 21.422 13.477ZM13.334 12.603C11.034 12.603 9.166 10.403 9.166 7.652C9.166 4.901 11.034 2.701 13.334 2.701C15.634 2.701 17.502 4.901 17.502 7.652C17.502 10.403 15.634 12.603 13.334 12.603Z"/></svg>
                 </div>
                 <div className="flex-1 text-left">
-                  <p className="text-sm font-semibold text-gray-800">支付宝</p>
+                  <p className="text-xs sm:text-sm font-semibold text-gray-800">支付宝</p>
                   <p className="text-[10px] text-gray-400">支持花呗分期</p>
                 </div>
                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
@@ -201,21 +295,33 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
             {/* 确认支付按钮 */}
             <button
               onClick={handleNext}
-              disabled={submitting}
-              className="w-full py-4 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-2xl text-sm font-bold hover:shadow-lg hover:shadow-purple-300/40 transition-all active:scale-[0.98] disabled:opacity-40"
+              disabled={submitting || !user}
+              className="w-full py-3.5 sm:py-4 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-2xl text-sm font-bold hover:shadow-lg hover:shadow-purple-300/40 transition-all active:scale-[0.98] disabled:opacity-40"
             >
-              确认支付 {plan.price}
+              {submitting ? '创建订单中...' : `确认支付 ${plan.price}`}
             </button>
+            {orderError && (
+              <p className="text-center text-xs text-red-500 mt-2">{orderError}</p>
+            )}
+            {!user && (
+              <p className="text-center text-xs text-amber-600 mt-2">请先登录后再发起支付</p>
+            )}
 
             <p className="text-center text-[10px] text-gray-300 mt-3">
-              支付即表示同意《用户协议》和《隐私政策》
+              支付即表示同意
+              {' '}
+              <Link href="/terms" className="text-gray-400 hover:text-[#5B4FE9]">《用户协议》</Link>
+              {' '}
+              和
+              {' '}
+              <Link href="/privacy" className="text-gray-400 hover:text-[#5B4FE9]">《隐私政策》</Link>
             </p>
           </div>
         )}
 
         {/* Step 2: 确认并扫码 */}
         {step === 'confirm' && (
-          <div className="p-6 animate-fade-in">
+          <div className="p-4 sm:p-6 animate-fade-in">
             {/* Header */}
             <div className="flex items-center justify-between mb-5">
               <button onClick={() => setStep('select')} className="flex items-center gap-1.5 text-sm text-[#5B4FE9] hover:text-[#4338CA] transition-colors font-medium">
@@ -229,7 +335,7 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
             </div>
 
             {/* 订单摘要 */}
-            <div className="bg-gradient-to-br from-[#F5F3FF] to-[#EDE9FE] rounded-2xl p-4 mb-5 border border-purple-100/50">
+            <div className="bg-gradient-to-br from-[#F5F3FF] to-[#EDE9FE] rounded-2xl p-3 sm:p-4 mb-4 sm:mb-5 border border-purple-100/50">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-gray-500">订单内容</span>
                 <span className="text-sm font-semibold text-gray-800">{plan.name}</span>
@@ -240,18 +346,26 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-purple-200/50">
                 <span className="text-xs text-gray-500">应付金额</span>
-                <span className="text-xl font-extrabold text-[#5B4FE9]">{plan.price}</span>
+                <span className="text-lg sm:text-xl font-extrabold text-[#5B4FE9]">{plan.price}</span>
               </div>
+              {order?.orderNo && (
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-xs text-gray-500">订单号</span>
+                  <span className="text-[11px] font-mono text-gray-600">{order.orderNo}</span>
+                </div>
+              )}
             </div>
 
             {/* 二维码区域 */}
-            <div className="bg-gray-50 rounded-2xl p-6 mb-5 text-center">
-              {getQRCode(plan.id, (plan.billing as 'monthly' | 'annual') || 'monthly') ? (
+            <div className="bg-gray-50 rounded-2xl p-4 sm:p-6 mb-4 sm:mb-5 text-center">
+              {finalQr ? (
                 <>
-                  <img
-                    src={getQRCode(plan.id, (plan.billing as 'monthly' | 'annual') || 'monthly')!}
+                  <Image
+                    src={finalQr}
                     alt="收款码"
-                    className="w-64 h-64 mx-auto bg-white rounded-2xl shadow-md mb-3 object-contain"
+                    width={256}
+                    height={256}
+                    className="w-52 h-52 sm:w-64 sm:h-64 mx-auto bg-white rounded-2xl shadow-md mb-3 object-contain"
                   />
                   <p className="text-xs text-gray-500 font-medium">
                     请使用{isWechat ? '微信' : '支付宝'}扫描上方二维码支付
@@ -261,15 +375,25 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
                   </p>
                 </>
               ) : (
-                <div className="w-52 h-52 mx-auto bg-white border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center mb-3">
+                <div className="w-44 h-44 sm:w-52 sm:h-52 mx-auto bg-white border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center mb-3">
                   <div className="text-center">
                     <div className="text-5xl mb-2">{isWechat ? '💚' : '🔵'}</div>
                     <p className="text-sm text-gray-500 font-medium">{isWechat ? '微信扫码' : '支付宝扫码'}</p>
-                    <p className="text-[10px] text-gray-400 mt-1">暂无收款码</p>
+                    <p className="text-[10px] text-gray-400 mt-1">{isProd ? '支付通道未返回二维码，请联系管理员' : '暂无收款码'}</p>
                   </div>
                 </div>
               )}
             </div>
+            {order?.payUrl && (
+              <a
+                href={order.payUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="block w-full py-3 text-center bg-white border border-purple-200 text-purple-700 rounded-xl text-xs font-semibold mb-3 hover:bg-purple-50 transition-colors"
+              >
+                无法扫码？打开支付链接
+              </a>
+            )}
 
             {/* 已完成支付按钮 */}
             <button
@@ -277,8 +401,11 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
               disabled={submitting}
               className="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-2xl text-sm font-bold hover:shadow-lg hover:shadow-green-200/40 transition-all active:scale-[0.98] disabled:opacity-40"
             >
-              {submitting ? '提交中...' : '已完成支付 ✅'}
+              {submitting ? '检查中...' : '我已完成支付，检查状态 ✅'}
             </button>
+            {statusHint && (
+              <p className="text-center text-xs text-amber-600 mt-2">{statusHint}</p>
+            )}
 
             <p className="text-center text-[10px] text-gray-300 mt-3">
               支付成功后页面将自动刷新 · 如有问题请联系客服

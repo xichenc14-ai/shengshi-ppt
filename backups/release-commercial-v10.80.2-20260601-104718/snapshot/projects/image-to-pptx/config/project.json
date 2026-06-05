@@ -1,0 +1,15 @@
+{
+  "project_name": "image-to-pptx",
+  "version": "0.1.0",
+  "description": "AI驱动的图像生成PPT工具 - 将AI生成的PPT设计图转换为真实PPTX文件",
+  "project_path": "projects/image-to-pptx",
+  "author": "tech-lead",
+  "created": "2026-05-22",
+  "status": "code_complete",
+  "dependencies": {
+    "python": ">=3.10",
+    "python-pptx": ">=0.6.21",
+    "pillow": ">=10.0.0",
+    "rembg": ">=2.0.50"
+  }
+}

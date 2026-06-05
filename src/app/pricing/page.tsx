@@ -7,6 +7,7 @@ import PaymentModal from '@/components/PaymentModal';
 import LoginModal from '@/components/LoginModal';
 import { useAuth } from '@/lib/auth-context';
 import { APP_VERSION } from '@/lib/version';
+import { isPaymentFeatureEnabledClient } from '@/lib/payment-feature';
 
 type Plan = {
   id: 'free' | 'shengxin' | 'advanced';
@@ -126,6 +127,12 @@ function statusCell(cell: { text: string; type: 'ok' | 'off' | 'strike' | 'neutr
   return <span className="inline-flex items-center gap-1 text-slate-500 font-semibold text-xs">{cell.text}</span>;
 }
 
+function planMarker(planId: Plan['id']): string {
+  if (planId === 'shengxin') return '✨';
+  if (planId === 'advanced') return '👑';
+  return '';
+}
+
 function PlanCard({
   plan,
   selected,
@@ -154,7 +161,14 @@ function PlanCard({
           <p className="text-[11px] text-indigo-500 font-bold uppercase tracking-wide">
             {plan.id === 'free' ? '体验方案' : plan.featured ? '推荐方案' : '进阶方案'}
           </p>
-          <h3 className="text-2xl font-black text-slate-900 mt-1">{plan.name}</h3>
+          <h3 className="text-2xl font-black text-slate-900 mt-1 flex items-center gap-2">
+            {plan.name}
+            {planMarker(plan.id) && (
+              <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-bold text-indigo-600">
+                {planMarker(plan.id)}
+              </span>
+            )}
+          </h3>
           <p className="text-sm text-slate-500 mt-1">{plan.audience}</p>
         </div>
         <div className="text-right">
@@ -218,6 +232,7 @@ function PlanCard({
 
 export default function PricingPage() {
   const { user, openPayment, openLogin, showPayment, closePayment, paymentPlan, showLogin, closeLogin } = useAuth();
+  const paymentEnabled = isPaymentFeatureEnabledClient();
   const [selectedPlan, setSelectedPlan] = React.useState<'shengxin' | 'advanced'>('shengxin');
   const [creditPackages, setCreditPackages] = React.useState<CreditPackage[]>([]);
   const [creditTier, setCreditTier] = React.useState<'member' | 'free'>('free');
@@ -252,6 +267,10 @@ export default function PricingPage() {
       openLogin();
       return;
     }
+    if (!paymentEnabled) {
+      setCreditMessage('支付通道申请中，会员开通暂不可用。');
+      return;
+    }
     openPayment({
       id: plan.id,
       name: plan.name,
@@ -263,6 +282,10 @@ export default function PricingPage() {
   const createCreditOrder = async (pkg: CreditPackage) => {
     if (!user) {
       openLogin();
+      return;
+    }
+    if (!paymentEnabled) {
+      setCreditMessage('支付通道申请中，积分充值暂不可用。');
       return;
     }
     setCreditMessage('');
@@ -306,6 +329,9 @@ export default function PricingPage() {
           <section className="text-center mb-8">
             <h1 className="text-4xl md:text-5xl font-black tracking-tight sx-gradient-text">会员套餐</h1>
             <p className="mt-3 text-sm md:text-base text-slate-500">突出会员优势，免费用户仅保留基础能力。</p>
+            {!paymentEnabled && (
+              <p className="mt-3 text-xs font-semibold text-amber-600">支付通道申请中：当前仅开放非支付功能。</p>
+            )}
           </section>
 
           <section className="grid lg:grid-cols-3 gap-5">
@@ -330,8 +356,8 @@ export default function PricingPage() {
                   <tr className="text-left text-slate-500">
                     <th className="py-3 pr-4">项目</th>
                     <th className="py-3 px-3">免费用户</th>
-                    <th className="py-3 px-3">省心会员（推荐）</th>
-                    <th className="py-3 px-3">高级会员</th>
+                    <th className="py-3 px-3">✨ 省心会员（推荐）</th>
+                    <th className="py-3 px-3">👑 高级会员</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -369,10 +395,10 @@ export default function PricingPage() {
                   <p className="text-[11px] text-slate-400 mt-1">{pkg.rate_text || (creditTier === 'member' ? '会员价 1元≈20积分' : '免费用户价 1元≈10积分')}</p>
                   <button
                     onClick={() => createCreditOrder(pkg)}
-                    disabled={creditLoading}
+                    disabled={creditLoading || !paymentEnabled}
                     className="mt-4 w-full py-2.5 rounded-xl bg-white border border-indigo-200 text-indigo-700 text-sm font-bold hover:bg-indigo-50"
                   >
-                    创建充值订单
+                    {paymentEnabled ? '创建充值订单' : '支付通道申请中'}
                   </button>
                 </div>
               ))}
