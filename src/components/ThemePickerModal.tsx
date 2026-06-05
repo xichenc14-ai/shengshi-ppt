@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { THEME_DATABASE, getThemeById } from '@/lib/theme-database';
+import { THEME_DATABASE, getRecommendedThemes, getThemeById } from '@/lib/theme-database';
 
 const COLOR_THEMES = THEME_DATABASE.map((theme) => ({
   id: theme.id,
@@ -9,15 +9,10 @@ const COLOR_THEMES = THEME_DATABASE.map((theme) => ({
   colors: theme.colors,
 }));
 
-const RECOMMENDED_THEME_IDS: Array<{ label: string; id: string }> = [
-  { label: '商务蓝', id: 'consultant' },
-  { label: '科技紫', id: 'aurora' },
-  { label: '简约白', id: 'default-light' },
-  { label: '雅致米', id: 'finesse' },
-  { label: '清新绿', id: 'elysia' },
-  { label: '古风灰', id: 'ash' },
-  { label: '少女粉', id: 'ashrose' },
-];
+const RECOMMENDED_THEMES = getRecommendedThemes().map((theme) => ({
+  id: theme.id,
+  label: theme.nameZh,
+}));
 
 const TONES = [
   { id: 'professional', name: '专业', icon: '💼' },
@@ -125,7 +120,7 @@ export default function ThemePickerModal({ open, currentThemeId, currentTone, cu
             <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50/70 p-2">
               <p className="text-[10px] font-semibold text-slate-500 mb-1.5">推荐色系</p>
               <div className="flex flex-wrap gap-1.5">
-                {RECOMMENDED_THEME_IDS.map((item) => (
+                {RECOMMENDED_THEMES.map((item) => (
                   <button
                     key={item.id}
                     onClick={() => onThemeChange(item.id)}

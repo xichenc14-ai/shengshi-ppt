@@ -4,7 +4,9 @@ import {
   COLOR_CATEGORIES,
   UNMATCHED_THEMES,
   FIXED_CATEGORY_THEME_IDS,
+  RECOMMENDED_THEME_IDS,
   getThemeById,
+  getRecommendedThemes,
   getThemesByCategory,
   recommendTheme,
   getThemeCategoryByBackground,
@@ -117,6 +119,10 @@ describe('getThemeById', () => {
   it('should return undefined for an invalid id', () => {
     expect(getThemeById('nonexistent')).toBeUndefined();
   });
+
+  it('should use canonical theme names that match current Gamma positioning', () => {
+    expect(getThemeById('cigar')?.nameZh).toBe('深棕雪茄');
+  });
 });
 
 describe('getThemesByCategory', () => {
@@ -159,5 +165,13 @@ describe('recommendTheme', () => {
     const theme = recommendTheme('完全不存在的场景');
     expect(theme).toBeDefined();
     expect(theme!.id).toBe(THEME_DATABASE[0].id);
+  });
+});
+
+describe('recommended theme metadata', () => {
+  it('should keep recommended theme ids aligned to the shared theme database', () => {
+    expect(RECOMMENDED_THEME_IDS).toContain('howlite');
+    expect(RECOMMENDED_THEME_IDS).not.toContain('default-light');
+    expect(getRecommendedThemes().map((theme) => theme.id)).toEqual(Array.from(RECOMMENDED_THEME_IDS));
   });
 });

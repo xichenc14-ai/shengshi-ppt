@@ -288,7 +288,7 @@ const RAW_THEME_DATABASE: RawThemeData[] = [
     tags: ['商务', '专业', '奢华'],
   },
   {
-    id: 'cigar', name: 'Cigar', nameZh: '酒红棕',
+    id: 'cigar', name: 'Cigar', nameZh: '深棕雪茄',
     colors: ['#451A03', '#D97706', '#FEF3C7'],
     palette: ['#451A03', '#D97706', '#FEF3C7', '#78350F', '#B45309', '#FDE68A'],
     category: 'brown', categoryZh: '棕米大地', emoji: '🟫', style: '高端商务',
@@ -674,6 +674,28 @@ export function getThemesByCategory(category: string): ThemeData[] {
 
 export function getThemeById(id: string): ThemeData | undefined {
   return THEME_DATABASE.find((t) => t.id === id);
+}
+
+export const RECOMMENDED_THEME_IDS = [
+  'consultant',
+  'aurora',
+  'howlite',
+  'finesse',
+  'elysia',
+  'ash',
+  'ashrose',
+] as const;
+
+export function getRecommendedThemes(): ThemeData[] {
+  const seen = new Set<string>();
+  return RECOMMENDED_THEME_IDS
+    .map((id) => getThemeById(id))
+    .filter((theme): theme is ThemeData => Boolean(theme))
+    .filter((theme) => {
+      if (seen.has(theme.id)) return false;
+      seen.add(theme.id);
+      return true;
+    });
 }
 
 export function recommendTheme(scene: string): ThemeData | undefined {

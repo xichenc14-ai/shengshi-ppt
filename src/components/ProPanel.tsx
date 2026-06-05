@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { getRecommendedThemes } from '@/lib/theme-database';
 
 const GEN_MODES = [
   { id: 'generate', name: '扩充文本', icon: '🤖', desc: '补充丰富内容' },
@@ -8,20 +9,11 @@ const GEN_MODES = [
   { id: 'preserve', name: '保持原样', icon: '📄', desc: '忠实原文结构' },
 ];
 
-const COLOR_THEMES = [
-  { id: 'auto', name: '智能', colors: ['#5B4FE9', '#8B5CF6', '#C4B5FD'] },
-  { id: 'consultant', name: '商务蓝', colors: ['#1E40AF', '#3B82F6', '#93C5FD'] },
-  { id: 'aurora', name: '科技紫', colors: ['#6366F1', '#8B5CF6', '#A78BFA'] },
-  { id: 'electric', name: '活力橙', colors: ['#EA580C', '#F97316', '#FDBA74'] },
-  { id: 'chisel', name: '大地棕', colors: ['#78350F', '#A16207', '#FDE68A'] },
-  { id: 'finesse', name: '雅致米', colors: ['#FAFAF9', '#65A30D', '#A3E635'] },
-  { id: 'ash', name: '古风灰', colors: ['#1F2937', '#FFFFFF', '#6B7280'] },
-  { id: 'ashrose', name: '少女粉', colors: ['#BE185D', '#EC4899', '#F9A8D4'] },
-  { id: 'blues', name: '高级金', colors: ['#1E3A5F', '#C9A96E', '#F5E6CC'] },
-  { id: 'gleam', name: '科技青', colors: ['#0F766E', '#14B8A6', '#99F6E4'] },
-  { id: 'founder', name: '路演紫', colors: ['#5B4FE9', '#8B5CF6', '#C4B5FD'] },
-  { id: 'default-light', name: '极简白', colors: ['#F1F5F9', '#CBD5E1', '#64748B'] },
-];
+const COLOR_THEMES = getRecommendedThemes().map((theme) => ({
+  id: theme.id,
+  name: theme.nameZh,
+  colors: theme.colors,
+}));
 
 const TONES = [
   { id: 'professional', name: '正式', icon: '💼' },

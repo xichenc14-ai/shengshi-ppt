@@ -1,22 +1,12 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { COLOR_CATEGORIES, getThemeById, getThemesByCategory, type ThemeData } from '@/lib/theme-database';
+import { COLOR_CATEGORIES, getRecommendedThemes, getThemeById, getThemesByCategory, type ThemeData } from '@/lib/theme-database';
 
 interface ThemeSelectorProps {
   value: string;
   onChange: (themeId: string) => void;
 }
-
-const RECOMMENDED_THEMES: Array<{ label: string; themeId: string }> = [
-  { label: '商务蓝 · 商务汇报', themeId: 'consultant' },
-  { label: '科技紫 · 科技发布', themeId: 'aurora' },
-  { label: '简约白 · 纯净极简', themeId: 'howlite' },
-  { label: '雅致米 · 田园风', themeId: 'finesse' },
-  { label: '清新绿 · 自然清爽', themeId: 'elysia' },
-  { label: '古风灰 · 稳重克制', themeId: 'ash' },
-  { label: '少女粉 · 柔和表达', themeId: 'ashrose' },
-];
 
 type CategoryId = string | 'recommended';
 type ThemeCategoryOption = {
@@ -72,13 +62,7 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
   const selectedTheme = getThemeById(value);
 
   const recommendedThemeList = useMemo(() => {
-    const ids = new Set<string>();
-    return RECOMMENDED_THEMES.map((item) => {
-      const theme = getThemeById(item.themeId);
-      if (!theme || ids.has(theme.id)) return null;
-      ids.add(theme.id);
-      return theme;
-    }).filter(Boolean) as ThemeData[];
+    return getRecommendedThemes();
   }, []);
 
   const recommendedSwatch = useMemo(() => {

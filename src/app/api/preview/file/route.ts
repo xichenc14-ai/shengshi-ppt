@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { selectBestKey } from '@/lib/gamma-key-pool';
+import { getGammaAdditionalExportUnsupportedMessage } from '@/lib/gamma-export';
 
 export const runtime = 'nodejs';
 
@@ -14,8 +15,6 @@ type ExportEntry = {
   format?: string;
   type?: string;
   status?: string;
-  id?: string;
-  exportId?: string;
 };
 type GammaStatusPayload = {
   status?: string;
@@ -112,55 +111,6 @@ function getMimeType(format: PreviewFormat): string {
     : 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 }
 
-async function pollExportUrl(generationId: string, exportId: string, format: PreviewFormat, apiKey: string): Promise<string> {
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 2000));
-    const checkRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/exports/${exportId}`, {
-      headers: {
-        'X-API-KEY': apiKey,
-        'User-Agent': GAMMA_UA,
-      },
-      signal: AbortSignal.timeout(30000),
-    });
-
-    if (!checkRes.ok) continue;
-    const checkData = await checkRes.json() as ExportEntry;
-    const directUrl = checkData.url || checkData.exportUrl || checkData.downloadUrl || '';
-    if (directUrl) return directUrl;
-    if (String(checkData.status || '').toLowerCase() === 'failed') {
-      throw new Error(`${format.toUpperCase()} 导出失败`);
-    }
-  }
-
-  throw new Error(`${format.toUpperCase()} 导出超时`);
-}
-
-async function createExportUrl(generationId: string, format: PreviewFormat, apiKey: string): Promise<string> {
-  const endpoints = ['exports', 'export'];
-
-  for (const endpoint of endpoints) {
-    const exportRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/${endpoint}`, {
-      method: 'POST',
-      headers: {
-        'X-API-KEY': apiKey,
-        'Content-Type': 'application/json',
-        'User-Agent': GAMMA_UA,
-      },
-      body: JSON.stringify({ format }),
-      signal: AbortSignal.timeout(60000),
-    });
-
-    if (!exportRes.ok) continue;
-    const exportData = await exportRes.json() as ExportEntry;
-    const directUrl = exportData.url || exportData.exportUrl || exportData.downloadUrl || '';
-    if (directUrl) return directUrl;
-    const exportId = exportData.id || exportData.exportId;
-    if (exportId) return pollExportUrl(generationId, exportId, format, apiKey);
-  }
-
-  throw new Error(`未获取到 ${format.toUpperCase()} 导出链接`);
-}
-
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const generationId = searchParams.get('generationId') || searchParams.get('id');
@@ -199,20 +149,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: statusData.error || '生成失败，无法预览' }, { status: 500 });
     }
 
-    let exportUrl = extractExportUrlForFormat(statusData, format);
+    const exportUrl = extractExportUrlForFormat(statusData, format);
     if (!exportUrl) {
       const anyExportUrl = extractAnyExportUrl(statusData);
       const availableFormat = anyExportUrl ? detectExportFormatFromUrl(anyExportUrl) : 'unknown';
-      try {
-        exportUrl = await createExportUrl(generationId, format, apiKey);
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : `${format.toUpperCase()} 导出失败`;
-        return NextResponse.json({
-          error: message,
-          requestedFormat: format,
-          availableFormat,
-        }, { status: message.includes('超时') ? 504 : 502 });
-      }
+      return NextResponse.json({
+        error: getGammaAdditionalExportUnsupportedMessage(format),
+        requestedFormat: format,
+        availableFormat,
+      }, { status: 501 });
     }
 
     const fileRes = await fetch(exportUrl, {
