@@ -20,6 +20,7 @@ import StreamingOutline from '@/components/StreamingOutline';
 import GenerationProgress from '@/components/GenerationProgress';
 import SkeletonCard from '@/components/SkeletonCard';
 import ThemeSelector from '@/components/ThemeSelector';
+import ResponsivePdfPreview from '@/components/ResponsivePdfPreview';
 
 import ScrollingBanner from '@/components/ScrollingBanner';
 import { buildMdV2 } from '@/lib/build-md-v2';
@@ -99,6 +100,8 @@ type PersistedGenerationState = {
     title: string;
     slides: SlideItem[];
     renderSignature: string;
+    pptxSeedBody?: Record<string, unknown>;
+    pptxSeedEndpoint?: 'gamma' | 'gamma-direct';
     themeId?: string;
   };
 };
@@ -295,6 +298,21 @@ function isTransientLoadFailError(message?: string): boolean {
   return /load[\s_-]*fail|failed to load|loading failed|network|timeout|timed out|temporar|temporary|502|503|504|gateway|连接失败|加载失败/.test(normalized);
 }
 
+function buildPreviewApiPath(
+  generationId: string,
+  format: 'pdf' | 'pptx',
+  filename: string,
+  inline = true
+): string {
+  const params = new URLSearchParams({
+    generationId,
+    format,
+    name: filename,
+    inline: inline ? '1' : '0',
+  });
+  return `/api/preview/file?${params.toString()}`;
+}
+
 function readResumeState(): PersistedGenerationState | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -451,14 +469,25 @@ export default function Home() {
     actualPages?: number;
     generationId?: string;
     renderSignature?: string;
+    pptxSeedBody?: Record<string, unknown>;
+    pptxSeedEndpoint?: 'gamma' | 'gamma-direct';
+    pptxGenerationId?: string;
   } | null>(null);
   const [exporting, setExporting] = useState(false); // 导出中
   const [exportingPdf, setExportingPdf] = useState(false);
   const [payingOnce, setPayingOnce] = useState(false);
   const [payPerDownload, setPayPerDownload] = useState<{ pageCount: number; cost: number } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
+  const [previewPdfUrl, setPreviewPdfUrl] = useState('');
+  const [previewPdfFetchUrl, setPreviewPdfFetchUrl] = useState('');
 
   const fileRef = useRef<HTMLInputElement>(null);
   const topicInputRef = useRef<HTMLTextAreaElement>(null);
+  const previewLoadedGenerationRef = useRef('');
+  const previewBlobUrlRef = useRef<string>('');
+  const pptxWarmupPromiseRef = useRef<Promise<string> | null>(null);
+  const pptxWarmupGenerationRef = useRef('');
   const restoringResumeRef = useRef(false);
   const triedResumeRef = useRef(false);
   const navigatingAwayRef = useRef(false);
@@ -536,6 +565,8 @@ export default function Home() {
     title: string;
     slides: SlideItem[];
     renderSignature: string;
+    pptxSeedBody?: Record<string, unknown>;
+    pptxSeedEndpoint?: 'gamma' | 'gamma-direct';
     themeId?: string;
     mode: 'direct' | 'smart';
   }) => {
@@ -551,6 +582,8 @@ export default function Home() {
         title: state.title,
         slides: state.slides,
         renderSignature: state.renderSignature,
+        pptxSeedBody: state.pptxSeedBody,
+        pptxSeedEndpoint: state.pptxSeedEndpoint,
         themeId: state.themeId,
       },
     });
@@ -604,7 +637,7 @@ export default function Home() {
       Math.round((outlineGeneratedPages / outlineTargetPages) * 72) + (outlineStage === 'analyzing' ? 8 : outlineStage === 'planning' ? 18 : outlineStage === 'generating' ? 28 : 40)
     )
   );
-  // 生成结果页保留导出按钮
+  const previewTotalPages = Math.max(1, Number(result?.actualPages || 0) || editedSlides.length || pageCount || 1);
 
   useEffect(() => {
     setCustomPageInput(String(pageCount));
@@ -1203,7 +1236,7 @@ export default function Home() {
         strictPreserve: strictPreserveEnabled,
         format: 'presentation',
         numCards: renderPageCount,
-        exportAs: 'pptx',
+        exportAs: 'pdf',
         themeId: finalThemeId,
         scene: outlineResult.scene || outlineResult.meta?.scene || undefined,
         tone: finalTone,
@@ -1214,6 +1247,7 @@ export default function Home() {
         uploadedFiles: files.map(({ name, type, size, passthrough }) => ({ name, type, size, passthrough: Boolean(passthrough) })),
         originalTextMode: mode === 'direct' ? directTextMode : undefined,
       };
+      const gammaPptxSeedBody = { ...gammaRequestBody, exportAs: 'pptx' };
       const startGammaRender = async () => {
         const gRes = await fetch('/api/gamma', {
           method: 'POST',
@@ -1239,6 +1273,8 @@ export default function Home() {
           title: outlineResult.title,
           slides: slidesForRender,
           renderSignature: currentRenderSignature,
+          pptxSeedBody: gammaPptxSeedBody,
+          pptxSeedEndpoint: 'gamma',
           themeId: finalThemeId,
           mode,
         });
@@ -1284,6 +1320,8 @@ export default function Home() {
         actualPages: renderPageCount,
         generationId: renderResult.gd.generationId,
         renderSignature: currentRenderSignature,
+        pptxSeedBody: gammaPptxSeedBody,
+        pptxSeedEndpoint: 'gamma',
       });
       setGenProgress(100);
       setPhase('result');
@@ -1602,6 +1640,8 @@ export default function Home() {
             actualPages: Array.isArray(cached.gamma.slides) ? cached.gamma.slides.length : undefined,
             generationId: cached.gamma.generationId,
             renderSignature: cached.gamma.renderSignature,
+            pptxSeedBody: cached.gamma.pptxSeedBody,
+            pptxSeedEndpoint: cached.gamma.pptxSeedEndpoint || 'gamma',
           });
           setGenProgress(100);
           setPhase('result');
@@ -1657,6 +1697,29 @@ export default function Home() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
+  const pollGammaUntilComplete = useCallback(async (generationId: string) => {
+    const startTime = Date.now();
+    let retry429Count = 0;
+    while (Date.now() - startTime < 180000) {
+      await new Promise(r => setTimeout(r, 3200));
+      const statusRes = await fetch(`/api/gamma?id=${generationId}`);
+      if (!statusRes.ok) {
+        if (statusRes.status === 429) {
+          retry429Count += 1;
+          await new Promise((r) => setTimeout(r, Math.min(12000, 3500 + retry429Count * 1200)));
+        }
+        continue;
+      }
+      retry429Count = 0;
+      const statusData = await statusRes.json();
+      if (statusData.status === 'completed') return statusData;
+      if (statusData.status === 'failed') {
+        throw new Error(statusData.error || 'PPTX 生成失败');
+      }
+    }
+    throw new Error('PPTX 生成超时（3分钟），请稍后重试');
+  }, []);
+
   const resolveDownloadFilename = (headers: Headers, fallbackName: string) => {
     const contentDisposition = headers.get('content-disposition') || headers.get('Content-Disposition') || '';
     const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
@@ -1672,7 +1735,65 @@ export default function Home() {
     return fallbackName;
   };
 
-  // 🚨 v10.6+: PPTX 导出处理函数
+  const ensurePptxGenerationId = useCallback(async () => {
+    if (!result?.generationId) throw new Error('缺少 generationId');
+    if (result.pptxGenerationId) return result.pptxGenerationId;
+    if (!result.pptxSeedBody) return result.generationId;
+    const seedEndpoint = result.pptxSeedEndpoint || 'gamma';
+
+    const createRes = await fetch(`/api/${seedEndpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(result.pptxSeedBody),
+    });
+    const createText = await createRes.text();
+    if (!createRes.ok) {
+      let err = 'PPTX 任务创建失败';
+      try { const d = JSON.parse(createText); err = d.error || err; } catch {}
+      throw new Error(err);
+    }
+    let created: any;
+    try {
+      created = JSON.parse(createText);
+    } catch {
+      throw new Error('PPTX 任务创建响应异常');
+    }
+    const newGenerationId = created.generationId;
+    if (!newGenerationId) throw new Error('未获取到PPTX任务ID');
+
+    await pollGammaUntilComplete(newGenerationId);
+    setResult((prev) => {
+      if (!prev || prev.generationId !== result.generationId) return prev;
+      return { ...prev, pptxGenerationId: newGenerationId };
+    });
+    return newGenerationId;
+  }, [pollGammaUntilComplete, result?.generationId, result?.pptxGenerationId, result?.pptxSeedBody, result?.pptxSeedEndpoint]);
+
+  const warmupPptxGenerationId = useCallback(() => {
+    if (!result?.generationId || !result.pptxSeedBody || result.pptxGenerationId) return null;
+    if (
+      pptxWarmupGenerationRef.current === result.generationId
+      && pptxWarmupPromiseRef.current
+    ) {
+      return pptxWarmupPromiseRef.current;
+    }
+
+    pptxWarmupGenerationRef.current = result.generationId;
+    const warmupPromise = ensurePptxGenerationId()
+      .catch((error) => {
+        console.warn('[Export] PPTX 预热失败:', error);
+        throw error;
+      })
+      .finally(() => {
+        if (pptxWarmupGenerationRef.current === result.generationId) {
+          pptxWarmupPromiseRef.current = null;
+        }
+      });
+    pptxWarmupPromiseRef.current = warmupPromise;
+    return warmupPromise;
+  }, [ensurePptxGenerationId, result?.generationId, result?.pptxGenerationId, result?.pptxSeedBody]);
+
+  // PDF 主任务 + PPTX 补跑/预热
   const handleExportPPT = async () => {
     if (!user) { openLogin(); return; }
     if (!result?.generationId) return;
@@ -1702,10 +1823,30 @@ export default function Home() {
 
       const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
       const fallbackFilename = `${safeTitle}.pptx`;
-      const downloadRes = await fetch(
-        `/api/export-pptx?generationId=${result.generationId}&name=${encodeURIComponent(fallbackFilename)}`
+      let exportGenerationId = result.pptxGenerationId || result.generationId;
+      if (!result.pptxGenerationId && result.pptxSeedBody) {
+        try {
+          const warmedGenerationId = await warmupPptxGenerationId();
+          if (warmedGenerationId) exportGenerationId = warmedGenerationId;
+        } catch {
+          exportGenerationId = result.generationId;
+        }
+      }
+
+      let downloadRes = await fetch(
+        `/api/export-pptx?generationId=${exportGenerationId}&name=${encodeURIComponent(fallbackFilename)}`
       );
       let contentType = (downloadRes.headers.get('Content-Type') || '').toLowerCase();
+
+      if (!downloadRes.ok || contentType.includes('application/json')) {
+        if (result.pptxSeedBody) {
+          const pptxGenerationId = await ensurePptxGenerationId();
+          downloadRes = await fetch(
+            `/api/export-pptx?generationId=${pptxGenerationId}&name=${encodeURIComponent(fallbackFilename)}`
+          );
+          contentType = (downloadRes.headers.get('Content-Type') || '').toLowerCase();
+        }
+      }
 
       if (!downloadRes.ok || contentType.includes('application/json')) {
         const errData = await downloadRes.json().catch(() => ({ error: '导出失败' }));
@@ -1739,21 +1880,13 @@ export default function Home() {
   };
 
   const handleExportPDF = async () => {
-    if (!result?.slides?.length) return;
+    if (!result?.generationId) return;
     setExportingPdf(true);
     try {
       const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
       const pdfFilename = `${safeTitle}.pdf`;
-      const pdfRes = await fetch('/api/export-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: pdfFilename,
-          title: safeTitle,
-          themeId: result.themeId || 'consultant',
-          slides: result.slides,
-        }),
-      });
+      const pdfPath = buildPreviewApiPath(result.generationId, 'pdf', pdfFilename, false);
+      const pdfRes = await fetch(pdfPath);
       const contentType = (pdfRes.headers.get('Content-Type') || '').toLowerCase();
       if (!pdfRes.ok || contentType.includes('application/json')) {
         const errData = await pdfRes.json().catch(() => ({ error: 'PDF 导出失败' }));
@@ -1768,6 +1901,43 @@ export default function Home() {
       setExportingPdf(false);
     }
   };
+
+  const loadInlinePreview = useCallback(async () => {
+    if (!result?.generationId) return;
+
+    setPreviewLoading(true);
+    setPreviewError('');
+
+    try {
+      if (previewBlobUrlRef.current) {
+        URL.revokeObjectURL(previewBlobUrlRef.current);
+        previewBlobUrlRef.current = '';
+      }
+
+      const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
+      const generationId = result.generationId;
+      if (!generationId) throw new Error('缺少生成任务ID，无法预览');
+
+      const pdfFilename = `${safeTitle}.pdf`;
+      const pdfPath = buildPreviewApiPath(generationId, 'pdf', pdfFilename, true);
+      setPreviewPdfFetchUrl(pdfPath);
+      const pdfRes = await fetch(pdfPath);
+      const contentType = (pdfRes.headers.get('Content-Type') || '').toLowerCase();
+      if (!pdfRes.ok || contentType.includes('application/json')) {
+        const errData = await pdfRes.json().catch(() => ({ error: 'PDF 预览文件获取失败' }));
+        throw new Error(errData.error || 'PDF 预览文件获取失败');
+      }
+
+      const blob = await pdfRes.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      previewBlobUrlRef.current = blobUrl;
+      setPreviewPdfUrl(blobUrl);
+    } catch (e: unknown) {
+      setPreviewError(e instanceof Error ? e.message : '在线预览加载失败');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [result?.generationId, result?.title]);
 
   const handleOneTimeDownload = async () => {
     if (!user || !result?.generationId || !payPerDownload) return;
@@ -1822,6 +1992,29 @@ export default function Home() {
       setPayingOnce(false);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (previewBlobUrlRef.current) {
+        URL.revokeObjectURL(previewBlobUrlRef.current);
+        previewBlobUrlRef.current = '';
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (phase !== 'result') return;
+    if (!result?.generationId) return;
+    if (previewLoadedGenerationRef.current === result.generationId) return;
+    previewLoadedGenerationRef.current = result.generationId;
+    void loadInlinePreview();
+  }, [phase, result?.generationId, loadInlinePreview]);
+
+  useEffect(() => {
+    if (phase !== 'result') return;
+    if (!result?.generationId || !result.pptxSeedBody || result.pptxGenerationId) return;
+    void warmupPptxGenerationId();
+  }, [phase, result?.generationId, result?.pptxGenerationId, result?.pptxSeedBody, warmupPptxGenerationId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -2906,26 +3099,32 @@ export default function Home() {
               <p className="text-sm text-slate-500">{result.title || '演示文稿'} · {result.actualPages || pageCount} 页</p>
             </div>
 
-            {/* 导出操作 */}
+            {/* 导出与预览 */}
             <div className="sx-glass-strong rounded-[28px] shadow-xl border border-indigo-100/70 overflow-hidden mb-6">
               <div className="bg-gradient-to-r from-purple-50/90 to-indigo-50/90 px-4 py-2.5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-green-500">✓</span>
-                  <span className="text-xs text-slate-600">文稿已生成 · {result.actualPages || pageCount} 页 · 文件已就绪</span>
+                  <span className="text-xs text-slate-600">文稿已生成 · {result.actualPages || pageCount} 页</span>
                 </div>
-                <div className="text-xs text-slate-500">下载后可查看完整文件</div>
+                <button
+                  onClick={() => {
+                    previewLoadedGenerationRef.current = '';
+                    void loadInlinePreview();
+                  }}
+                  className="px-3 py-1.5 text-xs text-purple-600 hover:text-purple-800 hover:bg-purple-100 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={!result.generationId || exporting || previewLoading}
+                >
+                  {previewLoading ? '预览加载中...' : '刷新预览'}
+                </button>
               </div>
 
               <div className="p-3 md:p-5">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
-                  <div>
-                    <p className="text-sm text-slate-600">文件导出</p>
-                    <p className="text-xs text-slate-400 mt-1">当前已移除站内预览，避免预览失败和版式失真。</p>
-                  </div>
+                  <p className="text-sm text-slate-600">在线预览（滚动查看）</p>
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                     <button
                       onClick={handleExportPDF}
-                      disabled={!result.slides?.length || exportingPdf}
+                      disabled={!result.generationId || exportingPdf}
                       className="px-4 py-2.5 bg-white text-indigo-600 border border-indigo-200 rounded-xl text-sm font-bold hover:bg-indigo-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {exportingPdf ? (
@@ -2946,20 +3145,40 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-white to-slate-50 p-5 md:p-6">
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-sm font-semibold text-slate-900">免费导出 PDF</p>
-                      <p className="mt-1 text-xs leading-6 text-slate-500">适合快速查看、转发和打印。</p>
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <p className="text-xs text-slate-400">共 {previewTotalPages} 页 · 支持滚动预览</p>
+                  <div className="text-xs text-slate-400">电脑/手机均可横竖屏查看</div>
+                </div>
+
+                <div className="relative rounded-2xl overflow-hidden border border-indigo-100 bg-[#0f1020] md:min-h-[78vh]">
+                  {previewLoading ? (
+                    <div className="w-full min-h-[62vh] md:min-h-[78vh] flex items-center justify-center text-white text-sm">
+                      正在加载 PDF 预览...
                     </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-sm font-semibold text-slate-900">下载 PPTX</p>
-                      <p className="mt-1 text-xs leading-6 text-slate-500">保留可编辑能力，适合继续修改版式和内容。</p>
+                  ) : previewError ? (
+                    <div className="w-full min-h-[62vh] md:min-h-[78vh] flex flex-col items-center justify-center text-white gap-4 px-6 text-center">
+                      <p className="text-sm text-red-300">{previewError}</p>
+                      <button
+                        onClick={() => {
+                          previewLoadedGenerationRef.current = '';
+                          void loadInlinePreview();
+                        }}
+                        className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm"
+                      >
+                        重试预览
+                      </button>
                     </div>
-                  </div>
-                  <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-3 text-xs leading-6 text-slate-500">
-                    预览功能已暂时下线。我们会重新核对官方能力和正确导出链路，再恢复稳定的预览体验。
-                  </div>
+                  ) : previewPdfUrl ? (
+                    <ResponsivePdfPreview
+                      src={previewPdfUrl}
+                      fetchSrc={previewPdfFetchUrl}
+                      title={result?.title || 'PDF 预览'}
+                    />
+                  ) : (
+                    <div className="w-full min-h-[62vh] md:min-h-[78vh] flex items-center justify-center text-white text-sm">
+                      暂无可预览内容
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
