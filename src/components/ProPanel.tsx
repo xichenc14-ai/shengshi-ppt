@@ -31,10 +31,10 @@ const TONES = [
 ];
 
 const IMAGE_MODES = [
+  { id: 'noImages', name: '极简无图', desc: '纯版式' },
   { id: 'theme-img', name: '主题套图', desc: '默认' },
   { id: 'web', name: 'Pexels图库', desc: '稳定图库' },
-  { id: 'ai', name: 'AI图', desc: '定制图' },
-  { id: 'noImages', name: '极简无图', desc: '纯版式' },
+  { id: 'ai', name: 'AI图', desc: '会员✨' },
 ];
 
 interface ProPanelProps {

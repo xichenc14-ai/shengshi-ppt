@@ -100,8 +100,6 @@ type PersistedGenerationState = {
     title: string;
     slides: SlideItem[];
     renderSignature: string;
-    pptxSeedBody?: Record<string, unknown>;
-    pptxSeedEndpoint?: 'gamma' | 'gamma-direct';
   };
 };
 
@@ -467,9 +465,6 @@ export default function Home() {
     actualPages?: number;
     generationId?: string;
     renderSignature?: string;
-    pptxSeedBody?: Record<string, unknown>;
-    pptxSeedEndpoint?: 'gamma' | 'gamma-direct';
-    pptxGenerationId?: string;
   } | null>(null);
   const [exporting, setExporting] = useState(false); // 导出中
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -484,8 +479,6 @@ export default function Home() {
   const topicInputRef = useRef<HTMLTextAreaElement>(null);
   const previewLoadedGenerationRef = useRef('');
   const previewBlobUrlRef = useRef<string>('');
-  const pptxWarmupPromiseRef = useRef<Promise<string> | null>(null);
-  const pptxWarmupGenerationRef = useRef('');
   const restoringResumeRef = useRef(false);
   const triedResumeRef = useRef(false);
   const navigatingAwayRef = useRef(false);
@@ -563,8 +556,6 @@ export default function Home() {
     title: string;
     slides: SlideItem[];
     renderSignature: string;
-    pptxSeedBody?: Record<string, unknown>;
-    pptxSeedEndpoint?: 'gamma' | 'gamma-direct';
     mode: 'direct' | 'smart';
   }) => {
     writeResumeState({
@@ -579,8 +570,6 @@ export default function Home() {
         title: state.title,
         slides: state.slides,
         renderSignature: state.renderSignature,
-        pptxSeedBody: state.pptxSeedBody,
-        pptxSeedEndpoint: state.pptxSeedEndpoint,
       },
     });
   }, [user?.id]);
@@ -1252,8 +1241,6 @@ export default function Home() {
         uploadedFiles: files.map(({ name, type, size, passthrough }) => ({ name, type, size, passthrough: Boolean(passthrough) })),
         originalTextMode: mode === 'direct' ? directTextMode : undefined,
       };
-      const gammaPptxSeedBody = { ...gammaRequestBody, exportAs: 'pptx' };
-
       const startGammaRender = async () => {
         const gRes = await fetch('/api/gamma', {
           method: 'POST',
@@ -1279,8 +1266,6 @@ export default function Home() {
           title: outlineResult.title,
           slides: slidesForRender,
           renderSignature: currentRenderSignature,
-          pptxSeedBody: gammaPptxSeedBody,
-          pptxSeedEndpoint: 'gamma',
           mode,
         });
 
@@ -1323,8 +1308,6 @@ export default function Home() {
         gammaUrl: renderResult.lastStatusData?.gammaUrl || '',
         actualPages: renderPageCount,
         generationId: renderResult.gd.generationId,
-        pptxSeedBody: gammaPptxSeedBody,
-        pptxSeedEndpoint: 'gamma',
         renderSignature: currentRenderSignature,
       });
       setGenProgress(100);
@@ -1646,8 +1629,6 @@ export default function Home() {
             gammaUrl: statusData?.gammaUrl || '',
             actualPages: Array.isArray(cached.gamma.slides) ? cached.gamma.slides.length : undefined,
             generationId: cached.gamma.generationId,
-            pptxSeedBody: cached.gamma.pptxSeedBody,
-            pptxSeedEndpoint: cached.gamma.pptxSeedEndpoint || 'gamma',
             renderSignature: cached.gamma.renderSignature,
           });
           setGenProgress(100);
@@ -1719,87 +1700,6 @@ export default function Home() {
     return fallbackName;
   };
 
-  const pollGammaUntilComplete = useCallback(async (generationId: string) => {
-    const startTime = Date.now();
-    let retry429Count = 0;
-    while (Date.now() - startTime < 180000) {
-      await new Promise(r => setTimeout(r, 3200));
-      const statusRes = await fetch(`/api/gamma?id=${generationId}`);
-      if (!statusRes.ok) {
-        if (statusRes.status === 429) {
-          retry429Count += 1;
-          await new Promise((r) => setTimeout(r, Math.min(12000, 3500 + retry429Count * 1200)));
-        }
-        continue;
-      }
-      retry429Count = 0;
-      const statusData = await statusRes.json();
-      if (statusData.status === 'completed') return statusData;
-      if (statusData.status === 'failed') {
-        throw new Error(statusData.error || 'PPTX 生成失败');
-      }
-    }
-    throw new Error('PPTX 生成超时（3分钟），请稍后重试');
-  }, []);
-
-  const ensurePptxGenerationId = useCallback(async () => {
-    if (!result?.generationId) throw new Error('缺少 generationId');
-    if (result.pptxGenerationId) return result.pptxGenerationId;
-    if (!result.pptxSeedBody) return result.generationId;
-    const seedEndpoint = result.pptxSeedEndpoint || 'gamma';
-
-    const createRes = await fetch(`/api/${seedEndpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(result.pptxSeedBody),
-    });
-    const createText = await createRes.text();
-    if (!createRes.ok) {
-      let err = 'PPTX 任务创建失败';
-      try { const d = JSON.parse(createText); err = d.error || err; } catch {}
-      throw new Error(err);
-    }
-    let created: any;
-    try {
-      created = JSON.parse(createText);
-    } catch {
-      throw new Error('PPTX 任务创建响应异常');
-    }
-    const newGenerationId = created.generationId;
-    if (!newGenerationId) throw new Error('未获取到PPTX任务ID');
-
-    await pollGammaUntilComplete(newGenerationId);
-    setResult((prev) => {
-      if (!prev || prev.generationId !== result.generationId) return prev;
-      return { ...prev, pptxGenerationId: newGenerationId };
-    });
-    return newGenerationId;
-  }, [pollGammaUntilComplete, result?.generationId, result?.pptxGenerationId, result?.pptxSeedBody, result?.pptxSeedEndpoint]);
-
-  const warmupPptxGenerationId = useCallback(() => {
-    if (!result?.generationId || !result.pptxSeedBody || result.pptxGenerationId) return null;
-    if (
-      pptxWarmupGenerationRef.current === result.generationId
-      && pptxWarmupPromiseRef.current
-    ) {
-      return pptxWarmupPromiseRef.current;
-    }
-
-    pptxWarmupGenerationRef.current = result.generationId;
-    const warmupPromise = ensurePptxGenerationId()
-      .catch((error) => {
-        console.warn('[Export] PPTX 预热失败:', error);
-        throw error;
-      })
-      .finally(() => {
-        if (pptxWarmupGenerationRef.current === result.generationId) {
-          pptxWarmupPromiseRef.current = null;
-        }
-      });
-    pptxWarmupPromiseRef.current = warmupPromise;
-    return warmupPromise;
-  }, [ensurePptxGenerationId, result?.generationId, result?.pptxGenerationId, result?.pptxSeedBody]);
-
   // 🚨 v10.6+: PPTX 导出处理函数
   const handleExportPPT = async () => {
     if (!user) { openLogin(); return; }
@@ -1830,31 +1730,10 @@ export default function Home() {
 
       const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
       const fallbackFilename = `${safeTitle}.pptx`;
-      let exportGenerationId = result.pptxGenerationId || result.generationId;
-      if (!result.pptxGenerationId && result.pptxSeedBody) {
-        try {
-          const warmedGenerationId = await warmupPptxGenerationId();
-          if (warmedGenerationId) exportGenerationId = warmedGenerationId;
-        } catch {
-          exportGenerationId = result.generationId;
-        }
-      }
-
-      let downloadRes = await fetch(
-        `/api/export-pptx?generationId=${exportGenerationId}&name=${encodeURIComponent(fallbackFilename)}`
+      const downloadRes = await fetch(
+        `/api/export-pptx?generationId=${result.generationId}&name=${encodeURIComponent(fallbackFilename)}`
       );
       let contentType = (downloadRes.headers.get('Content-Type') || '').toLowerCase();
-
-      if (!downloadRes.ok || contentType.includes('application/json')) {
-        // PDF 主任务下，补跑一条 PPTX 任务并重试下载
-        if (result.pptxSeedBody) {
-          const pptxGenerationId = await ensurePptxGenerationId();
-          downloadRes = await fetch(
-            `/api/export-pptx?generationId=${pptxGenerationId}&name=${encodeURIComponent(fallbackFilename)}`
-          );
-          contentType = (downloadRes.headers.get('Content-Type') || '').toLowerCase();
-        }
-      }
 
       if (!downloadRes.ok || contentType.includes('application/json')) {
         const errData = await downloadRes.json().catch(() => ({ error: '导出失败' }));
@@ -2017,12 +1896,6 @@ export default function Home() {
     previewLoadedGenerationRef.current = result.generationId;
     void loadInlinePreview();
   }, [phase, result?.generationId, loadInlinePreview]);
-
-  useEffect(() => {
-    if (phase !== 'result') return;
-    if (!result?.generationId || !result.pptxSeedBody || result.pptxGenerationId) return;
-    void warmupPptxGenerationId();
-  }, [phase, result?.generationId, result?.pptxGenerationId, result?.pptxSeedBody, warmupPptxGenerationId]);
 
   useEffect(() => {
     if (!result?.generationId) return;
@@ -2707,11 +2580,11 @@ export default function Home() {
                               className="w-full h-11 md:h-12 px-2.5 rounded-xl border border-gray-200 text-[13px] md:text-sm bg-white focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] outline-none transition-all appearance-none cursor-pointer"
                               style={{backgroundImage: 'url(\"data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3e%3cpath stroke=\'%236b7280\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'M6 8l4 4 4-4\'/%3e%3c/svg%3e\")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', paddingRight: '2.5rem'}}
                             >
+                              <option value="noImages">极简无图</option>
                               <option value="theme-img">主题套图</option>
                               <option value="web">Pexels图库</option>
-                              <option value="ai">{getPlan(user?.plan_type || 'free').allowedAiModels.length > 0 ? 'AI定制图' : 'AI定制图 (标准)'}</option>
-                              <option value="ai-pro">{getPlan(user?.plan_type || 'free').allowedAiModels.includes('imagen-3-pro') ? 'AI尊享图' : 'AI尊享图 (高级)'}</option>
-                              <option value="noImages">极简无图</option>
+                              <option value="ai">{getPlan(user?.plan_type || 'free').allowedAiModels.length > 0 ? 'AI定制图 ✨' : 'AI定制图 🔒✨'}</option>
+                              <option value="ai-pro">{getPlan(user?.plan_type || 'free').allowedAiModels.includes('imagen-3-pro') ? 'AI尊享图 👑' : 'AI尊享图 🔒👑'}</option>
                             </select>
                           </div>
                           <div>
@@ -2948,7 +2821,7 @@ export default function Home() {
                           <div className="bg-white/70 rounded-lg px-3 py-2">
                             <p className="text-[10px] text-gray-400 mb-1">🖼️ 配图</p>
                             <div className="flex flex-wrap gap-1">
-                              {(['themeAccent','pexels','aiGenerated','noImages'] as const).map(src => (
+                              {(['noImages','themeAccent','pexels','aiGenerated'] as const).map(src => (
                                 <button
                                   key={src}
                                   onClick={() => {
@@ -2966,7 +2839,7 @@ export default function Home() {
                                       : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                                   }`}
                                 >
-                                  {{ themeAccent:'主题套图', pexels:'Pexels图库', aiGenerated:'AI图', noImages:'极简无图' }[src]}
+                                  {{ noImages:'极简无图', themeAccent:'主题套图', pexels:'Pexels图库', aiGenerated:'AI图 ✨' }[src]}
                                 </button>
                               ))}
                             </div>

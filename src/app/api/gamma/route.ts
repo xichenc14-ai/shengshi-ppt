@@ -330,7 +330,7 @@ function buildSmartImagePolicy(source: unknown): {
   }
   return {
     keyPageHint: '结构页只有在主题强调图已成功加载且可见时才使用图片；若主题图不可用，必须完全删除图片元素和图片容器，改为纯文字+图标布局',
-    contentPageHint: '内容页不强制补图；若图片不可见，必须完全删除图片元素和图片容器，改用图标、色块或大字排版',
+    contentPageHint: '内容页默认不使用 Emphasize 大图布局，也不要固定右侧图片槽；如确需配图，只能在图片真实可见时插入小图或辅助图，失败则必须完全删除图片元素和图片容器，改用图标、色块或大字排版',
     allowThemeAccentOnKeyPages: true,
     contentMustHaveImage: false,
     keyPageMustHaveImage: false,
@@ -570,7 +570,7 @@ export async function POST(request: NextRequest) {
       // 🚨 V6修复：追加CRITICAL强制指令，封锁Gamma的发散权限
       finalAdditionalInstructions += '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作、扩写或修改任何事实信息。严格按照提供的Markdown层级和\'---\'分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。保持所有 \'>\' 作为演讲者备注不做展示。';
       if (isThemeAccentMode && imagePolicy.allowThemeAccentOnKeyPages) {
-        finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页只有在主题强调图已真实显示时才使用图片；若无法稳定出图，请删除图片容器并切换为无图文本布局，增强图标/色块，不得保留空图片框。';
+      finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页只有在主题强调图已真实显示时才使用图片；若无法稳定出图，请删除图片容器并切换为无图文本布局，增强图标/色块，不得保留空图片框。内容页禁止使用 Emphasize 大图布局和固定图片槽，默认改用插图式小图或无图版式。';
       }
       if (Boolean(strictPreserve)) {
         finalAdditionalInstructions += '\n\n【严格保真开关】\n禁止改写或重命名标题；禁止添加“续页”后缀；禁止在正文中注入填充提示语或额外说明。';
@@ -581,7 +581,7 @@ export async function POST(request: NextRequest) {
         }
       }
     } else if (isThemeAccentMode) {
-      finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页只有在主题强调图已真实显示时才使用图片；内容页按留白情况择优补图。若图片不可用，必须删除图片容器并改成纯文字+图标布局，禁止空图片框。';
+      finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页只有在主题强调图已真实显示时才使用图片；内容页默认不使用 Emphasize 大图布局，只在图片真实可见时补充插图。若图片不可用，必须删除图片容器并改成纯文字+图标布局，禁止空图片框和固定图片槽。';
     } else {
       finalAdditionalInstructions += '\n\n【Pexels/AI 关键页策略】\n封面、目录页、过渡页、结束页优先使用当前所选图片来源作为主图；若取图或生成失败，直接删除图片容器并改用文字+图标+色块完成页面，不允许回退成 themeAccent，更不允许出现缺图图标、灰框或空白图片位。内容页默认使用插入式图片或无图，不做强调大图占位。';
     }

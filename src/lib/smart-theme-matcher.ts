@@ -90,6 +90,10 @@ export function detectThemeIntent(text: string, scene?: string, tone?: Tone): Th
 
 function scoreTheme(theme: ThemeData, intent: ThemeIntent): number {
   let score = 0;
+  const hasExplicitWhiteIntent = intent.hasExplicitColor && intent.colorFamilies.includes('whiteGray');
+  const prefersWhiteTheme = hasExplicitWhiteIntent
+    || intent.preferredThemeIds.includes('howlite')
+    || intent.preferredThemeIds.includes('default-light');
 
   if (intent.colorFamilies.length > 0) {
     score += intent.colorFamilies.includes(theme.colorFamily) ? 80 : -60;
@@ -113,6 +117,17 @@ function scoreTheme(theme: ThemeData, intent: ThemeIntent): number {
   if (theme.id === 'consultant' && intent.styleTags.some((tag) => ['商务', '专业'].includes(tag))) score += 16;
   if (theme.id === 'cornflower' && intent.styleTags.some((tag) => ['教育', '活泼'].includes(tag))) score += 16;
   if (theme.id === 'blues' && intent.styleTags.some((tag) => ['商务', '科技', '奢华'].includes(tag))) score += 12;
+
+  // White/minimal themes are only preferred when the user explicitly asks for them.
+  if (theme.colorFamily === 'whiteGray' && !prefersWhiteTheme) {
+    score -= 28;
+  }
+  if (theme.id === 'howlite' && !prefersWhiteTheme) {
+    score -= 36;
+  }
+  if ((theme.id === 'default-light' || theme.id === 'gleam') && !prefersWhiteTheme) {
+    score -= 14;
+  }
 
   return score;
 }

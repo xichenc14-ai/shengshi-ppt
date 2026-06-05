@@ -34,4 +34,15 @@ describe('resolveSmartThemeId', () => {
     expect(match?.themeId).toBe('finesse');
     expect(match?.locked).toBe(false);
   });
+
+  it('does not drift to white minimal themes without explicit white intent', () => {
+    const match = resolveSmartThemeId({
+      text: '城市发展季度汇报，强调专业可信和数据表达',
+      scene: '商务汇报',
+      tone: 'professional',
+    });
+
+    expect(['howlite', 'default-light', 'gleam']).not.toContain(match?.themeId);
+    expect(match?.themeId).toBe('consultant');
+  });
 });

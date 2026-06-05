@@ -5,13 +5,17 @@ export const runtime = 'nodejs';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-const SINGLE_EXPORT_HINT = 'Gamma 官方 API 每次生成仅返回一种 exportAs 文件。若需另一种格式，请发起新的生成请求。';
 
 type PreviewFormat = 'pdf' | 'pptx';
 type ExportEntry = {
   url?: string;
   exportUrl?: string;
   downloadUrl?: string;
+  format?: string;
+  type?: string;
+  status?: string;
+  id?: string;
+  exportId?: string;
 };
 type GammaStatusPayload = {
   status?: string;
@@ -39,6 +43,41 @@ function detectExportFormatFromUrl(url: string): PreviewFormat | 'unknown' {
   if (lower.includes('.pdf') || lower.includes('/pdf/')) return 'pdf';
   if (lower.includes('.pptx') || lower.includes('/pptx/')) return 'pptx';
   return 'unknown';
+}
+
+function detectExportFormatFromEntry(entry: ExportEntry): PreviewFormat | 'unknown' {
+  const format = String(entry.format || entry.type || '').toLowerCase();
+  if (format.includes('pdf')) return 'pdf';
+  if (format.includes('pptx')) return 'pptx';
+  const nestedUrl = entry.url || entry.exportUrl || entry.downloadUrl || '';
+  return nestedUrl ? detectExportFormatFromUrl(nestedUrl) : 'unknown';
+}
+
+function extractExportUrlForFormat(payload: GammaStatusPayload, format: PreviewFormat): string | null {
+  const topLevelCandidates = [
+    payload.exportUrl,
+    payload.url,
+    payload.downloadUrl,
+    payload.pdfUrl,
+    payload.pptxUrl,
+  ];
+  for (const candidate of topLevelCandidates) {
+    if (typeof candidate !== 'string' || !candidate) continue;
+    const detected = detectExportFormatFromUrl(candidate);
+    if (detected === format) return candidate;
+  }
+
+  if (Array.isArray(payload.exports)) {
+    for (const item of payload.exports) {
+      if (!item || typeof item !== 'object') continue;
+      const entry = item as ExportEntry;
+      if (detectExportFormatFromEntry(entry) !== format) continue;
+      const candidate = entry.url || entry.exportUrl || entry.downloadUrl;
+      if (typeof candidate === 'string' && candidate) return candidate;
+    }
+  }
+
+  return null;
 }
 
 function extractAnyExportUrl(payload: GammaStatusPayload): string | null {
@@ -71,6 +110,55 @@ function getMimeType(format: PreviewFormat): string {
   return format === 'pdf'
     ? 'application/pdf'
     : 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+}
+
+async function pollExportUrl(generationId: string, exportId: string, format: PreviewFormat, apiKey: string): Promise<string> {
+  for (let i = 0; i < 30; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const checkRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/exports/${exportId}`, {
+      headers: {
+        'X-API-KEY': apiKey,
+        'User-Agent': GAMMA_UA,
+      },
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!checkRes.ok) continue;
+    const checkData = await checkRes.json() as ExportEntry;
+    const directUrl = checkData.url || checkData.exportUrl || checkData.downloadUrl || '';
+    if (directUrl) return directUrl;
+    if (String(checkData.status || '').toLowerCase() === 'failed') {
+      throw new Error(`${format.toUpperCase()} 导出失败`);
+    }
+  }
+
+  throw new Error(`${format.toUpperCase()} 导出超时`);
+}
+
+async function createExportUrl(generationId: string, format: PreviewFormat, apiKey: string): Promise<string> {
+  const endpoints = ['exports', 'export'];
+
+  for (const endpoint of endpoints) {
+    const exportRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}/${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': apiKey,
+        'Content-Type': 'application/json',
+        'User-Agent': GAMMA_UA,
+      },
+      body: JSON.stringify({ format }),
+      signal: AbortSignal.timeout(60000),
+    });
+
+    if (!exportRes.ok) continue;
+    const exportData = await exportRes.json() as ExportEntry;
+    const directUrl = exportData.url || exportData.exportUrl || exportData.downloadUrl || '';
+    if (directUrl) return directUrl;
+    const exportId = exportData.id || exportData.exportId;
+    if (exportId) return pollExportUrl(generationId, exportId, format, apiKey);
+  }
+
+  throw new Error(`未获取到 ${format.toUpperCase()} 导出链接`);
 }
 
 export async function GET(request: NextRequest) {
@@ -111,20 +199,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: statusData.error || '生成失败，无法预览' }, { status: 500 });
     }
 
-    const exportUrl = extractAnyExportUrl(statusData);
+    let exportUrl = extractExportUrlForFormat(statusData, format);
     if (!exportUrl) {
-      return NextResponse.json({
-        error: '当前任务没有可下载的导出文件，请确认创建 generation 时传入了 exportAs 参数',
-      }, { status: 409 });
-    }
-
-    const availableFormat = detectExportFormatFromUrl(exportUrl);
-    if (availableFormat !== 'unknown' && availableFormat !== format) {
-      return NextResponse.json({
-        error: `当前任务导出格式为 ${availableFormat.toUpperCase()}，不支持直接预览 ${format.toUpperCase()}。${SINGLE_EXPORT_HINT}`,
-        requestedFormat: format,
-        availableFormat,
-      }, { status: 409 });
+      const anyExportUrl = extractAnyExportUrl(statusData);
+      const availableFormat = anyExportUrl ? detectExportFormatFromUrl(anyExportUrl) : 'unknown';
+      try {
+        exportUrl = await createExportUrl(generationId, format, apiKey);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : `${format.toUpperCase()} 导出失败`;
+        return NextResponse.json({
+          error: message,
+          requestedFormat: format,
+          availableFormat,
+        }, { status: message.includes('超时') ? 504 : 502 });
+      }
     }
 
     const fileRes = await fetch(exportUrl, {
