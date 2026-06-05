@@ -7,7 +7,7 @@ function getErrorMessage(error: unknown): string {
 
 // GET: 支持两种模式
 // 1. ?file=xxx → 从内存缓存读取（本地生成）
-// 2. ?url=https://... → 从外部 URL 抓取并返回（Gamma 下载代理，解决墙问题）
+// 2. ?url=https://... → 从外部 URL 抓取并返回（外部下载代理，解决网络受限问题）
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -15,21 +15,21 @@ export async function GET(request: NextRequest) {
     const externalUrl = searchParams.get('url');
     const filename = searchParams.get('name') || '省心PPT.pptx';
 
-    // 模式2：代理外部 URL（解决 assets.api.gamma.app 在国内被墙的问题）
+    // 模式2：代理外部 URL（解决外部下载地址在部分网络环境下不可达的问题）
     if (externalUrl) {
       try {
-        const gammaRes = await fetch(externalUrl, {
+        const upstreamRes = await fetch(externalUrl, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
           },
           signal: AbortSignal.timeout(120000),
         });
 
-        if (!gammaRes.ok) {
-          return NextResponse.json({ error: '从 Gamma 下载文件失败' }, { status: 502 });
+        if (!upstreamRes.ok) {
+          return NextResponse.json({ error: '从外部源下载文件失败' }, { status: 502 });
         }
 
-        const arrayBuffer = await gammaRes.arrayBuffer();
+        const arrayBuffer = await upstreamRes.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
         return new NextResponse(new Uint8Array(buffer), {
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
           },
         });
       } catch (err) {
-        console.error('Gamma proxy fetch error:', err);
+        console.error('Upstream export fetch error:', err);
         return NextResponse.json({ error: '下载超时，请重试' }, { status: 504 });
       }
     }
