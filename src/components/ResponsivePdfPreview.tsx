@@ -225,30 +225,42 @@ export default function ResponsivePdfPreview({ src, fetchSrc, title = 'PDF 预�
   }, [effectiveFetchSrc]);
 
   return (
-    <>
-      <object
-        data={previewSrc}
-        type="application/pdf"
-        className="hidden w-full h-[78vh] bg-white md:block"
-        aria-label={title}
-      >
-        <iframe
-          src={previewSrc}
-          className="block w-full h-[78vh] bg-white"
-          title={title}
-        />
-        <div className="flex min-h-[78vh] flex-col items-center justify-center gap-4 bg-[#0f1020] px-6 text-center text-white">
-          <p className="text-sm text-slate-200">当前浏览器无法直接嵌入 PDF 预览。</p>
-          <a
-            href={fetchSrc || src}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center justify-center rounded-full bg-white/10 px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-white/20"
-          >
-            打开 PDF 原文件
-          </a>
-        </div>
-      </object>
+    <div data-testid="responsive-pdf-preview">
+      <div className="hidden md:block rounded-[24px] bg-[#0f1020] p-4 shadow-inner shadow-black/15">
+        {loading && pages.length === 0 ? (
+          <div className="flex min-h-[72vh] items-center justify-center px-6 text-center text-sm text-white/70">
+            正在加载 PDF 预览...
+          </div>
+        ) : null}
+
+        {pages.length > 0 ? (
+          <div className="space-y-4">
+            {pages.map((page) => (
+              <figure key={`desktop-${page.pageNumber}`} className="overflow-hidden rounded-[18px] bg-white shadow-[0_10px_28px_rgba(0,0,0,0.22)]">
+                <div className="flex aspect-[16/9] w-full items-center justify-center overflow-hidden bg-white">
+                  <img
+                    src={page.imageUrl}
+                    alt={`第 ${page.pageNumber} 页 PDF 预览`}
+                    className="block h-full w-full object-contain"
+                    width={page.width}
+                    height={page.height}
+                    loading={page.pageNumber <= 2 ? 'eager' : 'lazy'}
+                  />
+                </div>
+                <figcaption className="border-t border-slate-100 px-4 py-2 text-center text-xs text-slate-500">
+                  第 {page.pageNumber} / {pages.length} 页
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="flex min-h-[72vh] flex-col items-center justify-center gap-4 px-6 text-center text-white">
+            <p className="text-sm text-rose-100">{error}</p>
+          </div>
+        ) : null}
+      </div>
 
       <div className="block md:hidden" data-testid="responsive-pdf-preview-mobile">
         <div className="rounded-[24px] bg-[#0f1020] p-2 shadow-inner shadow-black/15">
@@ -282,22 +294,22 @@ export default function ResponsivePdfPreview({ src, fetchSrc, title = 'PDF 预�
                   ›
                 </button>
 
-              {pages
-                .filter((page) => page.pageNumber === currentPage)
-                .map((page) => (
-                <figure key={page.pageNumber} className="bg-white">
-                  <div className="flex aspect-[16/9] w-full items-center justify-center overflow-hidden bg-white">
-                    <img
-                      src={page.imageUrl}
-                      alt={`第 ${page.pageNumber} 页 PDF 预览`}
-                      className="block h-full w-full object-contain"
-                      width={page.width}
-                      height={page.height}
-                      loading={page.pageNumber <= 2 ? 'eager' : 'lazy'}
-                    />
-                  </div>
-                </figure>
-              ))}
+                {pages
+                  .filter((page) => page.pageNumber === currentPage)
+                  .map((page) => (
+                    <figure key={page.pageNumber} className="bg-white">
+                      <div className="flex aspect-[16/9] w-full items-center justify-center overflow-hidden bg-white">
+                        <img
+                          src={page.imageUrl}
+                          alt={`第 ${page.pageNumber} 页 PDF 预览`}
+                          className="block h-full w-full object-contain"
+                          width={page.width}
+                          height={page.height}
+                          loading={page.pageNumber <= 2 ? 'eager' : 'lazy'}
+                        />
+                      </div>
+                    </figure>
+                  ))}
 
                 <div className="absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full bg-slate-950/70 px-3 py-1 text-[11px] font-medium text-white backdrop-blur">
                   {currentPage} / {pages.length}
@@ -325,18 +337,10 @@ export default function ResponsivePdfPreview({ src, fetchSrc, title = 'PDF 预�
           {error ? (
             <div className="flex min-h-[56vh] flex-col items-center justify-center gap-4 px-6 text-center text-white">
               <p className="text-sm text-rose-100">{error}</p>
-              <a
-                href={fetchSrc || src}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center justify-center rounded-full bg-white/10 px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-white/20"
-              >
-                打开 PDF 原文件
-              </a>
             </div>
           ) : null}
         </div>
       </div>
-    </>
+    </div>
   );
 }

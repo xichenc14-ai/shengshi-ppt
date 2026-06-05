@@ -20,6 +20,7 @@ import StreamingOutline from '@/components/StreamingOutline';
 import GenerationProgress from '@/components/GenerationProgress';
 import SkeletonCard from '@/components/SkeletonCard';
 import ThemeSelector from '@/components/ThemeSelector';
+import ResponsivePdfPreview from '@/components/ResponsivePdfPreview';
 
 import ScrollingBanner from '@/components/ScrollingBanner';
 import { buildMdV2 } from '@/lib/build-md-v2';
@@ -99,6 +100,7 @@ type PersistedGenerationState = {
     title: string;
     slides: SlideItem[];
     renderSignature: string;
+    themeId?: string;
   };
 };
 
@@ -445,6 +447,7 @@ export default function Home() {
     title: string;
     slides: SlideItem[];
     pptxUrl: string;
+    themeId?: string;
     gammaUrl?: string;
     actualPages?: number;
     generationId?: string;
@@ -454,9 +457,13 @@ export default function Home() {
   const [exportingPdf, setExportingPdf] = useState(false);
   const [payingOnce, setPayingOnce] = useState(false);
   const [payPerDownload, setPayPerDownload] = useState<{ pageCount: number; cost: number } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
+  const [previewPdfUrl, setPreviewPdfUrl] = useState('');
 
   const fileRef = useRef<HTMLInputElement>(null);
   const topicInputRef = useRef<HTMLTextAreaElement>(null);
+  const previewBlobUrlRef = useRef<string>('');
   const restoringResumeRef = useRef(false);
   const triedResumeRef = useRef(false);
   const navigatingAwayRef = useRef(false);
@@ -534,6 +541,7 @@ export default function Home() {
     title: string;
     slides: SlideItem[];
     renderSignature: string;
+    themeId?: string;
     mode: 'direct' | 'smart';
   }) => {
     writeResumeState({
@@ -548,6 +556,7 @@ export default function Home() {
         title: state.title,
         slides: state.slides,
         renderSignature: state.renderSignature,
+        themeId: state.themeId,
       },
     });
   }, [user?.id]);
@@ -561,7 +570,15 @@ export default function Home() {
     });
   }, []);
 
-  const resetPreviewState = useCallback(() => {}, []);
+  const resetPreviewState = useCallback(() => {
+    setPreviewLoading(false);
+    setPreviewError('');
+    if (previewBlobUrlRef.current) {
+      URL.revokeObjectURL(previewBlobUrlRef.current);
+      previewBlobUrlRef.current = '';
+    }
+    setPreviewPdfUrl('');
+  }, []);
 
   // 🚨 V6新增：积分回滚工具（生成失败/超时时调用）
   const rollbackCredits = useCallback(async (credits: number, reason: string) => {
@@ -1239,6 +1256,7 @@ export default function Home() {
           title: outlineResult.title,
           slides: slidesForRender,
           renderSignature: currentRenderSignature,
+          themeId: finalThemeId,
           mode,
         });
 
@@ -1278,6 +1296,7 @@ export default function Home() {
         title: outlineResult.title,
         slides: slidesForRender,
         pptxUrl: renderResult.finalExportUrl,
+        themeId: finalThemeId,
         gammaUrl: renderResult.lastStatusData?.gammaUrl || '',
         actualPages: renderPageCount,
         generationId: renderResult.gd.generationId,
@@ -1597,6 +1616,7 @@ export default function Home() {
             title: cached.gamma.title || '省心PPT',
             slides: cached.gamma.slides || [],
             pptxUrl: finalExportUrl,
+            themeId: cached.gamma.themeId || 'consultant',
             gammaUrl: statusData?.gammaUrl || '',
             actualPages: Array.isArray(cached.gamma.slides) ? cached.gamma.slides.length : undefined,
             generationId: cached.gamma.generationId,
@@ -1738,14 +1758,76 @@ export default function Home() {
   };
 
   const handleExportPDF = async () => {
-    if (!result?.gammaUrl) return;
+    if (!result?.slides?.length) return;
     setExportingPdf(true);
     try {
-      window.open(result.gammaUrl, '_blank', 'noopener,noreferrer');
+      const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
+      const pdfFilename = `${safeTitle}.pdf`;
+      const pdfRes = await fetch('/api/export-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: pdfFilename,
+          title: safeTitle,
+          themeId: result.themeId || 'consultant',
+          slides: result.slides,
+        }),
+      });
+      const contentType = (pdfRes.headers.get('Content-Type') || '').toLowerCase();
+      if (!pdfRes.ok || contentType.includes('application/json')) {
+        const errData = await pdfRes.json().catch(() => ({ error: 'PDF 导出失败' }));
+        throw new Error(errData.error || 'PDF 导出失败');
+      }
+      const blob = await pdfRes.blob();
+      const filename = resolveDownloadFilename(pdfRes.headers, pdfFilename);
+      downloadBlob(blob, filename);
+    } catch (e: any) {
+      alert(e?.message || 'PDF 导出失败，请稍后重试');
     } finally {
       setExportingPdf(false);
     }
   };
+
+  const loadInlinePreview = useCallback(async () => {
+    if (!result?.slides?.length) return;
+
+    setPreviewLoading(true);
+    setPreviewError('');
+
+    try {
+      if (previewBlobUrlRef.current) {
+        URL.revokeObjectURL(previewBlobUrlRef.current);
+        previewBlobUrlRef.current = '';
+      }
+
+      const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
+      const pdfFilename = `${safeTitle}.pdf`;
+      const pdfRes = await fetch('/api/export-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: pdfFilename,
+          title: safeTitle,
+          themeId: result.themeId || 'consultant',
+          slides: result.slides,
+        }),
+      });
+      const contentType = (pdfRes.headers.get('Content-Type') || '').toLowerCase();
+      if (!pdfRes.ok || contentType.includes('application/json')) {
+        const errData = await pdfRes.json().catch(() => ({ error: 'PDF 预览文件获取失败' }));
+        throw new Error(errData.error || 'PDF 预览文件获取失败');
+      }
+
+      const blob = await pdfRes.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      previewBlobUrlRef.current = blobUrl;
+      setPreviewPdfUrl(blobUrl);
+    } catch (e: unknown) {
+      setPreviewError(e instanceof Error ? e.message : '在线预览加载失败');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [result?.slides, result?.themeId, result?.title]);
 
   const handleOneTimeDownload = async () => {
     if (!user || !result?.generationId || !payPerDownload) return;
@@ -1800,6 +1882,21 @@ export default function Home() {
       setPayingOnce(false);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (previewBlobUrlRef.current) {
+        URL.revokeObjectURL(previewBlobUrlRef.current);
+        previewBlobUrlRef.current = '';
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (phase !== 'result') return;
+    if (!result?.slides?.length) return;
+    void loadInlinePreview();
+  }, [phase, result?.slides, loadInlinePreview]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -2889,34 +2986,33 @@ export default function Home() {
               <div className="bg-gradient-to-r from-purple-50/90 to-indigo-50/90 px-4 py-2.5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-green-500">✓</span>
-                  <span className="text-xs text-slate-600">文稿已生成 · {result.actualPages || pageCount} 页 · 单次生成同稿导出</span>
+                  <span className="text-xs text-slate-600">文稿已生成 · {result.actualPages || pageCount} 页 · 站内同稿导出</span>
                 </div>
-                {result.gammaUrl ? (
-                  <button
-                    onClick={() => window.open(result.gammaUrl, '_blank', 'noopener,noreferrer')}
-                    className="px-3 py-1.5 text-xs text-purple-600 hover:text-purple-800 hover:bg-purple-100 rounded-lg transition-all"
-                  >
-                    打开 Gamma 原稿
-                  </button>
-                ) : null}
+                <button
+                  onClick={() => { void loadInlinePreview(); }}
+                  className="px-3 py-1.5 text-xs text-purple-600 hover:text-purple-800 hover:bg-purple-100 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={previewLoading}
+                >
+                  {previewLoading ? '预览生成中...' : '刷新预览'}
+                </button>
               </div>
 
               <div className="p-3 md:p-5">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
                   <div>
-                    <p className="text-sm text-slate-600">文稿内容预览（与导出同稿）</p>
-                    <p className="text-xs text-slate-400 mt-1">Gamma 公共 API 当前只支持单次生成一个导出格式；本站已切换为同稿 PPTX 生成，PDF 请在 Gamma 原稿中另存。</p>
+                    <p className="text-sm text-slate-600">PDF 预览（站内生成，与导出同稿）</p>
+                    <p className="text-xs text-slate-400 mt-1">不跳转 Gamma。预览和“免费导出 PDF”共用同一份站内 PDF 产物。</p>
                   </div>
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                     <button
                       onClick={handleExportPDF}
-                      disabled={!result.gammaUrl || exportingPdf}
+                      disabled={!result.slides?.length || exportingPdf}
                       className="px-4 py-2.5 bg-white text-indigo-600 border border-indigo-200 rounded-xl text-sm font-bold hover:bg-indigo-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {exportingPdf ? (
                         <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
                       ) : '🧾'}
-                      前往 Gamma 导出 PDF
+                      免费导出 PDF
                     </button>
                     <button
                       onClick={handleExportPPT}
@@ -2932,44 +3028,35 @@ export default function Home() {
                 </div>
 
                 <div className="flex items-center justify-between mb-2 px-1">
-                  <p className="text-xs text-slate-400">共 {previewTotalPages} 页 · 内容与 PPTX 同源</p>
-                  <div className="text-xs text-slate-400">主题参数与导出文件共用同一 generationId</div>
+                  <p className="text-xs text-slate-400">共 {previewTotalPages} 页 · PDF 与导出同源</p>
+                  <div className="text-xs text-slate-400">站内预览，不暴露 Gamma 页面</div>
                 </div>
 
-                <div className="relative rounded-2xl overflow-hidden border border-indigo-100 bg-white md:min-h-[78vh] p-4 md:p-5">
-                  <div className="grid gap-3 md:gap-4">
-                    {result.slides.map((slide, index) => (
-                      <div
-                        key={slide.id || `${slide.title}-${index}`}
-                        className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 md:p-5 shadow-sm"
+                <div className="relative rounded-2xl overflow-hidden border border-indigo-100 bg-[#0f1020] md:min-h-[78vh]">
+                  {previewLoading ? (
+                    <div className="w-full min-h-[62vh] md:min-h-[78vh] flex items-center justify-center text-white text-sm">
+                      正在生成站内 PDF 预览...
+                    </div>
+                  ) : previewError ? (
+                    <div className="w-full min-h-[62vh] md:min-h-[78vh] flex flex-col items-center justify-center text-white gap-4 px-6 text-center">
+                      <p className="text-sm text-red-300">{previewError}</p>
+                      <button
+                        onClick={() => { void loadInlinePreview(); }}
+                        className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm"
                       >
-                        <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white text-sm font-bold flex items-center justify-center shrink-0">
-                            {index + 1}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <h3 className="text-base md:text-lg font-bold text-slate-900 break-words">{slide.title}</h3>
-                            {Array.isArray(slide.content) && slide.content.length > 0 ? (
-                              <div className="mt-3 grid gap-2">
-                                {slide.content.map((item, itemIndex) => (
-                                  <div
-                                    key={`${slide.id || index}-${itemIndex}`}
-                                    className="rounded-xl border border-slate-100 bg-white px-3 py-2 text-sm text-slate-600"
-                                  >
-                                    {item}
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-400">
-                                本页无正文要点
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                        重试预览
+                      </button>
+                    </div>
+                  ) : previewPdfUrl ? (
+                    <ResponsivePdfPreview
+                      src={previewPdfUrl}
+                      title={result?.title || 'PDF 预览'}
+                    />
+                  ) : (
+                    <div className="w-full min-h-[62vh] md:min-h-[78vh] flex items-center justify-center text-white text-sm">
+                      暂无可预览内容
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
