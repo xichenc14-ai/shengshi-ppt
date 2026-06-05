@@ -1,79 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { selectBestKey } from '@/lib/gamma-key-pool';
+import { NextResponse } from 'next/server';
 
-const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
-const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-type GammaPreviewResponse = {
-  gammaUrl?: string;
-  exportUrl?: string;
-  status?: string;
-  credits?: unknown;
-  generationId?: string;
-  id?: string;
-  deck?: { url?: string };
-};
+const DISABLED_MESSAGE = '站内已禁用 Gamma 页面代理预览。请改用 /api/export-pdf 或 /api/export-pptx 获取文件。';
 
-/**
- * 预览信息 API - v10.14.1
- * 
- * ⚠️ DEPRECATED - D4
- * 请使用新的 /api/preview 路由，返回规范化的 PreviewInfo 结构
- * 此路由保留用于向后兼容，将在后续版本移除
- * 
- * 功能：查询 Gamma 生成状态，返回 gammaUrl 供前端"在新标签页中查看"
- * 
- * 根因：Gamma API GET /generations/{id} 不返回 cards/previewUrl 字段
- * （API 仅返回 generationId, status, gammaUrl, exportUrl, credits）
- * 所以内嵌预览不可行，唯一可行方案是打开新标签页
- * 
- * Gamma 网站 X-Frame-Options: SAMEORIGIN → iframe 不可行
- */
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const generationId = searchParams.get('id');
-
-  if (!generationId) {
-    return NextResponse.json({ error: '缺少 generationId 参数' }, { status: 400 });
-  }
-
-  try {
-    const selectedKey = selectBestKey();
-    const apiKey = selectedKey.key;
-
-    // 查询 Gamma 生成状态
-    const response = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
-      headers: {
-        'X-API-KEY': apiKey,
-        'User-Agent': GAMMA_UA,
-      },
-    });
-
-    if (!response.ok) {
-      return NextResponse.json({ 
-        error: `查询失败: ${response.status}`,
-        detail: await response.text().catch(() => '')
-      }, { status: 502 });
-    }
-
-    const data = await response.json() as GammaPreviewResponse;
-
-    // Gamma API 标准字段：gammaUrl, exportUrl, status, credits
-    // 注意：没有 cards/previewUrl 字段
-    const gammaUrl = data.gammaUrl || data.deck?.url || '';
-    const exportUrl = data.exportUrl || '';
-    const status = data.status || '';
-    const credits = data.credits || null;
-
-    return NextResponse.json({
-      generationId: data.generationId || data.id,
-      status,
-      gammaUrl,
-      exportUrl,
-      credits,
-    });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : '预览失败';
-    console.error('[PreviewProxy] Error:', message);
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+export async function GET() {
+  return NextResponse.json({
+    error: DISABLED_MESSAGE,
+    code: 'GAMMA_PROXY_DISABLED',
+  }, { status: 410 });
 }
