@@ -39,7 +39,7 @@ const PLANS: Record<string, MembershipPlan> = {
     maxPages: 8,
     priceMonthly: 0,
     priceAnnual: 0,
-    allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent'],
+    allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages'],
     allowedAiModels: [],
     smartMode: false,
     // 🆕 兮晨哥哥2026-04-15方案
@@ -56,7 +56,7 @@ const PLANS: Record<string, MembershipPlan> = {
     maxPages: 20,
     priceMonthly: 19.9,
     priceAnnual: 199,
-    allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'],
+    allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'],
     allowedAiModels: ['imagen-3-flash'],
     smartMode: true,
     monthlyFreeDownloads: -1,  // 无限制（会员特权）
@@ -72,7 +72,7 @@ const PLANS: Record<string, MembershipPlan> = {
     maxPages: 40,
     priceMonthly: 39.9,
     priceAnnual: 399,
-    allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'],
+    allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'],
     allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'],
     smartMode: true,
     monthlyFreeDownloads: -1,
@@ -80,11 +80,11 @@ const PLANS: Record<string, MembershipPlan> = {
     pricePerPage: 0,
   },
   // 兼容旧数据别名（旧 plan_type 自动映射到双套餐）
-  basic: { id: 'shengxin', name: '省心会员', emoji: '✨', credits: 400, maxPages: 20, priceMonthly: 19.9, priceAnnual: 199, allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
-  standard: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
-  pro: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
-  vip: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
-  supreme: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'webFreeToUseCommercially', 'themeAccent', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  basic: { id: 'shengxin', name: '省心会员', emoji: '✨', credits: 400, maxPages: 20, priceMonthly: 19.9, priceAnnual: 199, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  standard: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  pro: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  vip: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  supreme: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
 };
 
 export const PLAN_LIST: MembershipPlan[] = [PLANS.free, PLANS.shengxin, PLANS.advanced];
@@ -155,15 +155,16 @@ export function mapImgModeToSource(imgMode: string): string {
       return 'themeAccent';
     case 'none':
     case 'noImages':
-      return 'themeAccent';
+      return 'noImages';
     case 'theme-img':
     case 'theme':
     case 'themeAccent':
     case 'pictographic':
       return 'themeAccent';
     case 'web':
+    case 'pexels':
     case 'webFreeToUseCommercially':
-      return 'webFreeToUseCommercially';
+      return 'pexels';
     case 'ai':
     case 'ai-pro':
     case 'aiGenerated':

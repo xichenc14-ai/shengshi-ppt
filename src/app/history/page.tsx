@@ -68,9 +68,10 @@ export default function HistoryPage() {
 
   const getImageModeLabel = (mode: string) => {
     switch (mode) {
-      case 'noImages': return '🖼️ 主题套图';
+      case 'noImages': return '✳️ 极简无图';
       case 'pictographic': return '🖼️ 套图';
-      case 'webFreeToUseCommercially': return '🌐 网图';
+      case 'pexels':
+      case 'webFreeToUseCommercially': return '📚 Pexels图库';
       case 'aiGenerated': return '🤖 AI图';
       default: return mode;
     }

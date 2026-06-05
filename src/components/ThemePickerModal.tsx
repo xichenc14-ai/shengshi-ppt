@@ -29,8 +29,9 @@ const TONES = [
 
 const IMAGE_MODES = [
   { id: 'themeAccent', name: '主题套图', desc: '免费', color: '#8B5CF6' },
-  { id: 'webFreeToUseCommercially', name: '定制网图', desc: '免费', color: '#10B981' },
+  { id: 'pexels', name: 'Pexels图库', desc: '免费', color: '#10B981' },
   { id: 'aiGenerated', name: 'AI定制图', desc: '2/图', color: '#F59E0B' },
+  { id: 'noImages', name: '极简无图', desc: '免费', color: '#64748B' },
 ];
 
 interface Props {

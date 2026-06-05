@@ -307,7 +307,13 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
   const confirmAndGenerate = useCallback(async () => {
     if (!outlineResult || !user) return;
     const userPlan = getPlan(user.plan_type || 'free');
-    const imageSource = directImgMode === 'ai' ? 'aiGenerated' : directImgMode === 'web' ? 'webFreeToUseCommercially' : 'themeAccent';
+    const imageSource = directImgMode === 'ai'
+      ? 'aiGenerated'
+      : directImgMode === 'web'
+        ? 'pexels'
+        : directImgMode === 'noImages'
+          ? 'noImages'
+          : 'themeAccent';
     const numPages = Math.min(editedSlides.length, userPlan.maxPages);
     const perm = checkPermission(user.plan_type || 'free', { numPages, imageSource, mode: mode === 'smart' ? 'smart' : 'direct' });
     if (!perm.allowed) {

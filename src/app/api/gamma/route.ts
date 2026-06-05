@@ -122,10 +122,10 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 禁止出现没有任何图标的页面(即使是纯文字页也必须加装饰性图标)
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
-【配图规则】(主题套图=themeAccent主题强调图,精选网图=webFreeToUseCommercially)
-- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
+【配图规则】(主题套图=themeAccent主题强调图,Pexels图库=pexels)
+- 严格遵循 imageOptions.source（themeAccent / pexels / aiGenerated / noImages）
 - source=themeAccent 时，优先主题强调图；如无法出图，改为纯文字+图标布局，不得保留空白图片框
-- source=web/ai 时，优先对应来源配图；若取图失败，必须删除图片容器并改用图标、色块或纯文字布局，不得回退其它图片源
+- source=pexels/ai 时，优先对应来源配图；若取图失败，必须删除图片容器并改用图标、色块或纯文字布局，不得回退其它图片源
 - 禁止固定“右侧图片槽位”而没有实际图片内容
 
 【语言规则】
@@ -163,7 +163,7 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
 【配图规则】
-- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
+- 严格遵循 imageOptions.source（themeAccent / pexels / aiGenerated / noImages）
 - 用户选网图/AI图时，如对应来源失败，允许改为纯文字+图标+色块布局，但绝不允许切换成其它图片源
 - 结构页优先有图，但图片失败时必须移除图片容器，禁止空白占位框、灰框或丢图图标
 
@@ -204,8 +204,8 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
 【配图规则】
-- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
-- 只有当 source=aiGenerated 时才使用 AI 生成图；source=web 时必须用网图
+- 严格遵循 imageOptions.source（themeAccent / pexels / aiGenerated / noImages）
+- 只有当 source=aiGenerated 时才使用 AI 生成图；source=pexels 时必须用 Pexels 图
 - 配图风格: creative, minimalist, clean background, negative space
 
 【语言规则】
@@ -245,8 +245,8 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
 【配图规则】
-- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
-- 只有当 source=aiGenerated 时才使用 AI 生成图；source=web 时必须用网图
+- 严格遵循 imageOptions.source（themeAccent / pexels / aiGenerated / noImages）
+- 只有当 source=aiGenerated 时才使用 AI 生成图；source=pexels 时必须用 Pexels 图
 - 配图风格:futuristic, technology, minimalist, negative space
 
 【语言规则】
@@ -284,8 +284,8 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome(中式元素), 自定义祥云/水墨图标
 
 【配图规则】
-- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
-- source=aiGenerated 时使用国风 AI 图；source=web 时使用国风网图；source=themeAccent 使用主题强调图
+- 严格遵循 imageOptions.source（themeAccent / pexels / aiGenerated / noImages）
+- source=aiGenerated 时使用国风 AI 图；source=pexels 时使用国风 Pexels 图；source=themeAccent 使用主题强调图；source=noImages 时保持无图
 - 配图风格:Chinese traditional, elegant, minimalist, negative space
 
 【语言规则】
@@ -310,10 +310,19 @@ function buildSmartImagePolicy(source: unknown): {
       keyPageMustHaveImage: false,
     };
   }
-  if (normalized === 'webFreeToUseCommercially') {
+  if (normalized === 'pexels' || normalized === 'webFreeToUseCommercially') {
     return {
-      keyPageHint: '结构页只有在网图已成功检索且可见时才放图片；若检索失败，必须完全删除图片元素和图片容器，改用图标或色块布局，禁止保留空图槽',
-      contentPageHint: '内容页只有在网图已成功检索且可见时才放图片；若检索失败，必须完全删除图片元素和图片容器，改用图标+色块排版',
+      keyPageHint: '结构页只有在 Pexels 图片已成功加载且可见时才放图片；若取图失败，必须完全删除图片元素和图片容器，改用图标或色块布局，禁止保留空图槽',
+      contentPageHint: '内容页不强调大图布局；只有在 Pexels 图片已成功加载且可见时才保留插图，否则直接删除图片元素和图片容器，改用图标+色块或纯文字排版',
+      allowThemeAccentOnKeyPages: false,
+      contentMustHaveImage: false,
+      keyPageMustHaveImage: false,
+    };
+  }
+  if (normalized === 'noImages') {
+    return {
+      keyPageHint: '结构页使用纯文字、图标、色块和强调标题完成视觉，不创建任何图片元素或图片容器',
+      contentPageHint: '内容页默认无图，仅使用文字、图标、色块、时间轴、卡片等无图布局',
       allowThemeAccentOnKeyPages: false,
       contentMustHaveImage: false,
       keyPageMustHaveImage: false,
@@ -362,8 +371,10 @@ function buildContentImageGuidance(params: {
     : '优先选择与当前页标题语义直接相关的场景元素';
   const sourceHint = source === 'aiGenerated'
     ? 'AI图提示词要明确主体、场景、光线与镜头视角，避免抽象无主体画面'
-    : source === 'webFreeToUseCommercially'
-      ? '网图优先选高分辨率横向主图，避免水印、拼贴、低清噪点'
+    : source === 'pexels' || source === 'webFreeToUseCommercially'
+      ? 'Pexels 图优先选高分辨率横向主图，避免拼贴、低清噪点与无关素材'
+      : source === 'noImages'
+        ? '保持无图策略，不生成图片容器，靠文字、图标和色块完成视觉'
       : '主题强调图与内容语义保持一致，避免与标题无关的装饰图';
   return `内容页配图智能引导：按页标题与要点语义选图，场景偏好=${sceneHints[scene] || '通用业务场景'}；风格偏好=${toneHints[tone] || toneHints.professional}；${keywordHint}；${sourceHint}。`;
 }
@@ -507,26 +518,23 @@ export async function POST(request: NextRequest) {
         ? (imageOptions as Record<string, unknown>)
         : undefined
     );
-    if (finalImageOptions?.source === 'noImages') {
-      finalImageOptions.source = 'themeAccent';
-    }
     // 根因修复：在部分浅色极简主题上，themeAccent 更容易出现“生成图像错误/空占位框”。
-    // 对这些高风险主题自动切换到更稳定的商业可用网图源，避免空图占位。
+    // 对这些高风险主题自动切换到更稳定的 Pexels 图源，避免空图占位。
     if (
       finalImageOptions?.source === 'themeAccent'
       && THEMEACCENT_HIGH_RISK_THEMES.has(String(finalThemeId || '').toLowerCase())
     ) {
-      finalImageOptions.source = 'webFreeToUseCommercially';
+      finalImageOptions.source = 'pexels';
       console.warn(
-        `[Gamma] THEMEACCENT_THEME_FALLBACK theme=${finalThemeId} source=themeAccent -> webFreeToUseCommercially`
+        `[Gamma] THEMEACCENT_THEME_FALLBACK theme=${finalThemeId} source=themeAccent -> pexels`
       );
     }
     if (
       finalImageOptions?.source === 'themeAccent'
       && LIGHT_MINIMAL_STYLE_RE.test(String(finalInputText || ''))
     ) {
-      finalImageOptions.source = 'webFreeToUseCommercially';
-      console.warn('[Gamma] LIGHT_STYLE_THEMEACCENT_FALLBACK source=themeAccent -> webFreeToUseCommercially');
+      finalImageOptions.source = 'pexels';
+      console.warn('[Gamma] LIGHT_STYLE_THEMEACCENT_FALLBACK source=themeAccent -> pexels');
     }
 
     const instructions = INSTRUCTION_TEMPLATES[finalTone] || INSTRUCTION_TEMPLATES.professional;
@@ -544,15 +552,20 @@ export async function POST(request: NextRequest) {
     if (explicitThemeRequested) {
       finalAdditionalInstructions += `\n\n【用户显式主题要求-最高优先级】\n用户已明确指定主题风格/主题色为“${explicitThemeLabel || finalThemeId}”。整套PPT必须围绕该主题色展开：标题、强调色、图标、分隔线、配图氛围必须一致。禁止回退成白色极简、商务蓝默认风或其它无关主题。`;
     }
+    const isNoImageMode = finalImageOptions?.source === 'noImages';
     const isThemeAccentMode = finalImageOptions?.source === 'themeAccent';
     const imagePolicy = buildSmartImagePolicy(finalImageOptions?.source);
-    const keyPageImageRule = imagePolicy.keyPageMustHaveImage
+    const keyPageImageRule = isNoImageMode
+      ? '封面页、目录页、章节过渡页、结束页：保持无图，仅使用标题、图标、色块和留白完成强调布局。'
+      : imagePolicy.keyPageMustHaveImage
       ? '封面页、目录页、章节过渡页、结束页：只有在图片已成功加载且可见时才使用图片。'
       : '封面页、目录页、章节过渡页、结束页：可用图则用图；图片不可用时必须改为无图文本布局，禁止空白图片容器。';
-    const contentImageRule = imagePolicy.contentMustHaveImage
+    const contentImageRule = isNoImageMode
+      ? '内容页默认无图，仅使用图标、色块、时间轴、卡片、数字看板等无图布局。'
+      : imagePolicy.contentMustHaveImage
       ? '内容页必须有可见图片主体（非纯图标），按“每页至少1个主视觉”执行，禁止纯文字白板。'
       : '内容页不强制每页配图；若配图失败，必须删除图片容器并改用图标+色块排版，禁止灰色占位框。';
-    finalAdditionalInstructions += `\n\n【图片策略-强制】\n1. ${keyPageImageRule}${imagePolicy.keyPageHint}。\n2. ${contentImageRule}\n3. ${imagePolicy.contentPageHint}。\n4. 当来源为 web/ai 时，内容页一旦配图必须使用对应来源，不得偷偷替换为其它来源。\n5. 不要为了满足配图数量而创建空图片槽；宁可减少图片，也不得出现灰框、破图、加载失败图标或空白占位。\n6. 任何页面都禁止图片占位符、灰框占位、浏览器缺图图标、小山图标、文件破损图标；如果图片不可见，必须删除整个图片元素和其外层容器。\n7. 如果无法保证图片真实显示，请使用全文字、图标、色块、时间轴、卡片、数字看板等无图布局完成页面，不要保留图片区域。\n8. ${buildContentImageGuidance({ source: finalImageOptions?.source, tone: finalTone, scene, inputText: finalInputText })}`;
+    finalAdditionalInstructions += `\n\n【图片策略-强制】\n1. ${keyPageImageRule}${imagePolicy.keyPageHint}。\n2. ${contentImageRule}\n3. ${imagePolicy.contentPageHint}。\n4. 首页、目录页、章节过渡页、结束页允许使用强调布局主图；内容页默认不做强调大图布局，如需配图优先使用插入式图片，否则直接无图。\n5. 当来源为 pexels/ai 时，内容页一旦配图必须使用对应来源，不得偷偷替换为其它来源。\n6. 不要为了满足配图数量而创建空图片槽；宁可减少图片，也不得出现灰框、破图、加载失败图标或空白占位。\n7. 任何页面都禁止图片占位符、灰框占位、浏览器缺图图标、小山图标、文件破损图标；如果图片不可见，必须删除整个图片元素和其外层容器。\n8. 如果无法保证图片真实显示，请使用全文字、图标、色块、时间轴、卡片、数字看板等无图布局完成页面，不要保留图片区域。\n9. ${buildContentImageGuidance({ source: finalImageOptions?.source, tone: finalTone, scene, inputText: finalInputText })}`;
     if (normalized.textMode === 'preserve') {
       // 🚨 V6修复：追加CRITICAL强制指令，封锁Gamma的发散权限
       finalAdditionalInstructions += '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作、扩写或修改任何事实信息。严格按照提供的Markdown层级和\'---\'分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。保持所有 \'>\' 作为演讲者备注不做展示。';
@@ -570,7 +583,7 @@ export async function POST(request: NextRequest) {
     } else if (isThemeAccentMode) {
       finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页只有在主题强调图已真实显示时才使用图片；内容页按留白情况择优补图。若图片不可用，必须删除图片容器并改成纯文字+图标布局，禁止空图片框。';
     } else {
-      finalAdditionalInstructions += '\n\n【网图/AI图关键页策略】\n封面、目录页、过渡页、结束页优先使用当前所选图片来源作为主图；若检索或生成失败，直接删除图片容器并改用文字+图标+色块完成页面，不允许回退成 themeAccent，更不允许出现缺图图标、灰框或空白图片位。';
+      finalAdditionalInstructions += '\n\n【Pexels/AI 关键页策略】\n封面、目录页、过渡页、结束页优先使用当前所选图片来源作为主图；若取图或生成失败，直接删除图片容器并改用文字+图标+色块完成页面，不允许回退成 themeAccent，更不允许出现缺图图标、灰框或空白图片位。内容页默认使用插入式图片或无图，不做强调大图占位。';
     }
 
     // 🚨 P0 Fix: 使用解构排除 slides，不使用 delete 语句

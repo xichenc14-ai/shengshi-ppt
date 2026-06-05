@@ -143,7 +143,7 @@ function toBool(value: unknown): boolean {
 type UserIntentOverrides = {
   pageCount?: number;
   textMode?: 'generate' | 'condense' | 'preserve';
-  imageMode?: 'theme-img' | 'web' | 'ai';
+  imageMode?: 'theme-img' | 'web' | 'ai' | 'noImages';
   themeId?: string;
   themeLocked?: boolean;
   themeLabel?: string;
@@ -152,11 +152,12 @@ type UserIntentOverrides = {
   reasons: string[];
 };
 
-function normalizeOutlineImageMode(raw: unknown): 'theme-img' | 'web' | 'ai' {
+function normalizeOutlineImageMode(raw: unknown): 'theme-img' | 'web' | 'ai' | 'noImages' {
   const value = String(raw || '').trim().toLowerCase();
   if (!value) return 'theme-img';
   if (
     value === 'web'
+    || value === 'pexels'
     || value === 'webfreetousecommercially'
     || value === '网图'
     || value === '搜索图'
@@ -174,7 +175,11 @@ function normalizeOutlineImageMode(raw: unknown): 'theme-img' | 'web' | 'ai' {
   if (
     value === 'none'
     || value === 'noimages'
-    || value === 'themeaccent'
+  ) {
+    return 'noImages';
+  }
+  if (
+    value === 'themeaccent'
     || value === 'theme'
     || value === 'theme-img'
     || value === 'pictographic'
@@ -194,7 +199,7 @@ function resolveSmartDefaultImageMode(params: {
   detectedScene: string;
   finalTone: string;
   topic: string;
-}): 'web' | 'ai' {
+}): 'theme-img' | 'web' | 'ai' {
   const scene = String(params.detectedScene || '');
   const tone = String(params.finalTone || '');
   const text = String(params.topic || '').toLowerCase();
@@ -203,7 +208,10 @@ function resolveSmartDefaultImageMode(params: {
   if (preferAiScene.has(scene)) return 'ai';
   if (tone === 'creative' || tone === 'bold' || tone === 'traditional') return 'ai';
   if (/插画|拟人|概念图|视觉隐喻|未来感|科幻|国风|古风|海报/.test(text)) return 'ai';
-  return 'web';
+  const preferPexelsScene = new Set(['旅游出行', '餐饮美食', '生活方式', '美妆时尚']);
+  if (preferPexelsScene.has(scene)) return 'web';
+  if (/实拍|摄影|街景|风景|城市|美食|旅行|人物采访|门店|空间/.test(text)) return 'web';
+  return 'theme-img';
 }
 
 function normalizeThemeToGamma(themeId: string | undefined | null): string {
@@ -267,9 +275,9 @@ function extractUserIntentOverrides(inputText: string): UserIntentOverrides {
     reasons.push(`识别场景=${sceneSignals[0].scene}`);
   }
 
-  if (/搜索图|网图|真实图片|商用图|联网图片/i.test(text)) {
+  if (/pexels|搜索图|网图|真实图片|商用图|联网图片/i.test(text)) {
     overrides.imageMode = 'web';
-    reasons.push('识别配图=网图');
+    reasons.push('识别配图=Pexels图库');
   } else if (/AI图|生成图|定制图|ai配图|ai图片/i.test(text)) {
     overrides.imageMode = 'ai';
     reasons.push('识别配图=AI图');
@@ -277,8 +285,8 @@ function extractUserIntentOverrides(inputText: string): UserIntentOverrides {
     overrides.imageMode = 'theme-img';
     reasons.push('识别配图=主题套图');
   } else if (/无图|不要图|纯文字/i.test(text)) {
-    overrides.imageMode = 'theme-img';
-    reasons.push('识别到无图诉求,已回退为主题套图(无图已下线)');
+    overrides.imageMode = 'noImages';
+    reasons.push('识别配图=极简无图');
   }
 
   if (/正式|商务|专业|严谨/.test(text)) overrides.tone = 'professional';
@@ -772,14 +780,15 @@ export async function POST(request: NextRequest) {
 - 不确定 → consultant(商务蓝) + professional
 
 ## 🖼️ 智能图片模式（根据用户需求关键词）
-- 用户提到"搜索图/网图/真实图片" → imageMode: "web"
+- 用户提到"Pexels/搜索图/网图/真实图片" → imageMode: "web"
 - 用户提到"AI图/生成图/定制图" → imageMode: "ai"
 - 用户提到"主题套图/强调图/默认配图" → imageMode: "theme-img"
+- 用户提到"无图/不要图/纯文字" → imageMode: "noImages"
 - 默认（无特殊要求） → imageMode: "theme-img"
 
 ## 输出格式
 严格输出JSON，不用markdown代码块：
-{"title":"PPT主标题","scene":"场景类型","storyline":"故事线名","themeId":"主题ID","tone":"professional/casual/creative/bold/traditional","imageMode":"theme-img/web/ai","slides":[{"title":"页面标题≤15字","content":["要点1≤25字","要点2","要点3"],"notes":"备注"}]}
+{"title":"PPT主标题","scene":"场景类型","storyline":"故事线名","themeId":"主题ID","tone":"professional/casual/creative/bold/traditional","imageMode":"theme-img/web/ai/noImages","slides":[{"title":"页面标题≤15字","content":["要点1≤25字","要点2","要点3"],"notes":"备注"}]}
 
 总共${numCards}页`,
 
@@ -798,13 +807,13 @@ export async function POST(request: NextRequest) {
 - 可把解释性长句下沉到notes，不丢失核心信息
 
 【图片与风格】
-- imageMode 仅允许: theme-img / web / ai（无图模式已下线）
+- imageMode 仅允许: theme-img / web / ai / noImages
 - 默认 imageMode = theme-img
 - 自动匹配 scene/themeId/tone；若用户明确指定则必须服从用户指定
 
 【输出格式】
 严格输出JSON，不要markdown代码块：
-{"title":"PPT主标题","scene":"场景","storyline":"故事线","themeId":"主题ID","tone":"professional/casual/creative/bold/traditional","imageMode":"theme-img/web/ai","slides":[{"title":"标题≤15字","content":["要点1","要点2","要点3"],"notes":"备注"}]}
+{"title":"PPT主标题","scene":"场景","storyline":"故事线","themeId":"主题ID","tone":"professional/casual/creative/bold/traditional","imageMode":"theme-img/web/ai/noImages","slides":[{"title":"标题≤15字","content":["要点1","要点2","要点3"],"notes":"备注"}]}
 
 总共${numCards}页`,
 
@@ -822,13 +831,13 @@ export async function POST(request: NextRequest) {
 - 若用户有“重要声明/提示语”必须单独入页或在notes中明确保留
 
 【图片与风格】
-- imageMode 仅允许: theme-img / web / ai（无图模式已下线）
+- imageMode 仅允许: theme-img / web / ai / noImages
 - 默认 imageMode = theme-img
 - 自动匹配 scene/themeId/tone；若用户明确指定则必须服从用户指定
 
 【输出格式】
 严格输出JSON，不要markdown代码块：
-{"title":"从原文提取的主标题","scene":"场景","themeId":"主题ID","tone":"professional/casual/creative/bold/traditional","imageMode":"theme-img/web/ai","slides":[{"title":"原文标题","content":["原文要点1","原文要点2"],"notes":"备注"}]}
+{"title":"从原文提取的主标题","scene":"场景","themeId":"主题ID","tone":"professional/casual/creative/bold/traditional","imageMode":"theme-img/web/ai/noImages","slides":[{"title":"原文标题","content":["原文要点1","原文要点2"],"notes":"备注"}]}
 
 总共${numCards}页`,
     };

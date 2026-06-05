@@ -32,8 +32,9 @@ const TONES = [
 
 const IMAGE_MODES = [
   { id: 'theme-img', name: '主题套图', desc: '默认' },
-  { id: 'web', name: '精选网图', desc: '商用图' },
+  { id: 'web', name: 'Pexels图库', desc: '稳定图库' },
   { id: 'ai', name: 'AI图', desc: '定制图' },
+  { id: 'noImages', name: '极简无图', desc: '纯版式' },
 ];
 
 interface ProPanelProps {
@@ -89,7 +90,7 @@ export default function ProPanel({ open, onClose, genMode, setGenMode, theme, se
           {/* Generate mode */}
           <div>
             <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">生成模式</div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {GEN_MODES.map(m => (
                 <button
                   key={m.id}

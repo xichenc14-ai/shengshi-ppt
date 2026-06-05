@@ -42,7 +42,7 @@ const HOT_SCENES = [
   { label: '📋 年终总结', text: '2025年度工作总结，包含主要成绩、数据亮点和明年规划' },
 ];
 
-type GammaImageSource = 'noImages' | 'themeAccent' | 'webFreeToUseCommercially' | 'aiGenerated';
+type GammaImageSource = 'noImages' | 'themeAccent' | 'pexels' | 'aiGenerated';
 type UploadedFile = { name: string; type: string; size: number; content?: string; passthrough?: boolean };
 type SlideItem = { id: string; title: string; content?: string[]; notes?: string };
 type OutlinePreprocessInfo = {
@@ -147,10 +147,11 @@ function toGammaImageSource(value?: string): GammaImageSource {
   switch ((value || '').trim()) {
     case 'none':
     case 'noImages':
-      return 'themeAccent';
+      return 'noImages';
     case 'web':
+    case 'pexels':
     case 'webFreeToUseCommercially':
-      return 'webFreeToUseCommercially';
+      return 'pexels';
     case 'ai':
     case 'ai-pro':
     case 'aiGenerated':
@@ -166,10 +167,12 @@ function toGammaImageSource(value?: string): GammaImageSource {
 
 function gammaSourceToAppMode(source?: string): string {
   switch (toGammaImageSource(source)) {
-    case 'webFreeToUseCommercially':
+    case 'pexels':
       return 'web';
     case 'aiGenerated':
       return 'ai';
+    case 'noImages':
+      return 'noImages';
     case 'themeAccent':
     default:
       return 'theme-img';
@@ -928,8 +931,9 @@ export default function Home() {
         });
         const reverseImageModeMap: Record<string, string> = {
           'themeAccent': 'theme-img',
-          'webFreeToUseCommercially': 'web',
+          'pexels': 'web',
           'aiGenerated': 'ai',
+          'noImages': 'noImages',
         };
         setImgMode(reverseImageModeMap[gammaImageSource] || 'theme-img');
         setSmartAutoGeneratePending(true);
@@ -1598,8 +1602,9 @@ export default function Home() {
             });
             const reverseImageModeMap: Record<string, string> = {
               'themeAccent': 'theme-img',
-              'webFreeToUseCommercially': 'web',
+              'pexels': 'web',
               'aiGenerated': 'ai',
+              'noImages': 'noImages',
             };
             setImgMode(reverseImageModeMap[gammaImageSource] || 'theme-img');
             setSmartAutoGeneratePending(true);
@@ -2703,9 +2708,10 @@ export default function Home() {
                               style={{backgroundImage: 'url(\"data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3e%3cpath stroke=\'%236b7280\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'M6 8l4 4 4-4\'/%3e%3c/svg%3e\")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', paddingRight: '2.5rem'}}
                             >
                               <option value="theme-img">主题套图</option>
-                              <option value="web">定制网图</option>
+                              <option value="web">Pexels图库</option>
                               <option value="ai">{getPlan(user?.plan_type || 'free').allowedAiModels.length > 0 ? 'AI定制图' : 'AI定制图 (标准)'}</option>
                               <option value="ai-pro">{getPlan(user?.plan_type || 'free').allowedAiModels.includes('imagen-3-pro') ? 'AI尊享图' : 'AI尊享图 (高级)'}</option>
+                              <option value="noImages">极简无图</option>
                             </select>
                           </div>
                           <div>
@@ -2942,7 +2948,7 @@ export default function Home() {
                           <div className="bg-white/70 rounded-lg px-3 py-2">
                             <p className="text-[10px] text-gray-400 mb-1">🖼️ 配图</p>
                             <div className="flex flex-wrap gap-1">
-                              {(['themeAccent','webFreeToUseCommercially','aiGenerated'] as const).map(src => (
+                              {(['themeAccent','pexels','aiGenerated','noImages'] as const).map(src => (
                                 <button
                                   key={src}
                                   onClick={() => {
@@ -2960,7 +2966,7 @@ export default function Home() {
                                       : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                                   }`}
                                 >
-                                  {{ themeAccent:'主题套图', webFreeToUseCommercially:'网图', aiGenerated:'AI图' }[src]}
+                                  {{ themeAccent:'主题套图', pexels:'Pexels图库', aiGenerated:'AI图', noImages:'极简无图' }[src]}
                                 </button>
                               ))}
                             </div>

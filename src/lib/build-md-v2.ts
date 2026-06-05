@@ -104,10 +104,11 @@ function buildContentPage(
   return lines.join('\n');
 }
 
-function normalizeImageModeForHint(imageMode: string): 'themeAccent' | 'web' | 'ai' {
+function normalizeImageModeForHint(imageMode: string): 'themeAccent' | 'web' | 'ai' | 'noImages' {
   const value = String(imageMode || '').trim().toLowerCase();
-  if (value === 'web' || value === 'webfreetousecommercially') return 'web';
+  if (value === 'web' || value === 'pexels' || value === 'webfreetousecommercially') return 'web';
   if (value === 'ai' || value === 'ai-pro' || value === 'aigenerated') return 'ai';
+  if (value === 'noimages' || value === 'none') return 'noImages';
   return 'themeAccent';
 }
 
@@ -125,8 +126,11 @@ function buildPerPageImageHint(
   const isKeyPage = !isContinuation && (isCoverPage || keyPageByTitle);
 
   if (isKeyPage) {
+    if (normalizedMode === 'noImages') {
+      return '配图约束：本页保持极简无图，不创建图片元素或图片容器；仅使用标题、图标、色块和留白完成强调布局。';
+    }
     if (normalizedMode === 'web') {
-      return '配图约束：本页只有在网图(webFreeToUseCommercially)已成功检索且可见时才放图片；若检索失败，必须删除图片元素和图片容器，改用图标或色块布局，禁止创建空图片槽、灰色占位或丢图图标。';
+      return '配图约束：本页只有在 Pexels 图片(pexels)已成功加载且可见时才放图片；若取图失败，必须删除图片元素和图片容器，改用图标或色块布局，禁止创建空图片槽、灰色占位或丢图图标。';
     }
     if (normalizedMode === 'ai') {
       return '配图约束：本页只有在AI图(aiGenerated)已成功生成且可见时才放图片；若生成失败，必须删除图片元素和图片容器，改用图标或色块布局，禁止创建空图片槽、灰色占位或丢图图标。';
@@ -135,11 +139,15 @@ function buildPerPageImageHint(
   }
 
   if (normalizedMode === 'web') {
-    return '配图约束：本页如配图，只能使用已成功检索且可见的网图(webFreeToUseCommercially)；若检索失败，删除图片元素和图片容器并改用图标+色块排版，禁止空白图片占位、灰框或丢图图标。';
+    return '配图约束：本页默认不强调大图布局；如需配图，只能使用已成功加载且可见的 Pexels 图片(pexels)作为插图；若取图失败，删除图片元素和图片容器并改用图标+色块排版，禁止空白图片占位、灰框或丢图图标。';
   }
 
   if (normalizedMode === 'ai') {
-    return '配图约束：本页如配图，只能使用已成功生成且可见的AI图(aiGenerated)；若生成失败，删除图片元素和图片容器并改用图标+色块排版，禁止空白图片占位、灰框或丢图图标。';
+    return '配图约束：本页默认不强调大图布局；如需配图，只能使用已成功生成且可见的AI图(aiGenerated)作为插图；若生成失败，删除图片元素和图片容器并改用图标+色块排版，禁止空白图片占位、灰框或丢图图标。';
+  }
+
+  if (normalizedMode === 'noImages') {
+    return '配图约束：本页保持无图，仅使用图标、色块和大字排版，不允许创建图片元素或图片容器。';
   }
 
   return '配图约束：本页只有在图片真实可见时才保留图片；若图片不可用，必须删除图片元素和图片容器，使用图标、色块和大字排版补足视觉，禁止空白图片占位。';
@@ -300,15 +308,15 @@ export function buildAdditionalInstructions(
 配图风格：Minimalist, clean background, negative space, professional
 推荐构图：单人物/单物体，居中，留白充足
 禁止使用：DALL-E-3（33积分/图，极贵），GPT-Image-1-High（120积分/图，严禁）`;
-  } else if (imageMode === 'webFreeToUseCommercially') {
-    imageRules = `\n【配图：网络免费图片模式】
-使用 webFreeToUseCommercially 模式，搜索高质量免费商用图片
+  } else if (imageMode === 'pexels' || imageMode === 'webFreeToUseCommercially') {
+    imageRules = `\n【配图：Pexels 图库模式】
+使用 pexels 模式，从 Pexels 图库选择高质量可用图片
 配图风格：professional, clean, minimalist, business context
-禁止使用有任何版权争议的图片`;
+禁止使用站外搜索网图或来源不稳定的图片`;
   } else if (imageMode === 'noImages') {
-    imageRules = `\n【配图：主题套图模式（兼容回退）】
-无图模式已下线，自动回退为主题套图。
-首页、目录页、过渡页、结束页优先使用主题强调图，内容页按留白情况补图。`;
+    imageRules = `\n【配图：极简无图模式】
+整套PPT不创建图片元素或图片容器。
+首页、目录页、过渡页、结束页通过大标题、图标、色块、留白完成强调布局；内容页默认无图。`;
   } else if (imageMode === 'theme-img' || imageMode === 'theme') {
     imageRules = `\n【配图：主题套图模式】
 使用 Gamma 内置 Emphasize 强调布局图（主题装饰性图片，免费），

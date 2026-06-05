@@ -11,7 +11,7 @@ export interface GammaGenerationRequest {
   exportAs?: 'pdf' | 'pptx' | 'png';
   themeId?: string;
   imageOptions?: {
-    source: 'aiGenerated' | 'webFreeToUseCommercially' | 'themeAccent';
+    source: 'aiGenerated' | 'pexels' | 'themeAccent' | 'noImages';
   };
   textOptions?: {
     tone?: string;

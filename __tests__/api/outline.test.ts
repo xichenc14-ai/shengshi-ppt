@@ -105,7 +105,7 @@ describe('POST /api/outline', () => {
       scene: '商务汇报',
       themeId: 'consultant',
       tone: 'professional',
-      imageMode: 'webFreeToUseCommercially',
+      imageMode: 'pexels',
       slides: [{ title: '封面', content: ['测试'] }, { title: '结尾', content: ['完成'] }],
     }));
     const res = await POST(mockRequest({ inputText: '测试内容' }));
@@ -114,9 +114,9 @@ describe('POST /api/outline', () => {
     expect(data.imageMode).toBe('web');
   });
 
-  it('should fallback noImages style aliases to theme-img', async () => {
+  it('should preserve noImages style aliases', async () => {
     vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
-      title: '无图回退',
+      title: '无图保留',
       scene: '商务汇报',
       themeId: 'consultant',
       tone: 'professional',
@@ -126,7 +126,7 @@ describe('POST /api/outline', () => {
     const res = await POST(mockRequest({ inputText: '测试内容' }));
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.imageMode).toBe('theme-img');
+    expect(data.imageMode).toBe('noImages');
   });
 
   it('should return fallback outline when all LLM providers fail', async () => {
@@ -182,7 +182,7 @@ describe('POST /api/outline', () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.themeId).toBe('howlite');
-    expect(data.imageMode).toBe('web');
+    expect(data.imageMode).toBe('theme-img');
   });
 
   it('should default to ai image mode for creative tech smart mode when user does not specify image source', async () => {

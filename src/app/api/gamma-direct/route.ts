@@ -93,8 +93,8 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
 【配图规则】(主题套图=themeAccent主题强调图)
-- 主题套图:使用Pexels高质量照片(专业摄影师拍摄,0 credits)
-- 精选网图:使用webFreeToUseCommercially(免版权商用图搜索)
+- 主题套图:使用 themeAccent 主题强调图
+- Pexels 图库:使用 pexels 高质量图库照片(稳定优先,0 credits)
 - 封面页和结尾页优先配图,若图片不可用必须删除图片容器并改为图标/色块/大字布局
 - 内容页按信息密度决定是否配图,若图片不可用必须删除图片容器,不得保留空框、灰框或丢图图标
 - 照片风格(必须包含):Minimalist, clean background, negative space, professional, high quality
@@ -116,7 +116,7 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
 【配图规则】
-- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
+- 严格遵循 imageOptions.source（themeAccent / pexels / aiGenerated / noImages）
 - 用户选网图/AI图时，如对应来源失败，允许改为纯文字+图标+色块布局，但绝不允许切换成其它图片源
 - 封面页、目录页、过渡页、结束页优先含图；若取图失败，必须删除图片容器并改用无图布局
 - 可使用图标库(Font Awesome / Material Icons)
@@ -136,8 +136,8 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
 【配图规则】
-- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
-- 只有当 source=aiGenerated 时才使用 AI 生成图；source=web 时必须用网图
+- 严格遵循 imageOptions.source（themeAccent / pexels / aiGenerated / noImages）
+- 只有当 source=aiGenerated 时才使用 AI 生成图；source=pexels 时必须用 Pexels 图
 - 配图风格:creative, vibrant, modern, bold colors, minimalist, negative space
 
 【语言规则】
@@ -155,8 +155,8 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome, Material Icons, Ionicons
 
 【配图规则】
-- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
-- 只有当 source=aiGenerated 时才使用 AI 生成图；source=web 时必须用网图
+- 严格遵循 imageOptions.source（themeAccent / pexels / aiGenerated / noImages）
+- 只有当 source=aiGenerated 时才使用 AI 生成图；source=pexels 时必须用 Pexels 图
 - 配图风格:futuristic, technology, modern, sleek, minimalist, negative space
 
 【语言规则】
@@ -174,8 +174,8 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 推荐图标库:Font Awesome(中式元素), 自定义祥云/水墨图标
 
 【配图规则】
-- 严格遵循 imageOptions.source（themeAccent / webFreeToUseCommercially / aiGenerated）
-- source=aiGenerated 时使用国风 AI 图；source=web 时使用国风网图；source=themeAccent 使用主题强调图
+- 严格遵循 imageOptions.source（themeAccent / pexels / aiGenerated / noImages）
+- source=aiGenerated 时使用国风 AI 图；source=pexels 时使用国风 Pexels 图；source=themeAccent 使用主题强调图；source=noImages 时全程无图
 - 配图风格:Chinese traditional, ink wash, classical Chinese art, elegant, minimalist, negative space
 
 【语言规则】
@@ -212,7 +212,7 @@ export async function POST(request: NextRequest) {
       inputText,
       themeId,
       tone = 'professional',
-      imageSource = 'webFreeToUseCommercially',
+      imageSource = 'themeAccent',
       exportAs = 'pptx',
       visualMetaphor,
       strictPreserve = false,
@@ -262,15 +262,12 @@ export async function POST(request: NextRequest) {
     }
 
     const imageOptions = buildGammaImageOptions(requestedImageSource, finalThemeId);
-    if (imageOptions?.source === 'noImages') {
-      imageOptions.source = 'themeAccent';
-    }
     if (
       imageOptions?.source === 'themeAccent'
       && LIGHT_MINIMAL_STYLE_RE.test(String(effectiveInputText || ''))
     ) {
-      imageOptions.source = 'webFreeToUseCommercially';
-      console.warn('[GammaDirect] LIGHT_STYLE_THEMEACCENT_FALLBACK source=themeAccent -> webFreeToUseCommercially');
+      imageOptions.source = 'pexels';
+      console.warn('[GammaDirect] LIGHT_STYLE_THEMEACCENT_FALLBACK source=themeAccent -> pexels');
     }
     const finalImageSource = String(imageOptions.source || 'themeAccent');
 
@@ -334,15 +331,19 @@ export async function POST(request: NextRequest) {
       : '';
     // 免费套图:追加强调布局图指令
     const themeAppend = (finalImageSource === 'themeAccent')
-      ? `\n\n【主题套图-Pexels高质量照片】\n优先使用Pexels高质量照片；只有在照片已成功加载且可见时才保留图片元素。若图片不可用，必须删除图片元素和图片容器，改用图标、色块或大字布局，禁止空图片框。`
+      ? `\n\n【主题套图策略】\n优先使用 themeAccent 主题强调图；只有在图片已成功加载且可见时才保留图片元素。若图片不可用，必须删除图片元素和图片容器，改用图标、色块或大字布局，禁止空图片框。`
       : '';
     const keyPageSourceHint =
-      finalImageSource === 'webFreeToUseCommercially'
-        ? '优先使用网图（webFreeToUseCommercially）'
+      finalImageSource === 'pexels'
+        ? '优先使用 Pexels 图（pexels）'
         : finalImageSource === 'aiGenerated'
           ? '优先使用 AI 图（aiGenerated）'
-          : '使用主题强调图（themeAccent / Emphasize布局）';
-    const imageStrategy = `\n\n【图片策略-强制】\n封面页、目录页、章节过渡页、结束页可用图则用图，${keyPageSourceHint}；若图片不可见，必须删除图片元素和图片容器，改用图标、色块和大字排版完成页面。内容页遵循“少字优先补图”：仅在图片真实可见时保留图片；若用户选择了网图/AI图，则内容页一旦配图必须使用对应来源（webFreeToUseCommercially 或 aiGenerated），不得替换为 themeAccent。若 web/ai 配图失败，必须直接删除图片容器，不允许自动回退 themeAccent，不允许输出空图片占位、灰框、浏览器缺图图标或丢图图标。`;
+          : finalImageSource === 'noImages'
+            ? '保持极简无图'
+            : '使用主题强调图（themeAccent / Emphasize布局）';
+    const imageStrategy = finalImageSource === 'noImages'
+      ? `\n\n【图片策略-强制】\n封面页、目录页、章节过渡页、结束页保持无图，仅用标题、图标、色块和留白完成强调布局。内容页默认无图，仅使用卡片、图标、色块、时间轴等无图布局。不允许创建任何图片元素、图片容器、灰框或空占位。`
+      : `\n\n【图片策略-强制】\n封面页、目录页、章节过渡页、结束页可用图则用图，${keyPageSourceHint}；若图片不可见，必须删除图片元素和图片容器，改用图标、色块和大字排版完成页面。内容页默认不使用强调大图布局，仅在图片真实可见时保留插入式图片，否则直接无图。若用户选择了 Pexels/AI 图，则内容页一旦配图必须使用对应来源（pexels 或 aiGenerated），不得替换为 themeAccent。若 pexels/ai 配图失败，必须直接删除图片容器，不允许自动回退 themeAccent，不允许输出空图片占位、灰框、浏览器缺图图标或丢图图标。`;
     const finalInstructions = normalizePptxSafeInstructions(instructions + metaphorAppend + themeAppend + imageStrategy);
 
     // 🚨 V8.2：Gamma 固定使用 preserve 模式

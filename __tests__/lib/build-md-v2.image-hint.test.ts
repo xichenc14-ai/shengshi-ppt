@@ -9,9 +9,9 @@ describe('buildMdV2 image hint strategy', () => {
     { id: '4', title: '结尾页', bullets: ['感谢观看'] },
   ];
 
-  it('uses web-first key-page hint when image mode is web', () => {
+  it('uses pexels-first key-page hint when image mode is web', () => {
     const { markdown } = buildMdV2('测试', slides as any, 'web');
-    expect(markdown).toContain('只有在网图(webFreeToUseCommercially)已成功检索且可见时才放图片');
+    expect(markdown).toContain('只有在 Pexels 图片(pexels)已成功加载且可见时才放图片');
     expect(markdown).toContain('必须删除图片元素和图片容器');
     expect(markdown).not.toContain('本页必须配图');
   });

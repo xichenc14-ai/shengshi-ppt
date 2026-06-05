@@ -158,7 +158,7 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
     expect(calledBody.imageOptions.source).toBe('themeAccent');
   });
 
-  it('BUG-2c: explicit imageMode=web should not be overridden by stale imageOptions.source', async () => {
+  it('BUG-2c: explicit imageMode=pexels should not be overridden by stale imageOptions.source', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -167,7 +167,7 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
 
     const res = await POST(mockPostRequest({
       inputText: '# Test',
-      imageMode: 'webFreeToUseCommercially',
+      imageMode: 'pexels',
       imageOptions: { source: 'themeAccent' },
       themeId: 'consultant',
       tone: 'professional',
@@ -176,10 +176,10 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
     expect(res.status).toBe(200);
     const fetchCall = mockFetch.mock.calls[0];
     const calledBody = JSON.parse(fetchCall[1].body as string);
-    expect(calledBody.imageOptions.source).toBe('webFreeToUseCommercially');
+    expect(calledBody.imageOptions.source).toBe('pexels');
   });
 
-  it('BUG-2d: themeAccent should fallback to web source on high-risk light themes', async () => {
+  it('BUG-2d: themeAccent should fallback to pexels on high-risk light themes', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -196,10 +196,10 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
     expect(res.status).toBe(200);
     const fetchCall = mockFetch.mock.calls[0];
     const calledBody = JSON.parse(fetchCall[1].body as string);
-    expect(calledBody.imageOptions.source).toBe('webFreeToUseCommercially');
+    expect(calledBody.imageOptions.source).toBe('pexels');
   });
 
-  it('BUG-2e: explicit web mode should not instruct key pages to fallback to themeAccent', async () => {
+  it('BUG-2e: explicit pexels mode should not instruct key pages to fallback to themeAccent', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -208,7 +208,7 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
 
     const res = await POST(mockPostRequest({
       inputText: '# Test',
-      imageMode: 'webFreeToUseCommercially',
+      imageMode: 'pexels',
       themeId: 'consultant',
       tone: 'professional',
     }));
@@ -230,7 +230,7 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
 
     const res = await POST(mockPostRequest({
       inputText: '# Test',
-      imageMode: 'webFreeToUseCommercially',
+      imageMode: 'pexels',
       themeId: 'howlite',
       tone: 'professional',
       intentHints: {
@@ -255,7 +255,7 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
 
     const res = await POST(mockPostRequest({
       inputText: '# Test\n\n---\n\n## Slide\n\n### 要点一',
-      imageMode: 'webFreeToUseCommercially',
+      imageMode: 'pexels',
       themeId: 'consultant',
       tone: 'professional',
     }));
@@ -269,6 +269,26 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
     expect(instructions).toContain('禁止使用Gamma Icons');
     expect(instructions).not.toContain('每一页都必须包含2-5个 Icons');
     expect(instructions).not.toContain('推荐图标库');
+  });
+
+  it('BUG-2h: explicit noImages mode should remain noImages', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ generationId: 'test-gen-noimages' }),
+    });
+
+    const res = await POST(mockPostRequest({
+      inputText: '# Test',
+      imageMode: 'noImages',
+      themeId: 'consultant',
+      tone: 'professional',
+    }));
+
+    expect(res.status).toBe(200);
+    const fetchCall = mockFetch.mock.calls[0];
+    const calledBody = JSON.parse(fetchCall[1].body as string);
+    expect(calledBody.imageOptions.source).toBe('noImages');
   });
 
   // ===== Bug 3: textMode should be preserved =====

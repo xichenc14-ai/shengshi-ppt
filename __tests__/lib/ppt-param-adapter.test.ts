@@ -32,8 +32,9 @@ describe('ppt-param-adapter', () => {
   it('maps app image modes to Gamma sources', () => {
     expect(buildGammaImageOptions('theme-img', 'consultant').source).toBe('themeAccent');
     expect(buildGammaImageOptions('theme-img', 'founder').source).toBe('themeAccent');
-    expect(buildGammaImageOptions('weballimages', 'consultant').source).toBe('webFreeToUseCommercially');
-    expect(buildGammaImageOptions('webfreetouse', 'consultant').source).toBe('webFreeToUseCommercially');
+    expect(buildGammaImageOptions('weballimages', 'consultant').source).toBe('pexels');
+    expect(buildGammaImageOptions('webfreetouse', 'consultant').source).toBe('pexels');
+    expect(buildGammaImageOptions('noImages', 'consultant').source).toBe('noImages');
     expect(buildGammaImageOptions('ai-pro', 'consultant')).toMatchObject({
       source: 'aiGenerated',
       model: 'imagen-3-pro',
@@ -41,10 +42,10 @@ describe('ppt-param-adapter', () => {
   });
 
   it('keeps explicit imageSource priority over stale imageOptions.source', () => {
-    const options = buildGammaImageOptions('webFreeToUseCommercially', 'consultant', {
+    const options = buildGammaImageOptions('pexels', 'consultant', {
       source: 'themeAccent',
     });
-    expect(options.source).toBe('webFreeToUseCommercially');
+    expect(options.source).toBe('pexels');
   });
 
   it('strips stale ai model/style fields when source is not aiGenerated', () => {

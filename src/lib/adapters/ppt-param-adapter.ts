@@ -50,7 +50,7 @@ export type GammaImageSource =
   | 'noImages'
   | 'themeAccent'
   | 'pictographic'
-  | 'webFreeToUseCommercially'
+  | 'pexels'
   | 'aiGenerated';
 
 function firstNonEmptyString(...values: unknown[]): string | undefined {
@@ -138,11 +138,11 @@ export function normalizeUserInput(raw: Record<string, unknown>): PptUserInput {
  * 兼容签名：第二参数 themeId 预留给调用方扩展，当前版本不使用
  *
  * 支持输入（不区分大小写，完整别名清单）：
- * - noImages / none                    → themeAccent (无图模式已下线，兼容回退)
+ * - noImages / none                    → noImages
  * - theme-img / theme / themeAccent    → themeAccent
  * - pictographic / 插图                 → pictographic
- * - web / 网图 / 搜索图                 → webFreeToUseCommercially
- * - webFreeToUseCommercially           → webFreeToUseCommercially
+ * - web / pexels / 网图 / 搜索图        → pexels
+ * - webFreeToUseCommercially           → pexels
  * - ai / aiGenerated / AI图             → aiGenerated (imagen-3-flash)
  * - ai-pro / AI尊享                    → aiGenerated (imagen-3-pro)
  * - 默认                                → themeAccent
@@ -160,19 +160,16 @@ export function mapImageSource(
   switch (normalized) {
     case 'noimages':
     case 'none':
-      return { source: 'themeAccent' };
+      return { source: 'noImages' };
 
     case 'weballimages':
-      return { source: 'webFreeToUseCommercially' };
-
     case 'webfreetouse':
-      return { source: 'webFreeToUseCommercially' };
-
     case 'webfreetousecommercially':
+    case 'pexels':
     case 'web':
     case '网图':
     case '搜索图':
-      return { source: 'webFreeToUseCommercially' };
+      return { source: 'pexels' };
 
     case 'aigenerated':
     case 'ai':
@@ -221,12 +218,8 @@ export function buildGammaImageOptions(
     source: mapped.source,
   };
 
-  if (merged.source === 'noImages') {
-    return { ...merged, source: 'themeAccent' };
-  }
-
   // 关键修复：当图片源不是 aiGenerated 时，必须清除残留 AI 参数。
-  // 否则 source=themeAccent/web 但仍携带 model/style，可能诱发 Gamma 侧异常图片占位。
+  // 否则 source=themeAccent/pexels/noImages 但仍携带 model/style，可能诱发 Gamma 侧异常图片占位。
   if (merged.source !== 'aiGenerated') {
     delete (merged as Record<string, unknown>).model;
     delete (merged as Record<string, unknown>).style;
