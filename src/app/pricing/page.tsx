@@ -313,7 +313,6 @@ export default function PricingPage() {
     <>
       <div className="min-h-screen sx-shell">
         <Navbar />
-        <div className="text-center py-1 text-[11px] text-gray-400">版本 {APP_VERSION}</div>
 
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-6 md:py-10">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
@@ -409,6 +408,8 @@ export default function PricingPage() {
             <h2 className="text-lg font-black text-slate-900">单次按页付费</h2>
             <p className="text-sm text-slate-500 mt-1">适合低频用户，按页付费下载PPTX；建议高频场景优先开通会员，整体成本更低。</p>
           </section>
+
+          <div className="pt-6 text-center text-[11px] text-gray-400">版本 {APP_VERSION}</div>
         </div>
       </div>
 

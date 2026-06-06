@@ -11,15 +11,7 @@ export interface Announcement {
   endDate?: string;
 }
 
-const ANNOUNCEMENTS: Announcement[] = [
-  {
-    id: 'v10.91-important-preview-restore',
-    message: '重要版本 v10.91：已恢复 PDF 预览方案，并保留近期主题、配图与占位图修复；后续等待官方提供更优导出能力后再升级预览链路。',
-    type: 'success',
-    startDate: '2026-06-06T00:00:00+08:00',
-    endDate: '2026-06-20T23:59:59+08:00',
-  },
-];
+const ANNOUNCEMENTS: Announcement[] = [];
 
 export function getLatestAnnouncement(): Announcement | null {
   const now = new Date();

@@ -231,7 +231,6 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen sx-shell">
       <Navbar />
-      <div className="text-center py-1 text-[11px] text-gray-400">版本 {APP_VERSION}</div>
 
       <div className="max-w-7xl mx-auto px-4 md:px-8 py-6 md:py-10 space-y-5">
         <section className="flex flex-wrap items-center justify-between gap-3">
@@ -602,6 +601,8 @@ export default function AdminPage() {
             </div>
           )}
         </section>
+
+        <div className="pt-2 text-center text-[11px] text-gray-400">版本 {APP_VERSION}</div>
       </div>
     </div>
   );

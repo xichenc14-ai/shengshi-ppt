@@ -5,7 +5,6 @@ import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense } fr
 import { useAuth } from '@/lib/auth-context';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-import AnnouncementBar, { getLatestAnnouncement } from '@/components/AnnouncementBar';
 import Navbar from '@/components/Navbar';
 import SceneCards from '@/components/SceneCards';
 import ProcessSection from '@/components/ProcessSection';
@@ -2183,18 +2182,14 @@ export default function Home() {
   const fmtSize = (b: number) => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
 
   return (
-    <div className="min-h-screen premium-shell flex flex-col">
+      <div className="min-h-screen premium-shell flex flex-col">
       <SubscribeHandlerWrapper onSubscribe={handleSubscribe} />
       <Navbar onLogoClick={backToLanding} />
-      <AnnouncementBar announcement={getLatestAnnouncement()} />
 
       {/* 顶部通知条 - 仅生成中阶段隐藏 */}
       {phase !== 'generating' && (
         <ScrollingBanner variant="top" />
       )}
-      <div className="text-center py-1 text-[11px] text-gray-400">
-        版本 {APP_VERSION}
-      </div>
 
       {/* ===== LANDING PAGE ===== */}
       {phase === 'landing' && (

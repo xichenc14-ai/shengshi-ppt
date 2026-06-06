@@ -302,13 +302,13 @@ export default function AccountPage() {
     return (
       <div className="min-h-screen sx-shell">
         <Navbar />
-        <div className="text-center py-1 text-[11px] text-gray-400">版本 {APP_VERSION}</div>
         <div className="max-w-xl mx-auto px-4 py-24 text-center">
           <div className="sx-glass rounded-[28px] p-10">
             <p className="text-lg font-black text-slate-900">请先登录查看用户中心</p>
             <Link href="/" className="mt-6 inline-flex items-center justify-center px-6 py-3 rounded-2xl sx-primary-btn text-white font-bold text-sm">
               返回首页
             </Link>
+            <div className="pt-6 text-center text-[11px] text-gray-400">版本 {APP_VERSION}</div>
           </div>
         </div>
       </div>
@@ -318,7 +318,6 @@ export default function AccountPage() {
   return (
     <div className="min-h-screen sx-shell">
       <Navbar />
-      <div className="text-center py-1 text-[11px] text-gray-400">版本 {APP_VERSION}</div>
 
       <div className="max-w-6xl mx-auto px-4 md:px-8 py-6 md:py-10 space-y-5">
         <section className="relative overflow-hidden rounded-[30px] bg-gradient-to-br from-[#5c55ff] via-[#346cff] to-[#33c8ff] p-6 md:p-8 shadow-2xl shadow-indigo-200/50">
@@ -594,6 +593,8 @@ export default function AccountPage() {
           <Link href="/pricing#credit-topup" className="sx-glass rounded-[22px] p-5 text-slate-800 font-bold text-center border border-indigo-200">充值积分</Link>
           <button onClick={() => { logout(); router.push('/'); }} className="sx-glass rounded-[22px] p-5 text-red-500 font-bold border border-red-200/70">退出登录</button>
         </section>
+
+        <div className="pt-2 text-center text-[11px] text-gray-400">版本 {APP_VERSION}</div>
       </div>
     </div>
   );
