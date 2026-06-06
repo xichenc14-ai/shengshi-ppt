@@ -19,12 +19,16 @@ interface AccountOverview {
   user?: {
     plan_expires_at?: string | null;
     total_credits_used?: number;
+    credits?: number;
   };
   metrics?: {
     generation_count?: number;
     download_count?: number;
     paid_amount_yuan?: number;
   };
+  admin?: {
+    gamma_pool_credits?: number;
+  } | null;
 }
 
 const PLAN_NAMES: Record<string, { label: string; emoji: string; badgeClass: string }> = {
@@ -149,6 +153,7 @@ export default function AccountPage() {
   const generationCount = overview?.metrics?.generation_count || 0;
   const downloadCount = overview?.metrics?.download_count || 0;
   const paidAmount = overview?.metrics?.paid_amount_yuan || 0;
+  const adminGammaPoolCredits = user?.is_admin ? Number(overview?.admin?.gamma_pool_credits || user.credits || 0) : null;
 
   const saveProfile = async () => {
     if (!user) return;
@@ -342,8 +347,11 @@ export default function AccountPage() {
 
         <section className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="sx-glass rounded-[22px] p-5">
-            <p className="text-xs text-slate-500">当前积分</p>
+            <p className="text-xs text-slate-500">{user.is_admin ? 'Gamma 总积分池' : '当前积分'}</p>
             <p className="text-3xl font-black text-slate-900 mt-1">{user.credits}</p>
+            {user.is_admin && (
+              <p className="mt-1 text-[11px] text-slate-400">管理员账户已对齐实时 Gamma 总余额</p>
+            )}
           </div>
           <div className="sx-glass rounded-[22px] p-5">
             <p className="text-xs text-slate-500">生成次数</p>
@@ -358,6 +366,22 @@ export default function AccountPage() {
             <p className="text-3xl font-black text-slate-900 mt-1">¥{paidAmount.toFixed(2)}</p>
           </div>
         </section>
+
+        {user.is_admin && adminGammaPoolCredits !== null && (
+          <section className="sx-glass rounded-[22px] p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs text-slate-500">管理员实时监控</p>
+                <p className="text-lg font-black text-slate-900 mt-1">Gamma 总积分池</p>
+                <p className="mt-1 text-sm text-slate-500">该数值直接对齐当前 key 池实时总余额，便于监控外部可用积分。</p>
+              </div>
+              <div className="text-right">
+                <p className="text-4xl font-black text-slate-900">{adminGammaPoolCredits}</p>
+                <p className="mt-1 text-xs text-slate-400">实时汇总</p>
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="grid lg:grid-cols-[240px_1fr] gap-4">
           <aside className="sx-glass rounded-[22px] p-3 h-fit">

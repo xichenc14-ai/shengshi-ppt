@@ -628,17 +628,17 @@ export async function POST(req: NextRequest) {
       const { userId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
       if (!userId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
-      const BASE_CREDIT_PER_PAGE = 2;
+      const BASE_CREDIT_PER_PAGE = 4;
       let totalCredit = numPages * BASE_CREDIT_PER_PAGE;
 
       let imageCreditsPerImage = 0;
       if (imageSource === 'aiGenerated') {
-        // AI图片：普通2积分/图，高级10积分/图
+        // AI图片：按双生成成本计费，普通4积分/图，高级20积分/图
         const HIGH_MODELS = ['imagen-3-pro', 'flux-1-pro', 'ideogram-v3-turbo', 'luma-photon-1', 'leonardo-phoenix', 'flux-kontext-pro', 'imagen-4-pro', 'ideogram-v3', 'gemini-2.5-flash-image'];
         if (imageModel && HIGH_MODELS.includes(imageModel)) {
-          imageCreditsPerImage = 10; // 高级AI图
+          imageCreditsPerImage = 20; // 高级AI图（双生成成本）
         } else {
-          imageCreditsPerImage = 2; // 普通AI图
+          imageCreditsPerImage = 4; // 普通AI图（双生成成本）
         }
       }
 

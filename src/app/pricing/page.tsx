@@ -38,7 +38,7 @@ type CompareRow = {
   advanced: { text: string; type: 'ok' | 'off' | 'neutral' };
 };
 
-const CREDITS_PER_PAGE = 2;
+const CREDITS_PER_PAGE = 4;
 const PER_PPT10_PAGES_CREDITS = 10 * CREDITS_PER_PAGE;
 
 const PLANS: Plan[] = [
@@ -50,7 +50,7 @@ const PLANS: Plan[] = [
     maxPages: 8,
     aiModels: ['基础模型（自动匹配）'],
     audience: '轻量体验',
-    features: ['每月 50 积分', '专业模式', '主题图 / 搜索图', 'PPTX 按页计费下载'],
+    features: ['每月 50 积分', '专业模式', '主题图 / Pexels 图', 'PPTX 按页计费下载'],
   },
   {
     id: 'shengxin',
@@ -61,7 +61,7 @@ const PLANS: Plan[] = [
     aiModels: ['imagen-3-flash', '系统按用途自动路由'],
     audience: '高频日常场景',
     featured: true,
-    features: ['每月 400 积分', '省心模式 + 专业模式', '主题图/搜索图/AI图', 'PPTX 无额外下载费'],
+    features: ['每月 400 积分', '省心模式 + 专业模式', '主题图 / Pexels 图 / AI 图', 'PPTX 无额外下载费'],
   },
   {
     id: 'advanced',
@@ -96,8 +96,8 @@ const COMPARE_ROWS: CompareRow[] = [
   },
   {
     label: '图片能力',
-    free: { text: '主题图 + 搜索图', type: 'ok' },
-    shengxin: { text: '主题图 + 搜索图 + AI图', type: 'ok' },
+    free: { text: '主题图 + Pexels图', type: 'ok' },
+    shengxin: { text: '主题图 + Pexels图 + AI图', type: 'ok' },
     advanced: { text: '全能力支持', type: 'ok' },
   },
   {
@@ -145,7 +145,7 @@ function PlanCard({
   onBuy: () => void;
 }) {
   const monthlyPages = plan.credits / CREDITS_PER_PAGE;
-  const approxCostPerPage = plan.price > 0 ? (plan.price / Math.max(1, monthlyPages)).toFixed(2) : '0.10';
+  const approxCostPerPage = plan.price > 0 ? (plan.price / Math.max(1, monthlyPages)).toFixed(2) : '0.20';
   const ppt10Count = Math.floor(plan.credits / PER_PPT10_PAGES_CREDITS);
 
   return (
@@ -328,7 +328,7 @@ export default function PricingPage() {
 
           <section className="text-center mb-8">
             <h1 className="text-4xl md:text-5xl font-black tracking-tight sx-gradient-text">会员套餐</h1>
-            <p className="mt-3 text-sm md:text-base text-slate-500">突出会员优势，免费用户仅保留基础能力。</p>
+            <p className="mt-3 text-sm md:text-base text-slate-500">突出会员优势，免费用户仅保留基础能力。当前按 4 积分≈1 页内容生成能力估算套餐页数。</p>
             {!paymentEnabled && (
               <p className="mt-3 text-xs font-semibold text-amber-600">支付通道申请中：当前仅开放非支付功能。</p>
             )}

@@ -288,13 +288,13 @@ export async function POST(request: NextRequest) {
     console.log(`[GammaDirect] QUOTA_OK required=${pageCount} pages imageSource=${finalImageSource}`);
 
     // ===== Layer 5: Credit Check (before Gamma call) =====
-    // Estimate credits needed: 2 credits/page + AI image credits if applicable
-    const BASE_CREDIT_PER_PAGE = 2;
+    // Estimate credits needed: 双生成成本，4 credits/page + AI image credits if applicable
+    const BASE_CREDIT_PER_PAGE = 4;
     let totalCredit = pageCount * BASE_CREDIT_PER_PAGE;
     if (finalImageSource === 'aiGenerated') {
       const HIGH_MODELS = ['imagen-3-pro', 'flux-1-pro', 'ideogram-v3-turbo', 'luma-photon-1', 'leonardo-phoenix', 'flux-kontext-pro', 'imagen-4-pro', 'ideogram-v3', 'gemini-2.5-flash-image'];
       const model = aiModel || 'imagen-3-flash';
-      const imageCreditsPerImage = HIGH_MODELS.includes(model) ? 10 : 2;
+      const imageCreditsPerImage = HIGH_MODELS.includes(model) ? 20 : 4;
       const estimatedImageCount = Math.ceil(pageCount / 2);
       totalCredit += estimatedImageCount * imageCreditsPerImage;
     }

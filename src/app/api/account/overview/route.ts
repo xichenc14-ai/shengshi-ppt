@@ -126,6 +126,9 @@ export async function GET() {
         download_count: downloadCount,
         paid_amount_yuan: Number(paidAmountYuan.toFixed(2)),
       },
+      admin: isAdmin ? {
+        gamma_pool_credits: displayCredits,
+      } : null,
       recentOrders: orders.slice(0, 20),
       recentTransactions: transactions.slice(0, 80),
     });

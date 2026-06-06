@@ -63,7 +63,7 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
                 </div>
                 <div className="hidden sm:block text-left">
                   <p className="text-sm font-medium text-gray-800 leading-tight">{user.nickname}</p>
-                  <p className="text-[10px] text-amber-600">🪙 {user.credits} 积分</p>
+                  <p className="text-[10px] text-amber-600">🪙 {user.credits} {user.is_admin ? 'Gamma池' : '积分'}</p>
                 </div>
                 <svg className={`w-3 h-3 text-gray-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <path d="M6 9l6 6 6-6"/>
@@ -92,7 +92,7 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
                       <div className="flex items-center gap-2">
                         <span className="text-lg">🪙</span>
                         <div>
-                          <p className="text-xs text-gray-500">可用积分</p>
+                          <p className="text-xs text-gray-500">{user.is_admin ? 'Gamma 总积分池' : '可用积分'}</p>
                           <p className="text-sm font-bold text-amber-600">{user.credits}</p>
                         </div>
                       </div>
