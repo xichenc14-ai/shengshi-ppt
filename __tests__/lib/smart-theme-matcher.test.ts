@@ -45,4 +45,15 @@ describe('resolveSmartThemeId', () => {
     expect(['howlite', 'default-light', 'gleam']).not.toContain(match?.themeId);
     expect(match?.themeId).toBe('consultant');
   });
+
+  it('matches romantic content to a non-white emotional theme', () => {
+    const match = resolveSmartThemeId({
+      text: '遇见你，相知相守的浪漫故事分享',
+      scene: '婚礼庆典',
+      tone: 'casual',
+    });
+
+    expect(match?.themeId).toBe('coral-glow');
+    expect(['howlite', 'default-light', 'gleam']).not.toContain(match?.themeId);
+  });
 });

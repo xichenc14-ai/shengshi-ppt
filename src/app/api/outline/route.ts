@@ -16,10 +16,10 @@ export const maxDuration = 60;
 const SCENE_THEME_MAP: Record<string, { themeId: string; tone: string; imageMode: string }> = {
   '商务汇报': { themeId: 'consultant', tone: 'professional', imageMode: 'theme-img' },
   '路演融资': { themeId: 'founder', tone: 'professional', imageMode: 'theme-img' },
-  '数据分析': { themeId: 'gleam', tone: 'professional', imageMode: 'theme-img' },
+  '数据分析': { themeId: 'ash', tone: 'professional', imageMode: 'theme-img' },
   '年度总结': { themeId: 'blues', tone: 'professional', imageMode: 'theme-img' },
   '学术研究': { themeId: 'ash', tone: 'professional', imageMode: 'theme-img' },
-  '医疗健康': { themeId: 'commons', tone: 'professional', imageMode: 'theme-img' },
+  '医疗健康': { themeId: 'elysia', tone: 'professional', imageMode: 'theme-img' },
   '房地产': { themeId: 'chocolate', tone: 'professional', imageMode: 'theme-img' },
   '科技AI': { themeId: 'aurora', tone: 'bold', imageMode: 'theme-img' },
   '产品发布': { themeId: 'aurora', tone: 'bold', imageMode: 'theme-img' },
@@ -29,7 +29,7 @@ const SCENE_THEME_MAP: Record<string, { themeId: string; tone: string; imageMode
   '生活方式': { themeId: 'finesse', tone: 'casual', imageMode: 'theme-img' },
   '婚礼庆典': { themeId: 'coral-glow', tone: 'casual', imageMode: 'theme-img' },
   '培训课件': { themeId: 'cornflower', tone: 'casual', imageMode: 'theme-img' },
-  '教育课件': { themeId: 'chisel', tone: 'casual', imageMode: 'theme-img' },
+  '教育课件': { themeId: 'cornflower', tone: 'casual', imageMode: 'theme-img' },
   '高端精致': { themeId: 'aurum', tone: 'professional', imageMode: 'theme-img' },
   '中国风': { themeId: 'chisel', tone: 'traditional', imageMode: 'theme-img' },
   '清新简约': { themeId: 'howlite', tone: 'casual', imageMode: 'theme-img' },
@@ -211,7 +211,7 @@ function resolveSmartDefaultImageMode(params: {
   const preferPexelsScene = new Set(['旅游出行', '餐饮美食', '生活方式', '美妆时尚']);
   if (preferPexelsScene.has(scene)) return 'web';
   if (/实拍|摄影|街景|风景|城市|美食|旅行|人物采访|门店|空间/.test(text)) return 'web';
-  return 'theme-img';
+  return 'web';
 }
 
 function normalizeThemeToGamma(themeId: string | undefined | null): string {
@@ -257,6 +257,7 @@ function extractUserIntentOverrides(inputText: string): UserIntentOverrides {
   const sceneSignals: Array<{ scene: string; patterns: RegExp[]; score: number }> = [
     { scene: '旅游出行', patterns: [/旅游|旅行|出行|景点|攻略|citywalk|city walk|打卡|自由行|目的地|路线|游玩/g], score: 0 },
     { scene: '餐饮美食', patterns: [/咖啡|拿铁|美式|手冲|咖啡豆|咖啡馆|咖啡店|咖啡文化|餐饮|美食|菜品|烘焙|甜品|饮品|奶茶/g], score: 0 },
+    { scene: '婚礼庆典', patterns: [/婚礼|告白|恋爱|爱情|浪漫|相遇|相知|相守|周年|纪念日|求婚|订婚|婚庆/g], score: 0 },
     { scene: '中国风', patterns: [/古风|国风|中式|传统文化|潮汕|岭南|非遗|汉服|诗词|国学/g], score: 0 },
     { scene: '科技AI', patterns: [/科技|ai|人工智能|数字化|互联网|大模型|算法|软件/g], score: 0 },
     { scene: '生活方式', patterns: [/生活|旅行|健康|运动|健身|宠物|家居|方式/g], score: 0 },
@@ -299,6 +300,9 @@ function extractUserIntentOverrides(inputText: string): UserIntentOverrides {
   if (/古村|古镇|村落|乡村|田园|文旅|山村|岭南古村|潮汕古村|古风|国风|中式|传统文化|潮汕|岭南|非遗/.test(text)) {
     overrides.scene = '中国风';
     if (!overrides.tone) overrides.tone = 'traditional';
+  } else if (/婚礼|告白|恋爱|爱情|浪漫|相遇|相知|相守|周年|纪念日|求婚|订婚|婚庆/.test(text)) {
+    overrides.scene = '婚礼庆典';
+    if (!overrides.tone) overrides.tone = 'casual';
   } else if (/科技|未来|ai|数字化|互联网/.test(text)) {
     overrides.scene = '科技AI';
   } else if (/咖啡|拿铁|美式|手冲|咖啡豆|咖啡馆|咖啡店|咖啡文化|餐饮|美食|菜品|烘焙|甜品|饮品|奶茶/.test(text)) {
@@ -1091,6 +1095,7 @@ function detectScene(text: string): string {
   const keywords: Record<string, string[]> = {
     '旅游出行': ['旅游', '旅行', '出行', '景点', '攻略', 'citywalk', 'city walk', '自由行', '打卡', '目的地', '行程', '游玩'],
     '餐饮美食': ['咖啡', '拿铁', '美式', '手冲', '咖啡豆', '咖啡馆', '咖啡店', '咖啡文化', '餐饮', '美食', '菜品', '烘焙', '甜品', '饮品', '奶茶'],
+    '婚礼庆典': ['婚礼', '告白', '恋爱', '爱情', '浪漫', '相遇', '相知', '相守', '周年', '纪念日', '求婚', '订婚', '婚庆'],
     '中国风': ['古风', '国风', '中式', '传统文化', '潮汕', '岭南', '非遗', '汉服', '国学', '古村', '古镇', '村落', '乡村', '田园', '文旅', '山村'],
     '美妆时尚': ['美妆', '时尚', '穿搭', '潮流', '彩妆', '护肤', '服装', '搭配'],
     '生活方式': ['生活', '旅行', '美食', '健康', '运动', '健身', '宠物', '家居'],

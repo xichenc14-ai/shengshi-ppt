@@ -36,6 +36,7 @@ const STYLE_RULES: Array<{ tag: string; re: RegExp }> = [
   { tag: '自然', re: /自然|生态|环保|田园|乡村|文旅|旅行|旅游|城市/ },
   { tag: '创意', re: /创意|新潮|视觉|品牌|营销|发布|海报/ },
   { tag: '温暖', re: /温暖|亲和|生活|咖啡|餐饮|美食|社区/ },
+  { tag: '情感', re: /婚礼|告白|恋爱|爱情|浪漫|相遇|相知|相守|周年|纪念|求婚|订婚/ },
   { tag: '奢华', re: /高端|奢华|质感|精品|豪华/ },
   { tag: '简约', re: /简约|极简|干净|清爽|留白/ },
   { tag: '传统', re: /传统|国风|古风|中式|文化|非遗|党政/ },
@@ -66,6 +67,9 @@ export function detectThemeIntent(text: string, scene?: string, tone?: Tone): Th
   if (/玫红|玫瑰红|粉色|少女粉|豆沙粉|樱花粉/.test(source)) {
     preferredThemeIds.push('ashrose');
     explicitColorLabel = '玫瑰粉';
+  }
+  if (/婚礼|告白|恋爱|爱情|浪漫|相遇|相知|相守|周年|纪念|求婚|订婚/.test(source)) {
+    preferredThemeIds.push('coral-glow', 'ashrose');
   }
   if (/深蓝|海军蓝|藏蓝/.test(source)) preferredThemeIds.push('blues');
   if (/天蓝|校园|学校|中学|教育|培训/.test(source) && /蓝/.test(source)) preferredThemeIds.push('cornflower');
@@ -117,16 +121,18 @@ function scoreTheme(theme: ThemeData, intent: ThemeIntent): number {
   if (theme.id === 'consultant' && intent.styleTags.some((tag) => ['商务', '专业'].includes(tag))) score += 16;
   if (theme.id === 'cornflower' && intent.styleTags.some((tag) => ['教育', '活泼'].includes(tag))) score += 16;
   if (theme.id === 'blues' && intent.styleTags.some((tag) => ['商务', '科技', '奢华'].includes(tag))) score += 12;
+  if (theme.id === 'coral-glow' && intent.styleTags.includes('情感')) score += 22;
+  if (theme.id === 'ashrose' && intent.styleTags.includes('情感')) score += 14;
 
   // White/minimal themes are only preferred when the user explicitly asks for them.
   if (theme.colorFamily === 'whiteGray' && !prefersWhiteTheme) {
-    score -= 28;
+    score -= 44;
   }
   if (theme.id === 'howlite' && !prefersWhiteTheme) {
-    score -= 36;
+    score -= 64;
   }
   if ((theme.id === 'default-light' || theme.id === 'gleam') && !prefersWhiteTheme) {
-    score -= 14;
+    score -= 32;
   }
 
   return score;

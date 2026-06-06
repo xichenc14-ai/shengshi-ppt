@@ -161,6 +161,55 @@ describe('POST /api/outline', () => {
     expect(data.imageMode).toBe('web');
   });
 
+  it('should default smart mode to pexels for generic business content when user does not specify an image source', async () => {
+    vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
+      title: '季度经营汇报',
+      scene: '通用',
+      themeId: 'consultant',
+      tone: 'professional',
+      imageMode: 'theme-img',
+      slides: [{ title: '封面', content: ['测试'] }, { title: '结尾', content: ['完成'] }],
+    }));
+
+    const res = await POST(new Request('http://localhost/api/outline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '127.0.0.31' },
+      body: JSON.stringify({
+        inputText: '做一份季度经营汇报，5页，突出专业可信',
+        auto: true,
+      }),
+    }) as unknown as NextRequest);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.themeId).toBe('consultant');
+    expect(data.imageMode).toBe('web');
+  });
+
+  it('should map romantic smart-mode content to wedding scene and avoid white-default drift', async () => {
+    vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
+      title: '遇见你',
+      scene: '通用',
+      themeId: 'howlite',
+      tone: 'professional',
+      imageMode: 'theme-img',
+      slides: [{ title: '封面', content: ['测试'] }, { title: '结尾', content: ['完成'] }],
+    }));
+
+    const res = await POST(new Request('http://localhost/api/outline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '127.0.0.32' },
+      body: JSON.stringify({
+        inputText: '做一份遇见你相知相守的故事分享，5页，浪漫一点',
+        auto: true,
+      }),
+    }) as unknown as NextRequest);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.scene).toBe('婚礼庆典');
+    expect(data.themeId).toBe('coral-glow');
+    expect(data.imageMode).toBe('ai');
+  });
+
   it('should recognize white minimal style and prefer howlite theme in smart mode', async () => {
     vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
       title: '省心PPT介绍',
@@ -182,7 +231,7 @@ describe('POST /api/outline', () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.themeId).toBe('howlite');
-    expect(data.imageMode).toBe('theme-img');
+    expect(data.imageMode).toBe('web');
   });
 
   it('should default to ai image mode for creative tech smart mode when user does not specify image source', async () => {
