@@ -7,15 +7,6 @@ import { resolveSmartThemeId } from '@/lib/smart-theme-matcher';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-const THEMEACCENT_HIGH_RISK_THEMES = new Set([
-  'howlite',
-  'default-light',
-  'ash',
-  'breeze',
-  'commons',
-  'finesse',
-]);
-const LIGHT_MINIMAL_STYLE_RE = /(白色简约|白色极简|纯白简约|简约白|极简白|白底|白色风格|极简风|浅色极简|简约风|米绿|优雅米绿)/i;
 const PPTX_SAFE_ICON_RULES = `【PPTX安全图标与字体规范-最高优先级】
 - PPTX下载必须离线完整显示，禁止使用Gamma Icons、Font Awesome、Material Icons、Ionicons、web SVG图标、外部图片型图标或任何需要远程加载的装饰图标。
 - 要点标记必须使用PPTX稳定元素：圆形/胶囊形/数字徽章/短线/分隔线/色块/Unicode文字符号，确保导出PPTX后不出现破图、红叉、缺图图标。
@@ -518,25 +509,6 @@ export async function POST(request: NextRequest) {
         ? (imageOptions as Record<string, unknown>)
         : undefined
     );
-    // 根因修复：在部分浅色极简主题上，themeAccent 更容易出现“生成图像错误/空占位框”。
-    // 对这些高风险主题自动切换到更稳定的 Pexels 图源，避免空图占位。
-    if (
-      finalImageOptions?.source === 'themeAccent'
-      && THEMEACCENT_HIGH_RISK_THEMES.has(String(finalThemeId || '').toLowerCase())
-    ) {
-      finalImageOptions.source = 'pexels';
-      console.warn(
-        `[Gamma] THEMEACCENT_THEME_FALLBACK theme=${finalThemeId} source=themeAccent -> pexels`
-      );
-    }
-    if (
-      finalImageOptions?.source === 'themeAccent'
-      && LIGHT_MINIMAL_STYLE_RE.test(String(finalInputText || ''))
-    ) {
-      finalImageOptions.source = 'pexels';
-      console.warn('[Gamma] LIGHT_STYLE_THEMEACCENT_FALLBACK source=themeAccent -> pexels');
-    }
-
     const instructions = INSTRUCTION_TEMPLATES[finalTone] || INSTRUCTION_TEMPLATES.professional;
     // P0修复：追加全局视觉隐喻（如果提供）
     const metaphorAppend = visualMetaphor
@@ -570,7 +542,7 @@ export async function POST(request: NextRequest) {
       // 🚨 V6修复：追加CRITICAL强制指令，封锁Gamma的发散权限
       finalAdditionalInstructions += '\n\n【省心定制-强化规则】\n严格保持原文结构,每页内容不超过3-4个要点,用---分页的位置必须保留,不要自动合并或拆分页面。\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作、扩写或修改任何事实信息。严格按照提供的Markdown层级和\'---\'分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。保持所有 \'>\' 作为演讲者备注不做展示。';
       if (isThemeAccentMode && imagePolicy.allowThemeAccentOnKeyPages) {
-      finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页只有在主题强调图已真实显示时才使用图片；若无法稳定出图，请删除图片容器并切换为无图文本布局，增强图标/色块，不得保留空图片框。内容页禁止使用 Emphasize 大图布局和固定图片槽，默认改用插图式小图或无图版式。';
+      finalAdditionalInstructions += '\n\n【主题套图策略】\n严格使用 themeAccent，不得切换为 Pexels、AI 图或其它图片源。主题强调图仅可作为已经真实加载成功的背景装饰或插图；禁止使用 Emphasize 大图模板、固定图片槽、空白图片框和图片占位符。若主题图不可用，必须删除整个图片元素及容器，改用完整的文字、图标、色块布局。';
       }
       if (Boolean(strictPreserve)) {
         finalAdditionalInstructions += '\n\n【严格保真开关】\n禁止改写或重命名标题；禁止添加“续页”后缀；禁止在正文中注入填充提示语或额外说明。';
@@ -581,7 +553,7 @@ export async function POST(request: NextRequest) {
         }
       }
     } else if (isThemeAccentMode) {
-      finalAdditionalInstructions += '\n\n【主题套图策略】\n首页、目录页、过渡页、结束页只有在主题强调图已真实显示时才使用图片；内容页默认不使用 Emphasize 大图布局，只在图片真实可见时补充插图。若图片不可用，必须删除图片容器并改成纯文字+图标布局，禁止空图片框和固定图片槽。';
+      finalAdditionalInstructions += '\n\n【主题套图策略】\n严格使用 themeAccent，不得切换为 Pexels、AI 图或其它图片源。主题强调图仅可作为已经真实加载成功的背景装饰或插图；禁止使用 Emphasize 大图模板、固定图片槽、空白图片框和图片占位符。若主题图不可用，必须删除整个图片元素及容器，改用完整的文字、图标、色块布局。';
     } else {
       finalAdditionalInstructions += '\n\n【Pexels/AI 关键页策略】\n封面、目录页、过渡页、结束页优先使用当前所选图片来源作为主图；若取图或生成失败，直接删除图片容器并改用文字+图标+色块完成页面，不允许回退成 themeAccent，更不允许出现缺图图标、灰框或空白图片位。内容页默认使用插入式图片或无图，不做强调大图占位。';
     }

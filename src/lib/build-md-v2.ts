@@ -319,9 +319,10 @@ export function buildAdditionalInstructions(
 首页、目录页、过渡页、结束页通过大标题、图标、色块、留白完成强调布局；内容页默认无图。`;
   } else if (imageMode === 'theme-img' || imageMode === 'theme') {
     imageRules = `\n【配图：主题套图模式】
-使用 Gamma 内置 Emphasize 强调布局图（主题装饰性图片，免费），
-配合内置图标，视觉丰富且无需额外 credits
-每页使用不同的强调布局，保持全演示视觉多样性`;
+优先使用 Gamma 内置 themeAccent 主题强调图（免费）。
+封面、目录、章节过渡和结束页只有在主题图已成功加载且可见时才使用 Emphasize 布局。
+内容页默认使用无图、图标或色块布局，不创建固定图片槽；确需配图时仅保留真实可见的插入式图片。
+若主题图不可用，必须删除图片元素及其外层容器，改用大字、图标和色块完成页面，禁止空白图片框、灰框或缺图图标`;
   }
 
   const languageRules = `\n【语言】

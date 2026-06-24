@@ -6,6 +6,7 @@ const MINIMAX_API_KEY = normalizeProviderKey(process.env.MINIMAX_API_KEY);
 
 // MiniMax 的 API 格式兼容 OpenAI，同时支持 vision
 const MINIMAX_BASE = 'https://api.minimaxi.com/v1';
+export const DEFAULT_MINIMAX_TEXT_MODEL = 'MiniMax-M2.7';
 
 export interface MiniMaxMessage {
   role: 'user' | 'assistant' | 'system';
@@ -26,6 +27,14 @@ export interface MiniMaxOptions {
   timeoutMs?: number;
 }
 
+export function resolveMiniMaxTextModel(model?: string): string {
+  const requested = model?.trim();
+  if (!requested || /^minimax-m3(?:$|[-.])/i.test(requested)) {
+    return DEFAULT_MINIMAX_TEXT_MODEL;
+  }
+  return requested;
+}
+
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -41,12 +50,12 @@ export async function callMiniMax(
   options: MiniMaxOptions = {}
 ): Promise<string> {
   const {
-    model = 'MiniMax-M2.7',
     maxTokens = 8192,
     temperature = 0.7,
     system,
     timeoutMs = 60000,
   } = options;
+  const model = resolveMiniMaxTextModel(options.model);
 
   if (!MINIMAX_API_KEY) {
     throw new Error('MiniMax API Key 未配置（MINIMAX_API_KEY）');

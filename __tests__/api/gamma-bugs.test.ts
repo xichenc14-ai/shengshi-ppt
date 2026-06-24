@@ -108,7 +108,7 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
   });
 
   // ===== Bug 2: imageOptions source mapping =====
-  it('BUG-2: imageOptions.source should be correctly mapped from imageMode', async () => {
+  it('BUG-2: theme image mode should preserve the selected themeAccent source', async () => {
     // Arrange
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -116,7 +116,6 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
       json: async () => ({ generationId: 'test-gen-123' }),
     });
 
-    // Act - Test theme-img mode (should map to themeAccent for light themes)
     const res = await POST(mockPostRequest({
       inputText: '# Test',
       imageMode: 'theme-img',
@@ -130,11 +129,12 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
     const fetchCall = mockFetch.mock.calls[0];
     const calledBody = JSON.parse(fetchCall[1].body as string);
     
-    // themeId=consultant is NOT in darkThemes set, should keep themeAccent
     expect(calledBody.imageOptions.source).toBe('themeAccent');
+    expect(String(calledBody.additionalInstructions)).toContain('严格使用 themeAccent');
+    expect(String(calledBody.additionalInstructions)).toContain('禁止使用 Emphasize 大图模板');
   });
 
-  it('BUG-2b: imageOptions.source should keep themeAccent for dark themes when user selects theme-img', async () => {
+  it('BUG-2b: dark themes should preserve themeAccent output', async () => {
     // Arrange
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -152,7 +152,6 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
 
     expect(res.status).toBe(200);
 
-    // Assert: 用户明确选择 theme-img 时，深色主题也应保持 themeAccent
     const fetchCall = mockFetch.mock.calls[0];
     const calledBody = JSON.parse(fetchCall[1].body as string);
     expect(calledBody.imageOptions.source).toBe('themeAccent');
@@ -179,7 +178,7 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
     expect(calledBody.imageOptions.source).toBe('pexels');
   });
 
-  it('BUG-2d: themeAccent should fallback to pexels on high-risk light themes', async () => {
+  it('BUG-2d: light themes should also preserve explicit themeAccent selection', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -196,7 +195,7 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
     expect(res.status).toBe(200);
     const fetchCall = mockFetch.mock.calls[0];
     const calledBody = JSON.parse(fetchCall[1].body as string);
-    expect(calledBody.imageOptions.source).toBe('pexels');
+    expect(calledBody.imageOptions.source).toBe('themeAccent');
   });
 
   it('BUG-2e: explicit pexels mode should not instruct key pages to fallback to themeAccent', async () => {
@@ -219,6 +218,36 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
     expect(String(calledBody.additionalInstructions)).not.toContain('允许回退为 themeAccent');
     expect(String(calledBody.additionalInstructions)).toContain('不允许回退成 themeAccent');
     expect(String(calledBody.additionalInstructions)).not.toContain('若取图失败可回退主题图');
+  });
+
+  it('BUG-2e-regression: theme image mode must not force empty image slots', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ generationId: 'test-gen-theme-no-placeholder' }),
+    });
+
+    const res = await POST(mockPostRequest({
+      inputText: '# Test',
+      imageMode: 'theme-img',
+      themeId: 'consultant',
+      tone: 'professional',
+      textMode: 'preserve',
+      strictPreserve: true,
+    }));
+
+    expect(res.status).toBe(200);
+    const fetchCall = mockFetch.mock.calls[0];
+    const calledBody = JSON.parse(fetchCall[1].body as string);
+    const instructions = String(calledBody.additionalInstructions);
+    expect(calledBody.imageOptions.source).toBe('themeAccent');
+    expect(instructions).toContain('严格使用 themeAccent');
+    expect(instructions).toContain('禁止使用 Emphasize 大图模板');
+    expect(instructions).toContain('不要为了满足配图数量而创建空图片槽');
+    expect(instructions).toContain('必须删除整个图片元素和其外层容器');
+    expect(instructions).not.toContain('每页使用不同的强调布局');
+    expect(instructions).not.toContain('补足可见主图');
+    expect(instructions).not.toContain('禁止输出纯文字大白板');
   });
 
   it('BUG-2f: locked blue-theme intent should override conflicting white theme payload', async () => {

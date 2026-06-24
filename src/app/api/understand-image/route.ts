@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { understandImage } from '@/lib/image-understand';
 import { rateLimit } from '@/lib/rate-limit';
 import { createClient } from '@supabase/supabase-js';
+import { getSession } from '@/lib/session';
+import { getAttachmentPolicy, isPaidPlan, type AttachmentMode } from '@/lib/attachment-policy';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -10,8 +12,7 @@ function getSupabase() {
   return createClient(url, key);
 }
 
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_DAILY_UPLOADS = 10; // 单用户每日上传限制
 
 export async function POST(request: NextRequest) {
@@ -23,25 +24,44 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { image, mimeType } = await request.json();
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.user?.id) {
+      return NextResponse.json({ error: '请先登录' }, { status: 401 });
+    }
+
+    const { image, mimeType, mode: rawMode } = await request.json();
+    const mode: AttachmentMode = rawMode === 'smart' ? 'smart' : 'direct';
+    if (mode === 'smart' && !isPaidPlan(session.user.plan_type)) {
+      return NextResponse.json({ error: '省心模式为会员专享功能' }, { status: 403 });
+    }
+    const policy = getAttachmentPolicy(session.user.plan_type, mode);
+    if (policy.maxImageBytes <= 0) {
+      return NextResponse.json({ error: '图片附件为会员能力' }, { status: 403 });
+    }
+    const dailyLimit = rateLimit(`understand_daily:${session.user.id}`, {
+      windowMs: 24 * 60 * 60 * 1000,
+      maxRequests: MAX_DAILY_UPLOADS,
+    });
+    if (!dailyLimit.allowed) {
+      return NextResponse.json({ error: `每日图片解析上限${MAX_DAILY_UPLOADS}次，明天再来吧` }, { status: 429 });
+    }
 
     if (!image || !mimeType) {
       return NextResponse.json({ error: '缺少图片数据' }, { status: 400 });
     }
 
     // 每日上传总量限制
-    const sessionId = request.headers.get('x-session-id') || ip;
+    const sessionId = session.user.id;
     const sb = getSupabase();
     if (sb) {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-      const { data: uploads } = await sb
+      const { count } = await sb
         .from('image_uploads')
-        .select('id')
+        .select('id', { count: 'exact', head: true })
         .eq('session_id', sessionId)
-        .gte('created_at', todayStart.toISOString())
-        .limit(1);
-      if (uploads && uploads.length >= MAX_DAILY_UPLOADS) {
+        .gte('created_at', todayStart.toISOString());
+      if ((count || 0) >= MAX_DAILY_UPLOADS) {
         return NextResponse.json({ error: `每日上传上限${MAX_DAILY_UPLOADS}次，明天再来吧` }, { status: 429 });
       }
     }
@@ -53,11 +73,18 @@ export async function POST(request: NextRequest) {
 
     // Size check (base64 encoded: ~4/3 of original)
     const estimatedBytes = Math.ceil((image.length * 3) / 4);
-    if (estimatedBytes > MAX_IMAGE_SIZE) {
-      return NextResponse.json({ error: '图片过大，请上传5MB以内的图片' }, { status: 413 });
+    if (estimatedBytes > policy.maxImageBytes) {
+      return NextResponse.json({ error: '图片过大，请上传2.5MB以内的图片' }, { status: 413 });
     }
 
     const text = await understandImage(image, mimeType);
+    if (sb) {
+      await sb.from('image_uploads').insert({
+        session_id: sessionId,
+        mime_type: mimeType,
+        size_bytes: estimatedBytes,
+      }).then(() => undefined);
+    }
     return NextResponse.json({ text });
   } catch (error: unknown) {
     console.error('Understand image error:', error);

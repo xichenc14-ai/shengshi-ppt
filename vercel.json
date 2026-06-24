@@ -2,6 +2,19 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "regions": ["sfo1"],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.xinppt.cn"
+        }
+      ],
+      "destination": "https://xinppt.cn/:path*",
+      "permanent": true
+    }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",

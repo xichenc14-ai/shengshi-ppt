@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
+
+vi.mock('@/lib/session', () => ({
+  getSession: vi.fn().mockResolvedValue({
+    isLoggedIn: true,
+    user: { id: 'test-user', plan_type: 'shengxin' },
+  }),
+}));
+
 import { POST } from '@/app/api/parse-file/route';
 import { LIMITS } from '@/lib/input-validation';
 
@@ -74,17 +82,16 @@ describe('POST /api/parse-file', () => {
     expect(data.fileName).toBe('test.md');
   });
 
-  it('should handle unsupported file types gracefully', async () => {
+  it('should reject unsupported file types', async () => {
     const formData = mockFormData('test.xyz', 'some content', 'application/octet-stream');
     const req = new Request('http://localhost/api/parse-file', {
       method: 'POST',
       body: formData,
     });
     const res = await POST(asNextRequest(req));
-    // Unsupported types return a generic text extraction
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(400);
     const data = await res.json();
-    expect(data.text).toBeDefined();
+    expect(data.error).toContain('格式不支持');
   });
 
   it('should return file metadata', async () => {

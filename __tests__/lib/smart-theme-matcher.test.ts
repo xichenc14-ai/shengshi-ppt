@@ -43,7 +43,47 @@ describe('resolveSmartThemeId', () => {
     });
 
     expect(['howlite', 'default-light', 'gleam']).not.toContain(match?.themeId);
-    expect(match?.themeId).toBe('consultant');
+    expect(match?.themeId).toBe('dune');
+  });
+
+  it('uses 雅致米绿 as the no-signal default', () => {
+    const match = resolveSmartThemeId({
+      text: '帮我整理一份演示文稿',
+    });
+
+    expect(match.themeId).toBe('finesse');
+    expect(match.locked).toBe(false);
+  });
+
+  it('matches travel content by scene and elements', () => {
+    const match = resolveSmartThemeId({
+      text: '香港五日游攻略，包含城市漫步、景点行程和地道美食',
+      tone: 'casual',
+    });
+
+    expect(['finesse', 'elysia', 'oasis']).toContain(match.themeId);
+    expect(match.themeId).not.toBe('consultant');
+  });
+
+  it('matches AI data content to a technology theme', () => {
+    const match = resolveSmartThemeId({
+      text: '人工智能产品的数据分析与可视化发布报告',
+      tone: 'bold',
+    });
+
+    expect(['verdigris', 'aurora', 'blue-steel']).toContain(match.themeId);
+  });
+
+  it.each([
+    ['年度工作复盘与明年规划', ['dune', 'gold-leaf', 'blues', 'marine']],
+    ['中学课堂教学课件', ['cornflower', 'vanilla', 'pistachio', 'zephyr']],
+    ['护肤品牌新品发布方案', ['ashrose', 'coral-glow', 'creme', 'wine', 'gamma', 'atmosphere']],
+    ['医疗健康科普与康复指南', ['seafoam', 'sage', 'tranquil', 'vanilla']],
+    ['非遗古镇传统文化介绍', ['terracotta', 'kraft', 'cornfield', 'wine']],
+  ])('classifies content profile: %s', (text, expectedThemes) => {
+    const match = resolveSmartThemeId({ text });
+    expect(expectedThemes).toContain(match.themeId);
+    expect(match.themeId).not.toBe('consultant');
   });
 
   it('matches romantic content to a non-white emotional theme', () => {

@@ -195,7 +195,7 @@
 | `/api/outline` | POST | AI生成PPT大纲 | inputText, slideCount, textMode, auto | {title, slides[], themeId, tone, imageMode} | 400/429/500, AI 3级fallback |
 | `/api/gamma` | POST | 创建Gamma生成任务 | inputText, textMode, format, numCards, exportAs, themeId, additionalInstructions, imageOptions | {generationId, config, credits} | 400/429/502, 3次429退避 |
 | `/api/gamma` | GET | 查询Gamma生成状态 | ?id={generationId} | {status, exportUrl, gammaUrl, credits} | 400/502/500 |
-| `/api/gamma-direct` | POST | 直通模式(跳过大纲) | inputText, themeId, numCards, tone, textMode, exportAs | {generationId, credits} | 400/429/502, 3次退避 |
+| `/api/gamma-direct` | POST | 专业模式(跳过大纲) | inputText, themeId, numCards, tone, textMode, exportAs | {generationId, credits} | 400/429/502, 3次退避 |
 | `/api/parse-file` | POST | 服务端文件解析 | FormData(file) | {text, fileName, fileSize, charCount} | 400/429/500, 双引擎PDF |
 | `/api/smart-outline` | POST | 省心模式V3(未使用?) | inputText, uploadedFiles[] | {analysis, config, gammaScript} | 400/429/500 |
 
@@ -503,7 +503,7 @@ v10.13 重写说明(Git commit message):
 |------|------|------|
 | `src/app/page.tsx` | 1993 | 前端主组件(landing+input+outline+generating+result) |
 | `src/app/api/gamma/route.ts` | ~300 | Gamma生成创建+状态查询 |
-| `src/app/api/gamma-direct/route.ts` | ~250 | Gamma直通模式 |
+| `src/app/api/gamma-direct/route.ts` | ~250 | Gamma专业模式 |
 | `src/app/api/outline/route.ts` | ~500 | AI大纲生成(含3级fallback+智能模式) |
 | `src/app/api/parse-file/route.ts` | ~250 | 服务端文件解析 |
 | `src/app/api/download-pdf/route.ts` | ~180 | PDF下载代理 |

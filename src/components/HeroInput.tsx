@@ -62,7 +62,7 @@ export default React.memo(function HeroInput({
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
             </svg>
           </button>
-          <input ref={fileRef} type="file" multiple accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.ppt,.pptx" onChange={async e => { if (e.target.files?.length) { const processed = await fileProcess(e.target.files); setFiles((prev: UploadedFile[]) => [...prev, ...processed]); } e.target.value = ''; }} className="hidden" />
+          <input ref={fileRef} type="file" multiple accept=".txt,.md,.docx,.pdf,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.pptx" onChange={async e => { if (e.target.files?.length) { const processed = await fileProcess(e.target.files); setFiles((prev: UploadedFile[]) => [...prev, ...processed]); } e.target.value = ''; }} className="hidden" />
 
           {files.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -142,7 +142,8 @@ export default React.memo(function HeroInput({
                     <option value="noImages">极简无图</option>
                     <option value="theme-img">主题套图</option>
                     <option value="web">Pexels图库</option>
-                    <option value="ai">AI配图 ✨</option>
+                    <option value="ai">AI定制图 ✨</option>
+                    <option value="ai-pro">AI尊享图 👑</option>
                   </select>
                 </div>
                 <div>

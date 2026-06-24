@@ -1,48 +1,72 @@
 'use client';
 
-import React from 'react';
+import {
+  Briefcase,
+  ChalkboardTeacher,
+  GraduationCap,
+  Megaphone,
+  PresentationChart,
+  RocketLaunch,
+  Scroll,
+  Video,
+} from '@phosphor-icons/react';
 
 const SCENES = [
-  { emoji: '📊', title: '工作汇报', desc: '周报、月报、季度总结，一键生成专业汇报' },
-  { emoji: '💼', title: '商业路演', desc: '融资BP、产品推介、招商方案，逻辑清晰' },
-  { emoji: '🎓', title: '教学课件', desc: '课程大纲、培训材料、信息讲解，排版规范' },
-  { emoji: '📑', title: '毕业答辩', desc: '论文答辩、课题汇报，重点突出、顺利过关' },
-  { emoji: '🎉', title: '活动策划', desc: '年会、发布会、品牌活动，创意满分' },
-  { emoji: '🚀', title: '产品发布', desc: '新品推介、功能展示，让产品自己说话' },
-  { emoji: '🏛️', title: '政府报告', desc: '体制内汇报、政策解读，格式规范' },
-  { emoji: '▶️', title: '自媒体课件', desc: '知识付费、教程视频脚本，结构清晰' },
+  { title: '工作汇报', Icon: PresentationChart },
+  { title: '商业路演', Icon: Briefcase },
+  { title: '教学课件', Icon: ChalkboardTeacher },
+  { title: '毕业答辩', Icon: GraduationCap },
+  { title: '活动策划', Icon: Megaphone },
+  { title: '产品发布', Icon: RocketLaunch },
+  { title: '政府报告', Icon: Scroll },
+  { title: '自媒体课件', Icon: Video },
+];
+
+const STEPS = [
+  ['01', '描述需求', '输入主题或上传资料'],
+  ['02', '智能成稿', '自动完成结构与设计'],
+  ['03', '下载编辑', '导出 PPTX 继续调整'],
 ];
 
 export default function SceneCards() {
   return (
-    <section className="py-16 md:py-22 relative overflow-hidden" id="scenes">
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/58 to-indigo-50/35" />
-      <span className="sx-crystal hidden md:block" style={{ '--size': '86px', '--rotate': '18deg', '--opacity': '0.32', left: '4%', top: '18%' } as React.CSSProperties} />
-      <span className="sx-crystal hidden md:block" style={{ '--size': '58px', '--rotate': '-22deg', '--opacity': '0.28', right: '6%', bottom: '14%' } as React.CSSProperties} />
+    <section className="sx-art-section relative scroll-mt-20 py-12 md:scroll-mt-24 md:py-20" id="features">
+      <div className="sx-art-orb sx-art-orb-a" aria-hidden="true" />
+      <div className="sx-art-orb sx-art-orb-b" aria-hidden="true" />
 
-      <div className="relative max-w-6xl mx-auto px-4 md:px-6">
-        <div className="text-center mb-10">
-          <h2 className="text-2xl md:text-3xl font-black text-gray-900 mb-2">适用于各种场景</h2>
-          <p className="text-sm text-gray-400">无论什么需求，都能快速生成高质量PPT</p>
+      <div className="relative mx-auto max-w-6xl px-5 md:px-8">
+        <div className="mx-auto mb-7 max-w-2xl text-center md:mb-11">
+          <span className="sx-section-kicker">常用场景 · 简单三步</span>
+          <h2 className="mt-4 text-[27px] font-black tracking-[-0.035em] text-slate-950 md:text-4xl">从想法，到一份完整演示</h2>
+          <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500 md:text-[15px]">选择常用场景，三步完成专业 PPT。</p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-          {SCENES.map((s, i) => (
-            <div
-              key={i}
-              className="group sx-glass rounded-[22px] p-4 md:p-5 text-left hover:-translate-y-1 transition-all duration-300 cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-white to-indigo-50 border border-indigo-100/70 shadow-lg shadow-indigo-100/50 flex items-center justify-center text-2xl group-hover:scale-105 transition-transform">
-                  {s.emoji}
+        <div className="sx-showcase-card overflow-hidden rounded-[30px]">
+          <div className="p-4 sm:p-7 md:p-9">
+            <div className="grid grid-cols-4 gap-2.5 md:grid-cols-8 md:gap-3">
+              {SCENES.map(({ title, Icon }) => (
+                <div key={title} className="sx-scene-icon-tile group">
+                  <span className="sx-scene-icon">
+                    <Icon size={22} weight="duotone" aria-hidden="true" />
+                  </span>
+                  <p className="mt-2 text-center text-[11px] font-black leading-4 text-slate-700 md:text-xs">{title}</p>
                 </div>
-                <div className="min-w-0">
-                  <h3 className="text-sm font-extrabold text-slate-900 mb-1">{s.title}</h3>
-                  <p className="text-xs text-slate-500 leading-relaxed hidden sm:block">{s.desc}</p>
-                </div>
-              </div>
+              ))}
             </div>
-          ))}
+          </div>
+
+          <div className="border-t border-white/80 bg-white/52 px-4 py-6 backdrop-blur-xl sm:px-7 md:px-9 md:py-8">
+            <div className="relative grid grid-cols-3 gap-2 md:gap-6">
+              <span className="absolute left-[16%] right-[16%] top-[18px] h-px bg-gradient-to-r from-blue-300 via-violet-400 to-fuchsia-300" aria-hidden="true" />
+              {STEPS.map(([num, title, desc]) => (
+                <div key={num} className="relative z-10 text-center">
+                  <span className="sx-step-number mx-auto">{num}</span>
+                  <h3 className="mt-3 text-[13px] font-black text-slate-900 md:text-base">{title}</h3>
+                  <p className="mt-1 text-[10px] leading-4 text-slate-400 md:text-xs md:leading-5">{desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </section>

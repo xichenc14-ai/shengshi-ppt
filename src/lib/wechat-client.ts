@@ -18,7 +18,7 @@ export function getWechatAuthURL(state?: string) {
   const appId = process.env.WECHAT_APP_ID;
   if (!appId) return null;
 
-  const redirectUri = encodeURIComponent(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://shengxinppt.lol'}/api/wechat/callback`);
+  const redirectUri = encodeURIComponent(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://xinppt.cn'}/api/wechat/callback`);
   const scope = 'snsapi_login';
   const _state = state || Math.random().toString(36).substring(2, 15);
 
@@ -124,7 +124,7 @@ export async function findOrCreateWechatUser(
     .insert({
       wechat_openid: openid,
       phone: `wechat_${openid.substring(0, 8)}`,
-      credits: 50,
+      credits: 40,
       plan_type: 'free',
       nickname: nickname || '微信用户',
       avatar_url: headimgurl || null,
@@ -142,9 +142,9 @@ export async function findOrCreateWechatUser(
   await sb.from('credit_transactions').insert({
     user_id: newUser.id,
     amount: 50,
-    balance_after: 50,
+    balance_after: 40,
     type: 'signup_gift',
-    description: '微信注册赠送50积分',
+    description: '微信注册赠送40积分',
   });
 
   return {

@@ -7,6 +7,6 @@ export default function robots(): MetadataRoute.Robots {
       allow: '/',
       disallow: ['/api/', '/account'],
     },
-    sitemap: 'https://shengxinppt.lol/sitemap.xml',
+    sitemap: 'https://xinppt.cn/sitemap.xml',
   };
 }

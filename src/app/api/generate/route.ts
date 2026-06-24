@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Presentation } from '@/lib/types';
+import { estimateGenerationCredits } from '@/lib/generation-credits';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -8,9 +9,6 @@ function getSupabase() {
   if (!url || !key) return null;
   return createClient(url, key);
 }
-
-// 套餐积分配置（与 payment/route.ts 保持一致）
-const BASE_CREDIT_PER_PAGE = 4;
 
 type DeductCreditsRpcResult = { new_balance?: number };
 type ParsedSlideLike = {
@@ -26,14 +24,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 function calcCredits(numPages: number, imageSource: string, imageModel?: string, estimatedImages?: number): number {
-  let total = numPages * BASE_CREDIT_PER_PAGE;
-  if (imageSource === 'aiGenerated') {
-    const HIGH_MODELS = ['imagen-3-pro', 'flux-1-pro', 'ideogram-v3-turbo', 'luma-photon-1', 'leonardo-phoenix', 'flux-kontext-pro', 'imagen-4-pro', 'ideogram-v3', 'gemini-2.5-flash-image'];
-    const perImage = (imageModel && HIGH_MODELS.includes(imageModel)) ? 20 : 4;
-    const count = estimatedImages ?? Math.ceil(numPages / 2);
-    total += count * perImage;
-  }
-  return total;
+  return estimateGenerationCredits({ numPages, imageSource, imageModel, estimatedImages }).totalCredits;
 }
 
 /**

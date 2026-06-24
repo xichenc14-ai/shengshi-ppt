@@ -9,10 +9,10 @@ export interface ValidationResult {
 
 // 允许的文件类型
 export const ALLOWED_EXTENSIONS = [
-  '.txt', '.md', '.pdf', '.doc', '.docx',
-  '.xls', '.xlsx', '.csv',
+  '.txt', '.md', '.pdf', '.docx',
+  '.xlsx', '.csv',
   '.png', '.jpg', '.jpeg', '.webp',
-  '.ppt', '.pptx',
+  '.pptx',
 ];
 
 // 允许的 MIME 类型
@@ -32,22 +32,22 @@ export const LIMITS = {
   // 基于当前 200k context（MiniMax）做保守预算：
   // - 预留系统提示词 / 规则 / 输出 / 安全缓冲
   // - 用户可用文本预算约 10 万字（中英混排场景）
-  MAX_FILE_SIZE: 30 * 1024 * 1024,       // 30MB 单文件
-  MAX_IMAGE_SIZE: 15 * 1024 * 1024,      // 15MB 单张图片
-  MAX_TOTAL_FILE_SIZE: 100 * 1024 * 1024, // 100MB 总文件
-  MAX_FILE_COUNT: 9,                      // 最多9个文件
-  MAX_TEXT_LENGTH: 50000,                 // 总文本预算（用户输入 + 附件提取）
+  MAX_FILE_SIZE: 30 * 1024 * 1024,       // 30MB 会员单文档
+  MAX_IMAGE_SIZE: Math.floor(2.5 * 1024 * 1024), // 2.5MB 单张图片
+  MAX_TOTAL_FILE_SIZE: 100 * 1024 * 1024, // 100MB 会员总文件
+  MAX_FILE_COUNT: 5,                       // 会员最多5个文件
+  MAX_TEXT_LENGTH: 36000,                 // 会员总文本预算（用户输入 + 附件提取）
   MAX_TOPIC_LENGTH: 40000,                // 纯文本输入预算
-  MAX_EXTRACTED_CHARS_PER_FILE: 25000,    // 单文件最多保留 2.5 万字
+  MAX_EXTRACTED_CHARS_PER_FILE: 12000,    // 单文件最多保留 1.2 万字符
 } as const;
 
 export const LIMITS_HUMAN_READABLE = {
-  SUPPORTED_TYPES: '.txt, .md, .pdf, .doc, .docx, .xls, .xlsx, .csv, .png, .jpg, .jpeg, .webp, .ppt, .pptx',
+  SUPPORTED_TYPES: '.txt, .md, .pdf, .docx, .xlsx, .csv, .png, .jpg, .jpeg, .webp, .pptx',
   MAX_FILE_SIZE_LABEL: '30MB',
-  MAX_IMAGE_SIZE_LABEL: '15MB',
+  MAX_IMAGE_SIZE_LABEL: '2.5MB',
   MAX_TOTAL_FILE_SIZE_LABEL: '100MB',
-  MAX_FILE_COUNT_LABEL: '9个',
-  MAX_TEXT_LENGTH_LABEL: '5万字',
+  MAX_FILE_COUNT_LABEL: '5个',
+  MAX_TEXT_LENGTH_LABEL: '3.6万字',
   MAX_TOPIC_LENGTH_LABEL: '4万字',
 } as const;
 

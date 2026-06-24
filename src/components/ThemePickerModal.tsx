@@ -26,7 +26,7 @@ const IMAGE_MODES = [
   { id: 'noImages', name: '极简无图', desc: '免费', color: '#64748B' },
   { id: 'themeAccent', name: '主题套图', desc: '免费', color: '#8B5CF6' },
   { id: 'pexels', name: 'Pexels图库', desc: '免费', color: '#10B981' },
-  { id: 'aiGenerated', name: 'AI定制图', desc: '会员✨', color: '#F59E0B' },
+  { id: 'aiGenerated', name: 'AI定制图', desc: '省心会员💎', color: '#F59E0B' },
 ];
 
 interface Props {

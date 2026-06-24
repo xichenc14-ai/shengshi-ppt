@@ -14,6 +14,8 @@ import {
 import type { DeductCreditsResult, TypedSupabaseClient } from '@/lib/supabase-types';
 import { hashPasswordSecure, isLegacyHash, verifyPassword } from '@/lib/password-utils';
 import { issueAuthProof } from '@/lib/auth-proof';
+import { estimateGenerationCredits } from '@/lib/generation-credits';
+import { getSession } from '@/lib/session';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -36,11 +38,42 @@ type UserLite = {
   password_hash?: string | null;
 };
 
+type LoginUser = {
+  id: string;
+  phone: string;
+  nickname: string;
+  credits: number;
+  plan_type: string;
+  has_subscription?: boolean;
+  is_new?: boolean;
+};
+
+async function completeLogin(user: LoginUser) {
+  const session = await getSession();
+  session.user = {
+    id: user.id,
+    phone: user.phone,
+    nickname: user.nickname,
+    credits: Number(user.credits || 0),
+    plan_type: user.plan_type || 'free',
+  };
+  session.isLoggedIn = true;
+  await session.save();
+  return NextResponse.json({
+    user,
+    authToken: issueAuthProof(user.id),
+  });
+}
+
 type VerifyCodeRow = {
   id: string;
   code: string;
   expires_at: string;
 };
+
+function buildGenerationSettlementDescription(generationId: string): string {
+  return `生成结算-${generationId}`;
+}
 
 // ==================== GET: 检查手机号是否注册 ====================
 export async function GET(req: NextRequest) {
@@ -284,17 +317,14 @@ export async function POST(req: NextRequest) {
         if (patchErr || !patched) {
           return NextResponse.json({ error: '补全账号失败，请稍后重试' }, { status: 500 });
         }
-        return NextResponse.json({
-          user: {
-            id: patched.id,
-            phone: patched.phone,
-            nickname: patched.nickname || username.trim(),
-            credits: patched.credits ?? 0,
-            plan_type: patched.plan_type || 'free',
-            has_subscription: patched.plan_type !== 'free',
-            is_new: false,
-          },
-          authToken: issueAuthProof(patched.id),
+        return completeLogin({
+          id: patched.id,
+          phone: patched.phone,
+          nickname: patched.nickname || username.trim(),
+          credits: patched.credits ?? 0,
+          plan_type: patched.plan_type || 'free',
+          has_subscription: patched.plan_type !== 'free',
+          is_new: false,
         });
       }
 
@@ -312,7 +342,7 @@ export async function POST(req: NextRequest) {
       const insertData: Record<string, unknown> = {
         phone,
         nickname: username.trim(),
-        credits: 50,
+        credits: 40,
         plan_type: 'free',
         is_active: true,
       };
@@ -336,14 +366,18 @@ export async function POST(req: NextRequest) {
 
       try {
         await sb.from('credit_transactions').insert({
-          user_id: newUser.id, amount: 50, balance_after: 50,
-          type: 'signup_gift', description: '注册赠送50积分',
+          user_id: newUser.id, amount: 40, balance_after: 40,
+          type: 'signup_gift', description: '注册赠送40积分',
         });
       } catch (e) { console.warn('[Register] 积分记录失败:', e); }
 
-      return NextResponse.json({
-        user: { id: newUser.id, phone: newUser.phone, nickname: newUser.nickname || username.trim(), credits: 50, plan_type: newUser.plan_type || 'free', is_new: true },
-        authToken: issueAuthProof(newUser.id),
+      return completeLogin({
+        id: newUser.id,
+        phone: newUser.phone,
+        nickname: newUser.nickname || username.trim(),
+        credits: 40,
+        plan_type: newUser.plan_type || 'free',
+        is_new: true,
       });
       
     }
@@ -378,9 +412,14 @@ export async function POST(req: NextRequest) {
         try {
           await sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', u.id);
         } catch (e) { console.warn('[Login] 更新登录时间失败:', e); }
-        return NextResponse.json({
-          user: { id: u.id, phone: u.phone, nickname: u.nickname || '用户', credits: u.credits, plan_type: u.plan_type, has_subscription: u.plan_type !== 'free', is_new: false },
-          authToken: issueAuthProof(u.id),
+        return completeLogin({
+          id: u.id,
+          phone: u.phone,
+          nickname: u.nickname || '用户',
+          credits: u.credits,
+          plan_type: u.plan_type || 'free',
+          has_subscription: u.plan_type !== 'free',
+          is_new: false,
         });
       }
 
@@ -449,9 +488,14 @@ export async function POST(req: NextRequest) {
       }
 
       await sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', u.id);
-      return NextResponse.json({
-        user: { id: u.id, phone: u.phone, nickname: u.nickname || '用户', credits: u.credits, plan_type: u.plan_type, has_subscription: u.plan_type !== 'free', is_new: false },
-        authToken: issueAuthProof(u.id),
+      return completeLogin({
+        id: u.id,
+        phone: u.phone,
+        nickname: u.nickname || '用户',
+        credits: u.credits,
+        plan_type: u.plan_type || 'free',
+        has_subscription: u.plan_type !== 'free',
+        is_new: false,
       });
     }
 
@@ -623,39 +667,50 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ user: updated });
     }
 
-    // ===== 扣积分 =====
-    if (action === 'deduct') {
+    // ===== 生成预算预检 =====
+    if (action === 'estimate_generation') {
       const { userId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
       if (!userId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
-      const BASE_CREDIT_PER_PAGE = 4;
-      let totalCredit = numPages * BASE_CREDIT_PER_PAGE;
+      const breakdown = estimateGenerationCredits({ numPages, imageSource, imageModel, estimatedImages });
+      const { data: user } = await sb.from('users').select('credits').eq('id', userId).single();
+      const balance = Number(user?.credits || 0);
+      return NextResponse.json({
+        success: true,
+        estimate: true,
+        needed: breakdown.totalCredits,
+        balance,
+        sufficient: balance >= breakdown.totalCredits,
+        breakdown,
+      });
+    }
 
-      let imageCreditsPerImage = 0;
-      if (imageSource === 'aiGenerated') {
-        // AI图片：按双生成成本计费，普通4积分/图，高级20积分/图
-        const HIGH_MODELS = ['imagen-3-pro', 'flux-1-pro', 'ideogram-v3-turbo', 'luma-photon-1', 'leonardo-phoenix', 'flux-kontext-pro', 'imagen-4-pro', 'ideogram-v3', 'gemini-2.5-flash-image'];
-        if (imageModel && HIGH_MODELS.includes(imageModel)) {
-          imageCreditsPerImage = 20; // 高级AI图（双生成成本）
-        } else {
-          imageCreditsPerImage = 4; // 普通AI图（双生成成本）
-        }
-      }
+    // ===== 生成完成后结算（幂等） =====
+    if (action === 'settle_generation') {
+      const { userId, generationId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
+      if (!userId || !generationId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
-      // 预估图片数：向上取整，确保扣多不扣少
-      const estimatedImageCount = estimatedImages > 0 ? estimatedImages : Math.ceil(numPages / 2);
-      totalCredit += estimatedImageCount * imageCreditsPerImage;
+      const breakdown = estimateGenerationCredits({ numPages, imageSource, imageModel, estimatedImages });
+      const totalCredit = breakdown.totalCredits;
+      const description = buildGenerationSettlementDescription(String(generationId));
 
-      if (body.estimate) {
+      const { data: existingTx } = await sb
+        .from('credit_transactions')
+        .select('balance_after, amount')
+        .eq('user_id', userId)
+        .eq('type', 'generation')
+        .eq('description', description)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingTx) {
         return NextResponse.json({
-          estimate: true,
-          baseCredits: numPages * BASE_CREDIT_PER_PAGE,
-          imageCredits: estimatedImageCount * imageCreditsPerImage,
-          imageCreditsPerImage,
-          estimatedImages: estimatedImageCount,
-          totalCredits: totalCredit,
-          imageSource,
-          imageModel,
+          success: true,
+          alreadySettled: true,
+          creditsUsed: Math.abs(Number(existingTx.amount || 0)),
+          balance: Number(existingTx.balance_after || 0),
+          breakdown,
         });
       }
 
@@ -670,7 +725,7 @@ export async function POST(req: NextRequest) {
         const { data: rpcResult, error: rpcErr } = await rpc('deduct_credits_atomic', {
           p_user_id: userId,
           p_amount: totalCredit,
-          p_description: `生成PPT-${numPages}页-${imageSource}${imageCreditsPerImage > 0 ? `-${imageCreditsPerImage}积分/图×${estimatedImageCount}张` : ''}-共${totalCredit}积分`,
+          p_description: description,
         });
         if (rpcErr) {
           useFallback = true;
@@ -692,7 +747,7 @@ export async function POST(req: NextRequest) {
         try {
           await sb.from('credit_transactions').insert({
             user_id: userId, amount: -totalCredit, balance_after: newBal,
-            type: 'generation', description: `生成PPT-${numPages}页-共${totalCredit}积分`,
+            type: 'generation', description,
           });
         } catch {}
       }
@@ -706,15 +761,56 @@ export async function POST(req: NextRequest) {
         success: true,
         creditsUsed: totalCredit,
         balance: newBalance,
-        breakdown: {
-          baseCredits: numPages * BASE_CREDIT_PER_PAGE,
-          imageCredits: estimatedImageCount * imageCreditsPerImage,
-          imageCreditsPerImage,
-          estimatedImages: estimatedImageCount,
-          imageSource,
-          imageModel: imageModel || null,
-        },
+        breakdown,
       });
+    }
+
+    // ===== 兼容旧扣分入口 =====
+    if (action === 'deduct') {
+      const { userId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
+      if (!userId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+
+      const breakdown = estimateGenerationCredits({ numPages, imageSource, imageModel, estimatedImages });
+      const totalCredit = breakdown.totalCredits;
+
+      let newBalance: number | null = null;
+      let useFallback = false;
+      try {
+        const typedSb = sb as unknown as TypedSupabaseClient;
+        const rpc = typedSb.rpc as unknown as (
+          fn: string,
+          args?: Record<string, unknown>
+        ) => Promise<{ data: unknown; error: { message?: string } | null }>;
+        const { data: rpcResult, error: rpcErr } = await rpc('deduct_credits_atomic', {
+          p_user_id: userId,
+          p_amount: totalCredit,
+          p_description: `生成PPT-${numPages}页-兼容扣费`,
+        });
+        if (rpcErr) {
+          useFallback = true;
+        } else {
+          newBalance = (rpcResult as DeductCreditsResult)?.new_balance ?? null;
+        }
+      } catch { useFallback = true; }
+
+      if (useFallback) {
+        const { data: updatedRows, error: fbErr } = await sb.from('users').select('credits').eq('id', userId).single();
+        if (fbErr || !updatedRows) return NextResponse.json({ error: '积分扣除失败' }, { status: 500 });
+        if (updatedRows.credits < totalCredit) {
+          return NextResponse.json({ error: '积分不足', needed: totalCredit, balance: updatedRows.credits });
+        }
+        const newBal = updatedRows.credits - totalCredit;
+        const { error: updErr } = await sb.from('users').update({ credits: newBal }).eq('id', userId).eq('credits', updatedRows.credits);
+        if (updErr) return NextResponse.json({ error: '积分扣除失败' }, { status: 500 });
+        newBalance = newBal;
+      }
+
+      if (newBalance === null) {
+        const { data: u } = await sb.from('users').select('credits').eq('id', userId).single();
+        return NextResponse.json({ error: '积分不足', needed: totalCredit, balance: u?.credits || 0 });
+      }
+
+      return NextResponse.json({ success: true, creditsUsed: totalCredit, balance: newBalance, breakdown });
     }
 
     // ===== 积分回滚（生成失败/超时时返还） =====

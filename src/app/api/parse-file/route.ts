@@ -1,12 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { getClientIP, rateLimit } from '@/lib/rate-limit';
-import { LIMITS } from '@/lib/input-validation';
+import { getSession } from '@/lib/session';
+import {
+  getAttachmentPolicy,
+  getFileExtension,
+  isPaidPlan,
+  validateAttachmentMeta,
+  type AttachmentMode,
+} from '@/lib/attachment-policy';
 
 export const runtime = 'nodejs';
 
 type PdfParseResult = { text?: string };
 type PdfTextItem = { str?: string; transform?: number[] };
 type JsZipLike = { loadAsync: (input: Buffer) => Promise<{ files: Record<string, unknown>; file: (path: string) => { async: (format: 'text') => Promise<string> } | null }> };
+const ATTACHMENT_BUCKET = 'temporary-attachments';
+
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -31,6 +47,20 @@ function decodeXmlEntities(text: string): string {
     .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'");
+}
+
+function validateFileSignature(fileName: string, buffer: Buffer): string | null {
+  const extension = getFileExtension(fileName);
+  if (extension === '.pdf' && buffer.subarray(0, 5).toString('ascii') !== '%PDF-') {
+    return 'PDF 文件内容与扩展名不一致';
+  }
+  if (['.docx', '.xlsx', '.pptx'].includes(extension)) {
+    const signature = buffer.subarray(0, 4).toString('hex');
+    if (!['504b0304', '504b0506', '504b0708'].includes(signature)) {
+      return 'Office 文件内容与扩展名不一致';
+    }
+  }
+  return null;
 }
 
 async function parsePdfWithPdfParse(buffer: Buffer): Promise<string> {
@@ -96,37 +126,78 @@ export async function POST(request: NextRequest) {
   const { allowed } = rateLimit(`parse:${ip}`, { windowMs: 60000, maxRequests: 20 });
   if (!allowed) return NextResponse.json({ error: '请求过于频繁' }, { status: 429 });
 
-  try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const skipTables = String(formData.get('skipTables') || '').toLowerCase() === 'true';
+  const session = await getSession();
+  if (!session.isLoggedIn || !session.user?.id) {
+    return NextResponse.json({ error: '请先登录' }, { status: 401 });
+  }
 
-    if (!file) return NextResponse.json({ error: '未提供文件' }, { status: 400 });
-    if (file.size > LIMITS.MAX_FILE_SIZE) {
-      return NextResponse.json({ error: `文件超过${Math.floor(LIMITS.MAX_FILE_SIZE / 1024 / 1024)}MB限制` }, { status: 400 });
+  try {
+    const contentType = request.headers.get('content-type') || '';
+    let fileName = '';
+    let fileSize = 0;
+    let buffer: Buffer;
+    let skipTables = false;
+    let mode: AttachmentMode = 'direct';
+    let storagePath = '';
+
+    if (contentType.includes('application/json')) {
+      const body = await request.json();
+      fileName = String(body?.fileName || '').slice(0, 180);
+      fileSize = Number(body?.fileSize || 0);
+      skipTables = Boolean(body?.skipTables);
+      mode = body?.mode === 'smart' ? 'smart' : 'direct';
+      storagePath = String(body?.storagePath || '');
+      if (!storagePath.startsWith(`${session.user.id}/`)) {
+        return NextResponse.json({ error: '附件路径无效' }, { status: 403 });
+      }
+      const sb = getSupabase();
+      if (!sb) return NextResponse.json({ error: '附件存储服务未配置' }, { status: 503 });
+      const { data, error } = await sb.storage.from(ATTACHMENT_BUCKET).download(storagePath);
+      if (error || !data) return NextResponse.json({ error: '附件读取失败或已过期' }, { status: 400 });
+      buffer = Buffer.from(await data.arrayBuffer());
+      fileSize = buffer.length;
+      await sb.storage.from(ATTACHMENT_BUCKET).remove([storagePath]);
+      storagePath = '';
+    } else {
+      const formData = await request.formData();
+      const file = formData.get('file') as File | null;
+      if (!file) return NextResponse.json({ error: '未提供文件' }, { status: 400 });
+      fileName = file.name;
+      fileSize = file.size;
+      skipTables = String(formData.get('skipTables') || '').toLowerCase() === 'true';
+      mode = String(formData.get('mode') || '') === 'smart' ? 'smart' : 'direct';
+      buffer = Buffer.from(await file.arrayBuffer());
     }
 
-    const fileName = file.name.toLowerCase();
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const policy = getAttachmentPolicy(session.user.plan_type, mode);
+    if (mode === 'smart' && !isPaidPlan(session.user.plan_type)) {
+      return NextResponse.json({ error: '省心模式为会员专享功能' }, { status: 403 });
+    }
+    const metaError = validateAttachmentMeta({ name: fileName, size: fileSize }, policy);
+    if (metaError) return NextResponse.json({ error: metaError }, { status: 400 });
+    const signatureError = validateFileSignature(fileName, buffer);
+    if (signatureError) return NextResponse.json({ error: signatureError }, { status: 400 });
+
+    const lowerFileName = fileName.toLowerCase();
     let text = '';
     let failed = false;
     let error = '';
 
-    if (fileName.endsWith('.pdf')) {
+    if (lowerFileName.endsWith('.pdf')) {
       text = await parsePdf(buffer);
       if (!text) {
         failed = true;
         error = 'PDF 未提取到可用文字（可能是扫描件）';
       }
-    } else if (fileName.endsWith('.csv')) {
+    } else if (lowerFileName.endsWith('.csv')) {
       if (skipTables) {
-        text = `[表格文件已上传: ${file.name}，默认未展开表格明细。若需解析表格，请在需求中明确说明“处理表格数据”。]`;
+        text = `[表格文件已上传: ${fileName}，默认未展开表格明细。若需解析表格，请在需求中明确说明“处理表格数据”。]`;
       } else {
-        text = buffer.toString('utf-8').trim() || `[CSV: ${file.name}，内容为空]`;
+        text = buffer.toString('utf-8').trim() || `[CSV: ${fileName}，内容为空]`;
       }
-    } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+    } else if (lowerFileName.endsWith('.xlsx')) {
       if (skipTables) {
-        text = `[表格文件已上传: ${file.name}，默认未展开表格明细。若需解析表格，请在需求中明确说明“处理表格数据”。]`;
+        text = `[表格文件已上传: ${fileName}，默认未展开表格明细。若需解析表格，请在需求中明确说明“处理表格数据”。]`;
       } else {
       try {
         const XLSX = await import('xlsx');
@@ -136,22 +207,22 @@ export async function POST(request: NextRequest) {
           const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[name]);
           if (csv.trim()) sheets.push(`【${name}】\n${csv}`);
         }
-        text = sheets.join('\n\n') || `[Excel: ${file.name}，无数据]`;
+        text = sheets.join('\n\n') || `[Excel: ${fileName}，无数据]`;
       } catch (e: unknown) {
         failed = true;
         error = `Excel解析失败: ${getErrorMessage(e) || '未知错误'}`;
       }
       }
-    } else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
+    } else if (lowerFileName.endsWith('.docx')) {
       try {
         const mammoth = await import('mammoth');
         const result = await mammoth.extractRawText({ buffer });
-        text = result.value.trim() || `[Word: ${file.name}，内容为空]`;
+        text = result.value.trim() || `[Word: ${fileName}，内容为空]`;
       } catch (e: unknown) {
         failed = true;
         error = `Word解析失败: ${getErrorMessage(e) || '未知错误'}`;
       }
-    } else if (fileName.endsWith('.pptx') || fileName.endsWith('.ppt')) {
+    } else if (lowerFileName.endsWith('.pptx')) {
       try {
         const JSZipModule = await import('jszip');
         const JSZip = (JSZipModule.default ?? JSZipModule) as JsZipLike;
@@ -170,36 +241,36 @@ export async function POST(request: NextRequest) {
             if (ts.length > 0) slides.push(ts.join(' '));
           }
         }
-        text = slides.join('\n\n---\n\n') || `[PPT: ${file.name}，无文本内容]`;
+        text = slides.join('\n\n---\n\n') || `[PPT: ${fileName}，无文本内容]`;
       } catch (e: unknown) {
         failed = true;
         error = `PPT解析失败: ${getErrorMessage(e) || '未知错误'}`;
       }
-    } else if (fileName.endsWith('.txt') || fileName.endsWith('.md')) {
-      text = buffer.toString('utf-8').trim() || `[文件: ${file.name}，内容为空]`;
+    } else if (lowerFileName.endsWith('.txt') || lowerFileName.endsWith('.md')) {
+      text = buffer.toString('utf-8').trim() || `[文件: ${fileName}，内容为空]`;
     } else {
-      text = `[文件: ${file.name}]`;
+      return NextResponse.json({ error: '不支持的附件格式' }, { status: 400 });
     }
 
     if (failed) {
       return NextResponse.json({
         text: '',
-        fileName: file.name,
-        fileSize: file.size,
+        fileName,
+        fileSize,
         charCount: 0,
         failed: true,
         error,
       });
     }
 
-    if (text.length > LIMITS.MAX_EXTRACTED_CHARS_PER_FILE) {
-      text = text.substring(0, LIMITS.MAX_EXTRACTED_CHARS_PER_FILE) + '\n\n[...内容已截断...]';
+    if (text.length > policy.maxExtractedCharsPerFile) {
+      text = text.substring(0, policy.maxExtractedCharsPerFile) + '\n\n[...已按当前套餐提取关键内容...]';
     }
 
     return NextResponse.json({
       text,
-      fileName: file.name,
-      fileSize: file.size,
+      fileName,
+      fileSize,
       charCount: text.length,
       failed: false,
     });

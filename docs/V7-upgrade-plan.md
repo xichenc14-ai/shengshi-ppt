@@ -32,7 +32,7 @@
 - 省心模式（smart）：有 `generateOutline()` → 大纲编辑 → `confirmAndGenerate()`
 
 **改造方案**：
-- **废弃 `generateDirect()` 直通流程**
+- **废弃 `generateDirect()` 旧专业模式流程**
 - 所有模式统一走：输入 → AI生成大纲 → 大纲编辑页 → 确认生成 → 结果
 - 专业模式的"扩充/缩减/保持"选项保留，作为 outline API 的 textMode 参数
 - 大纲编辑页支持：编辑标题、编辑内容、拖拽排序、添加/删除页、重做

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateMinimalOutline } from '@/lib/ppt-param-adapter';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -42,6 +41,8 @@ export async function POST(request: NextRequest) {
 
   const origin = new URL(request.url).origin;
   const forwardIp = request.headers.get('x-forwarded-for') || '';
+  const cookie = request.headers.get('cookie') || '';
+  const authorization = request.headers.get('authorization') || '';
   const inputText = String(body.inputText || '');
   const textLength = inputText.length;
   const paragraphCount = inputText.split(/\n{2,}/).filter(Boolean).length;
@@ -60,7 +61,17 @@ export async function POST(request: NextRequest) {
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const push = (event: OutlineStreamEvent) => controller.enqueue(encodeEvent(event));
+      let closed = false;
+      const push = (event: OutlineStreamEvent) => {
+        if (closed) return false;
+        try {
+          controller.enqueue(encodeEvent(event));
+          return true;
+        } catch {
+          closed = true;
+          return false;
+        }
+      };
 
       try {
         push({
@@ -80,6 +91,8 @@ export async function POST(request: NextRequest) {
           headers: {
             'Content-Type': 'application/json',
             'x-forwarded-for': forwardIp,
+            ...(cookie ? { cookie } : {}),
+            ...(authorization ? { authorization } : {}),
           },
           body: JSON.stringify(body),
           cache: 'no-store',
@@ -96,25 +109,10 @@ export async function POST(request: NextRequest) {
         }
 
         if (!outlineRes.ok || !parsed) {
-          const fallback = generateMinimalOutline(inputText, requestedSlides);
-          push({ type: 'stage', stage: 'polishing', message: '已切换稳态兜底大纲，正在完成...' });
-          push({
-            type: 'complete',
-            data: {
-              title: fallback.title,
-              slides: fallback.slides.map((s, i) => ({
-                id: `stream-fb-${i + 1}`,
-                title: s.title,
-                content: s.bullets,
-                notes: s.notes,
-              })),
-              themeId: 'consultant',
-              tone: 'professional',
-              imageMode: 'theme-img',
-              _fallback: true,
-            },
-          });
-          controller.close();
+          const message = parsed && typeof parsed.error === 'string'
+            ? parsed.error
+            : 'AI 大纲服务暂时不可用，未生成任何大纲，请稍后重试';
+          push({ type: 'error', status: outlineRes.status || 503, message });
           return;
         }
 
@@ -131,27 +129,21 @@ export async function POST(request: NextRequest) {
         await sleep(80);
         push({ type: 'complete', data: parsed });
       } catch (e: unknown) {
-        const fallback = generateMinimalOutline(inputText, requestedSlides);
-        console.warn('[outline/stream] fallback due to error:', getErrorMessage(e));
-        push({ type: 'stage', stage: 'polishing', message: '网络波动，已切换稳态大纲...' });
-        push({
-          type: 'complete',
-          data: {
-            title: fallback.title,
-            slides: fallback.slides.map((s, i) => ({
-              id: `stream-fb-${i + 1}`,
-              title: s.title,
-              content: s.bullets,
-              notes: s.notes,
-            })),
-            themeId: 'consultant',
-            tone: 'professional',
-            imageMode: 'theme-img',
-            _fallback: true,
-          },
-        });
+        console.warn('[outline/stream] generation failed:', getErrorMessage(e));
+        if (!closed) {
+          push({
+            type: 'error',
+            status: 503,
+            message: '大纲生成连接中断，未生成任何大纲，请重试',
+          });
+        }
       } finally {
-        controller.close();
+        if (!closed) {
+          closed = true;
+          try {
+            controller.close();
+          } catch {}
+        }
       }
     },
   });

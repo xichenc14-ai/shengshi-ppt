@@ -44,87 +44,65 @@ const PLANS: Plan[] = [
   {
     id: 'free',
     emoji: '💚',
-    name: '免费体验',
-    desc: '零成本体验AI生成PPT',
-    credits: 50,
+    name: '免费用户',
+    desc: '轻量体验与基础生成',
+    credits: 40,
     maxPages: 8,
-    imageTier: '无收费图',
+    imageTier: '主题套图 / Pexels图库',
     prices: { monthly: 0, annual: 0, annualMonthly: 0, annualSave: '' },
     features: [
-      { text: '每月 50 积分', included: true },
+      { text: '每月赠送 40 积分', included: true },
       { text: '每次最多 8 页', included: true },
-      { text: '免费插图模式', included: true },
-      { text: 'PPTX 导出（带水印）', included: true },
-      { text: '5 个基础主题', included: true },
-      { text: 'AI大纲编辑器', included: false },
-      { text: 'AI生图（2积分/图）', included: false },
-      { text: '高级AI图（20积分/图）', included: false },
+      { text: '图片模型：主题套图、Pexels图库', included: true },
+      { text: '1个附件：文档10MB以内', included: true },
+      { text: '可单独充值积分，不增加会员权益', included: true },
+      { text: 'AI 模型', included: false },
+      { text: 'AI定制图', included: false },
+      { text: 'AI尊享图', included: false },
     ],
     cta: '当前方案',
     ctaDisabled: true,
   },
   {
-    id: 'basic',
+    id: 'shengxin',
     emoji: '💎',
-    name: '普通会员',
+    name: '省心会员',
     badge: '推荐',
-    desc: '职场人的效率利器',
+    desc: '高频日常场景更省心',
     popular: true,
     credits: 500,
     maxPages: 20,
-    imageTier: '普通图',
-    prices: { monthly: 29.9, annual: 299, annualMonthly: 24.9, annualSave: '省60' },
+    imageTier: 'AI定制图',
+    prices: { monthly: 19.9, annual: 199, annualMonthly: 16.6, annualSave: '省39' },
     features: [
       { text: '每月 500 积分', included: true, highlight: true },
       { text: '每次最多 20 页', included: true },
-      { text: 'PPTX 无水印导出', included: true },
-      { text: '全部 50+ 主题', included: true },
-      { text: '免费插图 + 普通AI图', included: true, highlight: true },
-      { text: '文档上传转PPT', included: true },
-      { text: 'AI大纲编辑器', included: false },
-      { text: '高级AI图（20积分/图）', included: false },
+      { text: '图片模型：主题套图、Pexels图库、AI定制图', included: true, highlight: true },
+      { text: '生成完成自动下载 PPTX', included: true },
+      { text: '5个附件：单文档30MB，总计100MB', included: true },
+      { text: 'AI 模型可用', included: true },
+      { text: 'AI尊享图', included: false },
     ],
     cta: '立即开通',
     ctaDisabled: false,
   },
   {
-    id: 'pro',
+    id: 'advanced',
     emoji: '👑',
-    name: '高级会员',
-    desc: '重度用户的首选方案',
-    credits: 1000,
+    name: '尊享会员',
+    desc: '重度创作与团队使用',
+    credits: 1500,
     maxPages: 40,
-    imageTier: '高级图',
+    imageTier: 'AI尊享图',
     prices: { monthly: 49.9, annual: 499, annualMonthly: 41.6, annualSave: '省100' },
     features: [
-      { text: '每月 1000 积分', included: true, highlight: true },
+      { text: '每月 1500 积分', included: true, highlight: true },
       { text: '每次最多 40 页', included: true },
-      { text: 'AI大纲编辑器', included: true, highlight: true },
-      { text: '高级AI生图', included: true, highlight: true },
+      { text: '图片模型全支持：主题套图、Pexels图库、AI定制图、AI尊享图', included: true, highlight: true },
+      { text: '生成完成自动下载 PPTX', included: true },
+      { text: '5个附件：单文档30MB，总计100MB', included: true },
       { text: '优先生成队列', included: true },
-      { text: '全格式导出', included: true },
-      { text: '文档上传转PPT', included: true },
-    ],
-    cta: '立即开通',
-    ctaDisabled: false,
-  },
-  {
-    id: 'vip',
-    emoji: '🏆',
-    name: '尊享会员',
-    desc: '权益全开，无限可能',
-    credits: 2000,
-    maxPages: 60,
-    imageTier: '权益全开',
-    prices: { monthly: 99.9, annual: 999, annualMonthly: 83.3, annualSave: '省199' },
-    features: [
-      { text: '每月 2000 积分', included: true, highlight: true },
-      { text: '每次最多 60 页', included: true, highlight: true },
-      { text: '尊享AI图（20积分/图）', included: true, highlight: true },
-      { text: '权益全开', included: true, highlight: true },
-      { text: '优先生成队列', included: true },
-      { text: '历史记录永久保存', included: true },
-      { text: '专属客服', included: true },
+      { text: '高阶 AI 模型可用', included: true },
     ],
     cta: '立即开通',
     ctaDisabled: false,
@@ -293,7 +271,7 @@ export default function PricingSection() {
             <span className="bg-gradient-to-r from-purple-600 to-amber-500 bg-clip-text text-transparent"> 方案</span>
           </h2>
           <p className="text-gray-500 max-w-md mx-auto">
-            按积分计费，用多少扣多少 · 免费试用，满意再付费
+            三档权益清晰分层，整站统一按积分结算，会员方案重点强化积分额度与图片模型能力
           </p>
           {!paymentEnabled && (
             <p className="mt-3 text-xs font-semibold text-amber-600">
@@ -303,7 +281,7 @@ export default function PricingSection() {
         </div>
 
         {/* Plans */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {PLANS.map((p) => (
             <PlanCard 
               key={p.id} 

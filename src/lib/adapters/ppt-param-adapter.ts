@@ -219,7 +219,8 @@ export function buildGammaImageOptions(
   };
 
   // 关键修复：当图片源不是 aiGenerated 时，必须清除残留 AI 参数。
-  // 否则 source=themeAccent/pexels/noImages 但仍携带 model/style，可能诱发 Gamma 侧异常图片占位。
+  // 否则 source=themeAccent/pexels/noImages 但仍携带 model/style，可能诱发 Gamma 侧错误选图。
+  // 图片来源必须严格保留用户选择，禁止在参数层静默切换到其它来源。
   if (merged.source !== 'aiGenerated') {
     delete (merged as Record<string, unknown>).model;
     delete (merged as Record<string, unknown>).style;
@@ -234,7 +235,7 @@ export function buildGammaImageOptions(
 // ─────────────────────────────────────────────
 
 /**
- * 构建 Gamma API payload（gamma-direct 直通模式）
+ * 构建 Gamma API payload（gamma-direct 专业模式）
  *
  * 单参数宽兼容设计：输入同时包含 normalizeUserInput 规范后的字段
  * 和 gammaFields 调用方自定义字段，全部在一笔对象内传入。

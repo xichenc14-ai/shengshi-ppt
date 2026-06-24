@@ -1,0 +1,8 @@
+backups/
+design-assets/
+/mobile-*.png
+/production-*.png
+/design-qa-comparison.png
+design-qa.md
+docs/
+__tests__/

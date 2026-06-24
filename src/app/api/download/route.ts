@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getClientIP, rateLimit } from '@/lib/rate-limit';
-import { checkDownloadPermission } from '@/lib/membership';
 
 type MutableUserCounters = {
   plan_type?: string | null;
@@ -22,7 +21,7 @@ function getSupabase() {
   return createClient(url, key);
 }
 
-// GET: 检查下载权限（不实际下载）
+// GET: 检查下载能力（当前下载不再单独计费）
 export async function GET(request: NextRequest) {
   const ip = getClientIP(request);
   const { allowed } = rateLimit(`download:${ip}`, { windowMs: 60000, maxRequests: 30 });
@@ -33,10 +32,9 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get('userId');
-  const pageCount = parseInt(searchParams.get('pageCount') || '0');
   const rawFormat = (searchParams.get('format') || 'pptx').toLowerCase();
-  if (rawFormat !== 'pptx') {
-    return NextResponse.json({ error: 'PDF/PNG 下载已关闭，仅支持 PPTX 下载' }, { status: 410 });
+  if (rawFormat !== 'pptx' && rawFormat !== 'pdf') {
+    return NextResponse.json({ error: '仅支持 PPTX / PDF 下载' }, { status: 410 });
   }
 
   if (!userId) return NextResponse.json({ error: '缺少用户ID' }, { status: 400 });
@@ -51,11 +49,10 @@ export async function GET(request: NextRequest) {
 
     if (error || !user) return NextResponse.json({ error: '用户不存在' }, { status: 404 });
 
-    // 检查下载权限
-    const permission = checkDownloadPermission(user, pageCount, 'pptx');
-
     return NextResponse.json({
-      ...permission,
+      allowed: true,
+      isFreeDownload: true,
+      format: rawFormat,
       downloadCount: user.download_count_month || 0,
       pptTrialCount: user.ppt_trial_count_month || 0,
       resetMonth: user.download_reset_month,
@@ -76,8 +73,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const { action, userId, pageCount, format: rawFormat } = await request.json();
-    if ((rawFormat || 'pptx') !== 'pptx') {
-      return NextResponse.json({ error: 'PDF/PNG 下载已关闭，仅支持 PPTX 下载' }, { status: 410 });
+    const format = (rawFormat || 'pptx').toLowerCase();
+    if (format !== 'pptx' && format !== 'pdf') {
+      return NextResponse.json({ error: '仅支持 PPTX / PDF 下载' }, { status: 410 });
     }
 
     if (action === 'record') {
@@ -92,44 +90,9 @@ export async function POST(request: NextRequest) {
 
       if (error || !user) return NextResponse.json({ error: '用户不存在' }, { status: 404 });
 
-      const currentMonth = new Date().toISOString().substring(0, 7); // '2026-04'
-
-      // 如果月份不匹配，重置计数
-      if (user.download_reset_month !== currentMonth) {
-        await sb
-          .from('users')
-          .update({
-            download_count_month: 0,
-            ppt_trial_count_month: 0,
-            download_reset_month: currentMonth,
-          })
-          .eq('id', userId);
-
-        user.download_count_month = 0;
-        user.ppt_trial_count_month = 0;
-      }
-
-      // 检查权限
-      const permission = checkDownloadPermission(user, pageCount, 'pptx');
-
-      if (permission.needPayment) {
-        // 商业化路径：返回支付引导信息，由前端调用 /api/pay-once（credits/provider 两种模式）
-        return NextResponse.json({
-          needPayment: true,
-          cost: permission.cost,
-          message: permission.reason,
-          payment: {
-            endpoint: '/api/pay-once',
-            supportedModes: ['credits', 'provider'],
-            defaultMode: 'credits',
-          },
-        });
-      }
-
-      // 更新计数
       const updates: Record<string, number> = {};
       if ((user.plan_type || 'free') === 'free') {
-        updates.ppt_trial_count_month = (user.ppt_trial_count_month || 0) + 1;
+        updates.download_count_month = (user.download_count_month || 0) + 1;
       }
 
       if (Object.keys(updates).length > 0) {
@@ -143,19 +106,19 @@ export async function POST(request: NextRequest) {
           user_id: userId,
           amount: 0,
           balance_after: latestBalance,
-          type: permission.needPayment ? 'download_pending_payment' : (user.plan_type === 'free' ? 'download_trial' : 'download_member'),
-          description: `PPTX下载-${pageCount}页-${user.plan_type || 'free'}`,
+          type: user.plan_type === 'free' ? 'download_trial' : 'download_member',
+          description: `${format.toUpperCase()}下载-${pageCount}页-${user.plan_type || 'free'}`,
         });
       } catch {}
 
       return NextResponse.json({
         success: true,
         recorded: true,
-        format: 'pptx',
+        format,
         downloadCount: updates.download_count_month || user.download_count_month,
-        pptTrialCount: updates.ppt_trial_count_month || user.ppt_trial_count_month,
-        watermarked: permission.watermarked,
-        isTrial: permission.isTrial,
+        pptTrialCount: user.ppt_trial_count_month,
+        watermarked: false,
+        isTrial: false,
       });
     }
 

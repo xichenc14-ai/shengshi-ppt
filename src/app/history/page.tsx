@@ -72,7 +72,7 @@ export default function HistoryPage() {
       case 'pictographic': return '🖼️ 套图';
       case 'pexels':
       case 'webFreeToUseCommercially': return '📚 Pexels图库';
-      case 'aiGenerated': return '🤖 AI图';
+      case 'aiGenerated': return '🤖 AI定制图';
       default: return mode;
     }
   };

@@ -9,12 +9,13 @@ export const CREDIT_PER_PAGE = 10;
 export const IMG_CREDIT_PER_PAGE = 5;
 
 // 默认积分余额
-export const DEFAULT_FREE_CREDITS = 50;
+export const DEFAULT_FREE_CREDITS = 40;
 
 // 会员积分上限
 export const MEMBER_CREDITS_LIMIT = {
   shengxin: 500,    // 省心会员
-  supreme: 1000,    // 尊享会员
+  advanced: 1500,   // 尊享会员
+  supreme: 1500,    // 兼容旧字段
 };
 
 // 积分充值价格（元/积分）

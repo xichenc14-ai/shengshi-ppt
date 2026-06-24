@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, Rea
 import { useAuth } from '@/lib/auth-context';
 import { checkPermission, mapImgModeToSource, getPlan } from '@/lib/membership';
 import { buildMdV2 } from '@/lib/build-md-v2';
+import { DEFAULT_THEME_ID } from '@/lib/theme-database';
 
 export type Phase = 'landing' | 'input' | 'streaming' | 'outline' | 'generating' | 'direct-generating' | 'result';
 
@@ -91,7 +92,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [hasInput, setHasInput] = useState(false);
   
-  const [directTheme, setDirectTheme] = useState('default-light');
+  const [directTheme, setDirectTheme] = useState<string>(DEFAULT_THEME_ID);
   const [directTone, setDirectTone] = useState('professional');
   const [directImgMode, setDirectImgMode] = useState('theme-img');
   const [directTextMode, setDirectTextMode] = useState<'generate' | 'condense' | 'preserve'>('generate');
@@ -118,6 +119,73 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
     if (topic.trim()) p.push(topic.trim());
     return p.join('\n\n');
   }, [files, topic]);
+
+  const openInsufficientCreditsPayment = useCallback((needed: number, balance: number, reason = '积分不足，无法生成PPT') => {
+    openPayment({
+      id: 'shengxin',
+      name: '积分不足，请充值',
+      price: '¥19.9/月',
+      billing: 'monthly',
+      reason,
+      neededCredits: needed,
+      currentCredits: balance,
+    });
+  }, [openPayment]);
+
+  const getDirectAiModel = useCallback((imgMode: string): string | undefined => {
+    if (imgMode === 'ai-pro') return 'imagen-3-pro';
+    if (imgMode === 'ai') return 'imagen-3-flash';
+    return undefined;
+  }, []);
+
+  const estimateGenerationCredits = useCallback(async (payload: {
+    numPages: number;
+    imageSource: string;
+    imageModel?: string;
+    estimatedImages?: number;
+  }) => {
+    if (!user) throw new Error('请先登录');
+    const res = await fetch('/api/user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'estimate_generation',
+        userId: user.id,
+        ...payload,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '积分预算校验失败');
+    return data as { needed: number; balance: number; sufficient: boolean };
+  }, [user]);
+
+  const settleGenerationCredits = useCallback(async (payload: {
+    generationId: string;
+    numPages: number;
+    imageSource: string;
+    imageModel?: string;
+    estimatedImages?: number;
+  }) => {
+    if (!user) throw new Error('请先登录');
+    const res = await fetch('/api/user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'settle_generation',
+        userId: user.id,
+        ...payload,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      if (data.error === '积分不足') {
+        openInsufficientCreditsPayment(Number(data.needed || 0), Number(data.balance || 0), '积分不足，请补充后继续生成');
+      }
+      throw new Error(data.error || '积分结算失败');
+    }
+    if (typeof data.balance === 'number') updateCredits(data.balance);
+    return data as { creditsUsed: number; balance: number; alreadySettled?: boolean };
+  }, [user, openInsufficientCreditsPayment, updateCredits]);
 
   useState(() => {
     // Track hasInput
@@ -209,28 +277,19 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
     }
 
     setLoading(true); setError(''); setPhase('direct-generating'); setGenStep(0); setGenProgress(10); setStepText('AI 正在提交生成任务...');
-
-    // 🚨 V6新增：计算待扣积分（用于回滚，提前声明避免catch作用域问题）
-    const imgCredits = directImgMode === 'ai' || directImgMode === 'ai-pro' ? 2 : 0;
-    const estImgs = Math.ceil(effectivePages / 2);
-    const creditsToRollback = effectivePages * 2 + estImgs * imgCredits;
+    const imageModel = getDirectAiModel(directImgMode);
 
     try {
-
-      const deductRes = await fetch('/api/user', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: effectivePages, imageSource }),
+      const estimate = await estimateGenerationCredits({
+        numPages: effectivePages,
+        imageSource,
+        imageModel,
       });
-      const deductData = await deductRes.json();
-      if (!deductRes.ok || deductData.error) {
-        if (deductData.error === '积分不足') {
-          setLoading(false); setPhase('input');
-          openPayment({ id: 'basic', name: '积分不足，请充值', price: '¥29.9/月', billing: 'monthly', reason: '积分不足，无法生成PPT', neededCredits: deductData.needed, currentCredits: deductData.balance });
-          return;
-        }
-        throw new Error(deductData.error || '积分扣除失败');
+      if (!estimate.sufficient) {
+        setLoading(false); setPhase('input');
+        openInsufficientCreditsPayment(Number(estimate.needed || 0), Number(estimate.balance || 0));
+        return;
       }
-      updateCredits(deductData.balance);
       setGenStep(1); setGenProgress(25); setStepText('AI 正在渲染 PPT 页面...');
 
       const gRes = await fetch('/api/gamma-direct', {
@@ -257,21 +316,22 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
           setStepText(`AI 渲染中... ${elapsed}秒`);
         }
         if (!finalExportUrl) throw new Error('生成超时（3分钟），PPT内容较复杂，请稍后重试');
+        await settleGenerationCredits({
+          generationId: gd.generationId,
+          numPages: effectivePages,
+          imageSource,
+          imageModel,
+        });
         await new Promise(r => setTimeout(r, 500));
         const topicText = inputText.split('\n')[0].replace(/^#\s*/, '').trim();
         setResult({ title: topicText || 'PPT', slides: [], dlUrl: finalExportUrl, actualPages: pages });
         setGenProgress(100); setPhase('result');
       }
     } catch (e: unknown) {
-      // 🚨 V6新增：生成失败/超时时回滚积分
-      if (user) {
-        const reason = e instanceof Error ? e.message : '生成失败';
-        fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'rollback', userId: user.id, credits: creditsToRollback, reason }) }).then(r => r?.ok && r.json().then(d => d?.balance != null && updateCredits(d.balance))).catch(() => {});
-      }
       setError(e instanceof Error ? e.message : '生成失败'); setPhase('input');
     }
     setLoading(false);
-  }, [user, collectText, directTheme, directTone, directImgMode, directTextMode, pages, openPayment, updateCredits]);
+  }, [user, collectText, directTheme, directTone, directImgMode, directTextMode, pages, openLogin, openPayment, getDirectAiModel, estimateGenerationCredits, openInsufficientCreditsPayment, settleGenerationCredits]);
 
   // ========== generateOutline（V6 标准化：所有模式统一走 outline API）==========
   const generateOutline = useCallback(async () => {
@@ -324,28 +384,20 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       return;
     }
     setLoading(true); setError(''); setPhase('generating'); setGenStep(0); setGenProgress(0); setStepText('AI 正在准备渲染...');
-
-    // 🚨 V6新增：计算待扣积分（用于回滚，提前声明避免catch作用域问题）
-    const imgCredits3 = directImgMode === 'ai' || directImgMode === 'ai-pro' ? 2 : 0;
-    const estImgs3 = Math.ceil(editedSlides.length / 2);
-    const creditsToRollback3 = editedSlides.length * 2 + estImgs3 * imgCredits3;
+    const imageModel = getDirectAiModel(directImgMode);
 
     try {
       setGenStep(0); setGenProgress(10);
-      const deductRes = await fetch('/api/user', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'deduct', userId: user.id, numPages: editedSlides.length, imageSource }),
+      const estimate = await estimateGenerationCredits({
+        numPages: editedSlides.length,
+        imageSource,
+        imageModel,
       });
-      const deductData = await deductRes.json();
-      if (!deductRes.ok || deductData.error) {
-        if (deductData.error === '积分不足') {
-          setLoading(false); setPhase('outline');
-          openPayment({ id: 'basic', name: '积分不足，请充值', price: '¥29.9/月', billing: 'monthly', reason: '积分不足，无法生成PPT', neededCredits: deductData.needed, currentCredits: deductData.balance });
-          return;
-        }
-        throw new Error(deductData.error || '积分扣除失败');
+      if (!estimate.sufficient) {
+        setLoading(false); setPhase('outline');
+        openInsufficientCreditsPayment(Number(estimate.needed || 0), Number(estimate.balance || 0));
+        return;
       }
-      updateCredits(deductData.balance);
       setGenStep(1); setGenProgress(25); setStepText('AI 正在优化内容...');
       await new Promise(r => setTimeout(r, 600));
       setGenStep(2); setGenProgress(40); setStepText('AI 正在渲染 PPT 页面...');
@@ -353,7 +405,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       // 🚨 V6 统一：所有模式都用 buildMdV2
       const { markdown: md, visualMetaphor } = buildMdV2(outlineResult.title, editedSlides, directImgMode);
       // 🚨 V6.1 修复：themeId/tone 优先从 outlineResult 取
-      const finalThemeId = (directTheme !== 'auto' ? directTheme : outlineResult.themeId) || 'consultant';
+      const finalThemeId = (directTheme !== 'auto' ? directTheme : outlineResult.themeId) || DEFAULT_THEME_ID;
       const finalTone = directTone || outlineResult.tone || 'professional';
       // P0 Fix: 删除 slides 字段，Gamma API 不接受此参数，会导致 400 错误
       // P1 Fix: 当 genMode='condense' 时，Gamma 只支持 preserve 模式（已硬编码）
@@ -379,20 +431,21 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
           setStepText(`AI 渲染中... ${elapsed}秒`);
         }
         if (!finalExportUrl) throw new Error('生成超时（3分钟），PPT内容较复杂，请稍后重试');
+        await settleGenerationCredits({
+          generationId: gd.generationId,
+          numPages: editedSlides.length,
+          imageSource,
+          imageModel,
+        });
         await new Promise(r => setTimeout(r, 500));
         setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalExportUrl, actualPages: editedSlides.length });
         setGenProgress(100); setPhase('result');
       }
     } catch (e: unknown) {
-      // 🚨 V6新增：生成失败/超时时回滚积分
-      if (user) {
-        const reason = e instanceof Error ? e.message : '生成失败';
-        fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'rollback', userId: user.id, credits: creditsToRollback3, reason }) }).then(r => r?.ok && r.json().then(d => d?.balance != null && updateCredits(d.balance))).catch(() => {});
-      }
       setError(e instanceof Error ? e.message : '生成失败'); setPhase('outline');
     }
     setLoading(false);
-  }, [user, outlineResult, editedSlides, mode, directTheme, directTone, directImgMode, updateCredits, openPayment]);
+  }, [user, outlineResult, editedSlides, mode, directTheme, directTone, directImgMode, openPayment, getDirectAiModel, estimateGenerationCredits, openInsufficientCreditsPayment, settleGenerationCredits]);
 
   // Track hasInput
   useEffect(() => {

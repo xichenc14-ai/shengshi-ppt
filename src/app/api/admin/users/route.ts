@@ -85,11 +85,26 @@ export async function POST(request: NextRequest) {
       const reason = safeReason(body?.reason);
       if (!Number.isFinite(delta) || delta === 0) return NextResponse.json({ error: '积分调整值无效' }, { status: 400 });
 
-      const nextCredits = Math.max(0, Number(user.credits || 0) + delta);
-      const { error: uErr } = await sb.from('users').update({ credits: nextCredits }).eq('id', targetUserId);
-      if (uErr) return NextResponse.json({ error: '积分更新失败' }, { status: 500 });
+      const currentCredits = Number(user.credits || 0);
+      if (delta < 0 && currentCredits + delta < 0) {
+        return NextResponse.json({
+          error: '积分不足，不能扣成负数',
+          balance: currentCredits,
+        }, { status: 400 });
+      }
+      const nextCredits = currentCredits + delta;
+      const { data: updatedUser, error: uErr } = await sb
+        .from('users')
+        .update({ credits: nextCredits })
+        .eq('id', targetUserId)
+        .eq('credits', currentCredits)
+        .select('credits')
+        .single();
+      if (uErr || !updatedUser) {
+        return NextResponse.json({ error: '积分已发生变化，请刷新后重试' }, { status: 409 });
+      }
 
-      await sb.from('credit_transactions').insert({
+      const { error: txErr } = await sb.from('credit_transactions').insert({
         user_id: targetUserId,
         amount: delta,
         balance_after: nextCredits,
@@ -97,7 +112,13 @@ export async function POST(request: NextRequest) {
         description: `后台调账-${reason}`,
       });
 
-      return NextResponse.json({ success: true, action, credits: nextCredits });
+      return NextResponse.json({
+        success: true,
+        action,
+        credits: Number(updatedUser.credits),
+        transactionRecorded: !txErr,
+        warning: txErr ? '积分已更新，但流水记录失败' : undefined,
+      });
     }
 
     if (action === 'set_plan') {

@@ -6,13 +6,13 @@ import type { CreditTransactionInsert, UserRow } from '@/lib/supabase-types';
 type BillingCycle = 'monthly' | 'annual';
 
 const PLAN_PRICES: Record<string, { name: string; monthly: number; annual: number; credits: number }> = {
-  shengxin: { name: '省心会员', monthly: 19.9, annual: 199, credits: 400 },
-  advanced: { name: '高级会员', monthly: 39.9, annual: 399, credits: 1000 },
-  basic: { name: '省心会员', monthly: 19.9, annual: 199, credits: 400 },
-  standard: { name: '高级会员', monthly: 39.9, annual: 399, credits: 1000 },
-  pro: { name: '高级会员', monthly: 39.9, annual: 399, credits: 1000 },
-  vip: { name: '高级会员', monthly: 39.9, annual: 399, credits: 1000 },
-  supreme: { name: '高级会员', monthly: 39.9, annual: 399, credits: 1000 },
+  shengxin: { name: '省心会员', monthly: 19.9, annual: 199, credits: 500 },
+  advanced: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500 },
+  basic: { name: '省心会员', monthly: 19.9, annual: 199, credits: 500 },
+  standard: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500 },
+  pro: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500 },
+  vip: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500 },
+  supreme: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500 },
 };
 
 function getSupabase() {
@@ -157,4 +157,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

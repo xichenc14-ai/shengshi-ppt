@@ -2,177 +2,224 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { useAuth } from '@/lib/auth-context';
+import {
+  CheckCircle2,
+  ChevronDown,
+  CircleDollarSign,
+  Layers3,
+  LogOut,
+  Menu,
+  UserRound,
+  X,
+} from 'lucide-react';
+import { useAuth, type UserInfo } from '@/lib/auth-context';
+import BrandLogo from '@/components/BrandLogo';
 
 interface NavbarProps {
   onLogoClick?: () => void;
 }
 
+function UserAvatar({ user, compact = false }: { user: UserInfo; compact?: boolean }) {
+  return (
+    <div className={`flex shrink-0 items-center justify-center bg-gradient-to-br from-[#477eff] via-[#7658f2] to-[#aa4bec] font-black text-white ring-1 ring-violet-200/60 ${
+      compact
+        ? 'h-10 w-10 rounded-[14px] text-sm shadow-[0_8px_22px_rgba(104,78,235,0.22)]'
+        : 'h-11 w-11 rounded-[15px] text-sm shadow-[0_10px_28px_rgba(104,78,235,0.25)]'
+    }`}>
+      {user.nickname?.charAt(0) || 'U'}
+    </div>
+  );
+}
+
+function AccountMenu({
+  user,
+  onClose,
+  logout,
+  includeNavigation,
+  onFeaturesClick,
+}: {
+  user: UserInfo;
+  onClose: () => void;
+  logout: () => void;
+  includeNavigation?: boolean;
+  onFeaturesClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+}) {
+  const menuClass = 'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-600 transition hover:bg-purple-50/70 hover:text-purple-600';
+
+  return (
+    <div className="overflow-hidden rounded-[24px] border border-white/80 bg-white/92 shadow-[0_24px_70px_rgba(54,48,100,0.20)] backdrop-blur-2xl">
+      <div className="flex items-center gap-3 border-b border-slate-100/80 px-4 py-4">
+        <UserAvatar user={user} />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold text-slate-900">{user.nickname}</p>
+          <p className="truncate text-xs text-slate-400">{user.phone}</p>
+        </div>
+      </div>
+
+      <div className="mx-3 mt-3 flex items-center justify-between rounded-2xl border border-amber-100/70 bg-gradient-to-r from-amber-50/80 to-violet-50/55 px-3.5 py-3">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 text-amber-600 shadow-sm">
+            <CircleDollarSign size={19} strokeWidth={2} aria-hidden="true" />
+          </span>
+          <div>
+            <p className="text-[10px] font-medium text-slate-500">{user.is_admin ? 'Gamma 总积分池' : '可用积分'}</p>
+            <p className="text-base font-black leading-tight text-amber-600">{user.credits}</p>
+          </div>
+        </div>
+        <Link href="/pricing" onClick={onClose} className="rounded-full bg-white/75 px-3 py-1.5 text-xs font-bold text-violet-600 shadow-sm transition hover:bg-white">
+          充值
+        </Link>
+      </div>
+
+      <div className="space-y-1 px-3 py-3">
+        <Link href="/account" onClick={onClose} className={menuClass}>
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
+            <UserRound size={16} strokeWidth={2} aria-hidden="true" />
+          </span>
+          用户中心
+        </Link>
+        <Link href="/pricing" onClick={onClose} className={menuClass}>
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-600">
+            <Layers3 size={16} strokeWidth={2} aria-hidden="true" />
+          </span>
+          升级套餐
+        </Link>
+        {includeNavigation && (
+          <Link href="/#features" onClick={onFeaturesClick || onClose} className={menuClass}>
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+              <CheckCircle2 size={16} strokeWidth={2} aria-hidden="true" />
+            </span>
+            功能特性
+          </Link>
+        )}
+      </div>
+
+      <div className="border-t border-slate-100/90 px-3 py-3">
+        <button
+          onClick={() => { logout(); onClose(); }}
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-rose-500 transition hover:bg-rose-50"
+        >
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50">
+            <LogOut size={16} strokeWidth={2} aria-hidden="true" />
+          </span>
+          退出登录
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Navbar({ onLogoClick }: NavbarProps) {
   const { user, logout, openLogin } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = React.useState(false);
-  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
-  const handleLogoClick = (e: React.MouseEvent) => {
+  const closeMenus = () => {
+    setUserMenuOpen(false);
+    setMobileMenuOpen(false);
+  };
+
+  const handleLogoClick = (event: React.MouseEvent) => {
+    closeMenus();
     if (onLogoClick) {
-      e.preventDefault();
+      event.preventDefault();
       onLogoClick();
     }
   };
 
+  const handleFeaturesClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    closeMenus();
+    if (window.location.pathname !== '/') return;
+    const target = document.getElementById('features');
+    if (!target) return;
+    event.preventDefault();
+    window.history.replaceState(null, '', '/#features');
+    const navOffset = window.innerWidth >= 768 ? 80 : 68;
+    const top = target.getBoundingClientRect().top + window.scrollY - navOffset;
+    window.scrollTo({ top: Math.max(0, top), left: 0, behavior: 'smooth' });
+  };
+
   return (
     <>
-      <nav className="h-16 md:h-18 bg-white/70 backdrop-blur-2xl border-b border-slate-200/70 px-4 md:px-8 flex items-center justify-between sticky top-0 z-50">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-3 group" onClick={handleLogoClick}>
-          <div className="relative">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-sky-500 flex items-center justify-center shadow-lg shadow-sky-200/60 group-hover:shadow-sky-300/70 transition-all">
-              <span className="text-white text-base font-black">P</span>
-            </div>
-            <div className="absolute -inset-1 bg-gradient-to-r from-indigo-300 to-sky-300 rounded-xl blur opacity-20 group-hover:opacity-30 transition-opacity -z-10" />
-          </div>
-          <div>
-            <span className="text-base font-bold text-gray-900 tracking-tight">省心PPT</span>
-            <span className="hidden sm:block text-[10px] text-gray-400 -mt-0.5">AI智能演示生成</span>
-          </div>
+      <nav className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-slate-200/70 bg-white/82 px-4 backdrop-blur-2xl md:h-[72px] md:px-8">
+        <Link href="/" className="group" onClick={handleLogoClick} aria-label="省心PPT 首页">
+          <BrandLogo compact />
         </Link>
 
-        {/* Desktop Nav Links */}
-        <div className="hidden md:flex items-center gap-1">
-          <Link href="/#features" className="px-4 py-2 text-sm text-gray-500 hover:text-purple-600 hover:bg-purple-50/50 rounded-lg transition-all">
-            功能特性
-          </Link>
-          <Link href="/pricing" className="px-4 py-2 text-sm text-gray-500 hover:text-purple-600 hover:bg-purple-50/50 rounded-lg transition-all">
-            定价方案
-          </Link>
-          <Link href="/account" className="px-4 py-2 text-sm text-gray-500 hover:text-purple-600 hover:bg-purple-50/50 rounded-lg transition-all">
-            用户中心
-          </Link>
+        <div className="hidden items-center gap-1 md:flex">
+          <Link href="/#features" onClick={handleFeaturesClick} className="rounded-lg px-4 py-2 text-sm text-gray-500 transition-all hover:bg-purple-50/50 hover:text-purple-600">功能特性</Link>
+          <Link href="/pricing" className="rounded-lg px-4 py-2 text-sm text-gray-500 transition-all hover:bg-purple-50/50 hover:text-purple-600">定价方案</Link>
+          <Link href="/account" className="rounded-lg px-4 py-2 text-sm text-gray-500 transition-all hover:bg-purple-50/50 hover:text-purple-600">用户中心</Link>
         </div>
 
-        {/* Right Side */}
-        <div className="flex items-center gap-2 md:gap-3">
+        <div className="flex min-w-0 items-center gap-2">
           {user ? (
-            <div className="relative">
+            <div className="relative hidden md:block">
               <button
-                onClick={() => setUserMenuOpen(!userMenuOpen)}
-                className="flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-xl hover:bg-purple-50/50 transition-all border border-transparent hover:border-purple-100"
+                onClick={() => setUserMenuOpen(open => !open)}
+                className="flex items-center gap-2 rounded-2xl border border-transparent p-1 transition-all hover:border-purple-100 hover:bg-purple-50/50 md:px-2"
+                aria-expanded={userMenuOpen}
               >
-                <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-br from-purple-600 to-purple-400 flex items-center justify-center text-white text-xs md:text-sm font-bold shadow-sm">
-                  {user.nickname?.charAt(0) || 'U'}
-                </div>
-                <div className="hidden sm:block text-left">
-                  <p className="text-sm font-medium text-gray-800 leading-tight">{user.nickname}</p>
+                <UserAvatar user={user} />
+                <div className="text-left">
+                  <p className="text-sm font-medium leading-tight text-gray-800">{user.nickname}</p>
                   <p className="text-[10px] text-amber-600">🪙 {user.credits} {user.is_admin ? 'Gamma池' : '积分'}</p>
                 </div>
-                <svg className={`w-3 h-3 text-gray-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M6 9l6 6 6-6"/>
-                </svg>
+                <ChevronDown size={13} strokeWidth={2.5} className={`text-gray-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
               </button>
 
               {userMenuOpen && (
                 <>
-                  <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
-                  <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-xl border border-gray-100/80 py-2 z-50 animate-fade-in-scale">
-                    {/* User Info Header */}
-                    <div className="px-4 py-3 border-b border-gray-50">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-purple-400 flex items-center justify-center text-white text-sm font-bold">
-                          {user.nickname?.charAt(0) || 'U'}
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold text-gray-900">{user.nickname}</p>
-                          <p className="text-xs text-gray-400">{user.phone}</p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Credits */}
-                    <div className="px-4 py-2.5 flex items-center justify-between bg-amber-50/50 mx-2 mt-2 rounded-xl">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">🪙</span>
-                        <div>
-                          <p className="text-xs text-gray-500">{user.is_admin ? 'Gamma 总积分池' : '可用积分'}</p>
-                          <p className="text-sm font-bold text-amber-600">{user.credits}</p>
-                        </div>
-                      </div>
-                      <Link href="/pricing" onClick={() => setUserMenuOpen(false)} className="text-xs text-purple-600 hover:underline font-medium">
-                        充值 →
-                      </Link>
-                    </div>
-                    
-                    {/* Menu Items */}
-                    <div className="mt-2">
-                      <Link href="/account" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-3 px-4 py-2.5 mx-2 text-sm text-gray-600 hover:bg-purple-50/50 hover:text-purple-600 rounded-xl transition-all">
-                        <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center">
-                          <svg className="w-4 h-4 text-purple-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                        </div>
-                        用户中心
-                      </Link>
-                      <Link href="/pricing" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-3 px-4 py-2.5 mx-2 text-sm text-gray-600 hover:bg-purple-50/50 hover:text-purple-600 rounded-xl transition-all">
-                        <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center">
-                          <svg className="w-4 h-4 text-purple-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-                        </div>
-                        升级套餐
-                      </Link>
-                      <div className="border-t border-gray-100 mt-2 pt-2">
-                        <button onClick={() => { logout(); setUserMenuOpen(false); }} className="flex items-center gap-3 px-4 py-2.5 mx-2 text-sm text-red-500 hover:bg-red-50 rounded-xl transition-all">
-                          <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center">
-                            <svg className="w-4 h-4 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-                          </div>
-                          退出登录
-                        </button>
-                      </div>
-                    </div>
+                  <button className="fixed inset-0 z-40 cursor-default" onClick={() => setUserMenuOpen(false)} aria-label="关闭用户菜单" />
+                  <div className="absolute right-0 top-full z-50 mt-2 w-72 animate-fade-in-scale">
+                    <AccountMenu user={user} logout={logout} onClose={() => setUserMenuOpen(false)} />
                   </div>
                 </>
               )}
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <button onClick={openLogin} className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-purple-600 hover:bg-purple-50/50 rounded-lg transition-all">
-                登录
-              </button>
-              <button onClick={openLogin} className="px-4 py-2 text-sm font-semibold text-white rounded-xl transition-all shadow-lg shadow-sky-200/50 hover:shadow-sky-300/60"
-                style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #0ea5e9 100%)' }}>
+              <button onClick={openLogin} className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-all hover:bg-purple-50/50 hover:text-purple-600">登录</button>
+              <button
+                onClick={openLogin}
+                className="hidden rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-sky-200/50 transition-all hover:shadow-sky-300/60 sm:block"
+                style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #0ea5e9 100%)' }}
+              >
                 免费体验
               </button>
             </div>
           )}
 
-          {/* Mobile menu toggle */}
-          <button 
-            className="md:hidden w-9 h-9 rounded-xl flex items-center justify-center text-gray-500 hover:bg-purple-50/50 transition-colors" 
-            onClick={() => setMobileNavOpen(!mobileNavOpen)}
-            aria-label="菜单"
+          <button
+            className="flex h-10 w-10 items-center justify-center rounded-[14px] border border-transparent text-slate-500 transition hover:border-purple-100 hover:bg-purple-50/60 md:hidden"
+            onClick={() => setMobileMenuOpen(open => !open)}
+            aria-label={mobileMenuOpen ? '关闭菜单' : '打开菜单'}
+            aria-expanded={mobileMenuOpen}
           >
-            {mobileNavOpen ? (
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-            ) : (
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
-            )}
+            {mobileMenuOpen ? <X size={21} strokeWidth={2} /> : <Menu size={22} strokeWidth={2} />}
           </button>
         </div>
       </nav>
 
-      {/* Mobile Nav Dropdown */}
-      {mobileNavOpen && (
-        <div className="md:hidden fixed top-16 left-0 right-0 bottom-0 bg-white/95 backdrop-blur-xl z-40 animate-fade-in">
-          <div className="px-4 py-4 space-y-2">
-            <Link href="/#features" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm text-gray-700 hover:bg-purple-50/50 hover:text-purple-600 transition-colors font-medium">
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22,4 12,14.01 9,11.01"/></svg>
-              功能特性
-            </Link>
-            <Link href="/pricing" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm text-gray-700 hover:bg-purple-50/50 hover:text-purple-600 transition-colors font-medium">
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-              定价方案
-            </Link>
-            <Link href="/account" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm text-gray-700 hover:bg-purple-50/50 hover:text-purple-600 transition-colors font-medium">
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              用户中心
-            </Link>
+      {mobileMenuOpen && (
+        <>
+          <button className="fixed inset-0 top-16 z-40 bg-slate-900/5 backdrop-blur-[2px] md:hidden" onClick={() => setMobileMenuOpen(false)} aria-label="关闭菜单" />
+          <div className="fixed left-4 right-4 top-[72px] z-50 md:hidden">
+            {user ? (
+              <AccountMenu
+                user={user}
+                logout={logout}
+                onClose={() => setMobileMenuOpen(false)}
+                onFeaturesClick={handleFeaturesClick}
+                includeNavigation
+              />
+            ) : (
+              <div className="space-y-1 rounded-[22px] border border-white/80 bg-white/94 p-3 shadow-[0_24px_70px_rgba(54,48,100,0.18)] backdrop-blur-2xl">
+                <Link href="/#features" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 hover:bg-purple-50">功能特性</Link>
+              </div>
+            )}
           </div>
-        </div>
+        </>
       )}
     </>
   );

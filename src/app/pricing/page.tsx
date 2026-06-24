@@ -15,10 +15,11 @@ type Plan = {
   price: number;
   credits: number;
   maxPages: number;
-  aiModels: string[];
+  imageModels: { name: string; available: boolean }[];
   audience: string;
   featured?: boolean;
   features: string[];
+  approxCostPerPage: string;
 };
 
 type CreditPackage = {
@@ -39,39 +40,56 @@ type CompareRow = {
 };
 
 const CREDITS_PER_PAGE = 4;
-const PER_PPT10_PAGES_CREDITS = 10 * CREDITS_PER_PAGE;
 
 const PLANS: Plan[] = [
   {
     id: 'free',
     name: '免费用户',
     price: 0,
-    credits: 50,
+    credits: 40,
     maxPages: 8,
-    aiModels: ['基础模型（自动匹配）'],
+    imageModels: [
+      { name: '主题套图', available: true },
+      { name: 'Pexels图库', available: true },
+      { name: 'AI定制图', available: false },
+      { name: 'AI尊享图', available: false },
+    ],
     audience: '轻量体验',
-    features: ['每月 50 积分', '专业模式', '主题图 / Pexels 图', 'PPTX 按页计费下载'],
+    features: ['每月赠送 40 积分', '专业模式', '1 个附件：文档10MB以内', '普通用户也可充值积分'],
+    approxCostPerPage: '0.3',
   },
   {
     id: 'shengxin',
     name: '省心会员',
     price: 19.9,
-    credits: 400,
+    credits: 500,
     maxPages: 20,
-    aiModels: ['imagen-3-flash', '系统按用途自动路由'],
+    imageModels: [
+      { name: '主题套图', available: true },
+      { name: 'Pexels图库', available: true },
+      { name: 'AI定制图', available: true },
+      { name: 'AI尊享图', available: false },
+    ],
     audience: '高频日常场景',
     featured: true,
-    features: ['每月 400 积分', '省心模式 + 专业模式', '主题图 / Pexels 图 / AI 图', 'PPTX 无额外下载费'],
+    features: ['每月 500 积分', '省心模式 + 专业模式', '5 个附件：PDF、PPTX、XLSX、JPG 等', '生成完成自动下载 PPTX'],
+    approxCostPerPage: '0.2',
   },
   {
     id: 'advanced',
-    name: '高级会员',
-    price: 39.9,
-    credits: 1000,
+    name: '尊享会员',
+    price: 49.9,
+    credits: 1500,
     maxPages: 40,
-    aiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'],
+    imageModels: [
+      { name: '主题套图', available: true },
+      { name: 'Pexels图库', available: true },
+      { name: 'AI定制图', available: true },
+      { name: 'AI尊享图', available: true },
+    ],
     audience: '重度创作与团队使用',
-    features: ['每月 1000 积分', '多模型智能匹配', '40页大纲与复杂场景', '优先队列与完整记录'],
+    features: ['每月 1500 积分', '多模型智能匹配', '5 个附件：PDF、PPTX、XLSX、JPG 等', '优先队列与更高阶图片能力'],
+    approxCostPerPage: '0.1',
   },
 ];
 
@@ -89,28 +107,46 @@ const COMPARE_ROWS: CompareRow[] = [
     advanced: { text: '支持', type: 'ok' },
   },
   {
-    label: '单次页面能力',
-    free: { text: '20页', type: 'strike' },
+    label: '页数上限',
+    free: { text: '8页', type: 'neutral' },
     shengxin: { text: '20页', type: 'ok' },
     advanced: { text: '40页', type: 'ok' },
   },
   {
-    label: '图片能力',
-    free: { text: '主题图 + Pexels图', type: 'ok' },
-    shengxin: { text: '主题图 + Pexels图 + AI图', type: 'ok' },
-    advanced: { text: '全能力支持', type: 'ok' },
+    label: '图片模型',
+    free: { text: '主题套图 + Pexels图库', type: 'neutral' },
+    shengxin: { text: '主题套图 + Pexels图库 + AI定制图', type: 'ok' },
+    advanced: { text: '主题套图 + Pexels图库 + AI定制图 + AI尊享图', type: 'ok' },
   },
   {
-    label: '高级AI图片模型',
-    free: { text: '高级模型', type: 'strike' },
-    shengxin: { text: '标准AI模型', type: 'neutral' },
-    advanced: { text: '全模型支持', type: 'ok' },
+    label: '附件数量',
+    free: { text: '最多1个', type: 'neutral' },
+    shengxin: { text: '最多5个', type: 'ok' },
+    advanced: { text: '最多5个', type: 'ok' },
   },
   {
-    label: '历史项目与数据管理',
-    free: { text: '基础记录', type: 'neutral' },
-    shengxin: { text: '完整历史', type: 'ok' },
-    advanced: { text: '完整历史 + 优先支持', type: 'ok' },
+    label: '附件格式',
+    free: { text: 'PPTX、PDF（下载）', type: 'neutral' },
+    shengxin: { text: 'PDF、PPTX、XLSX、JPG 等', type: 'ok' },
+    advanced: { text: 'PDF、PPTX、XLSX、JPG 等', type: 'ok' },
+  },
+  {
+    label: '附件大小',
+    free: { text: '文档10MB / 总计10MB', type: 'neutral' },
+    shengxin: { text: '文档30MB / 图片2.5MB / 总计100MB', type: 'ok' },
+    advanced: { text: '文档30MB / 图片2.5MB / 总计100MB', type: 'ok' },
+  },
+  {
+    label: 'AI模型',
+    free: { text: '不支持', type: 'off' },
+    shengxin: { text: '支持标准 AI 模型', type: 'ok' },
+    advanced: { text: '支持高阶 AI 模型', type: 'ok' },
+  },
+  {
+    label: '积分结算',
+    free: { text: '按生成页数统一扣积分', type: 'neutral' },
+    shengxin: { text: '按生成页数统一扣积分', type: 'ok' },
+    advanced: { text: '按生成页数统一扣积分', type: 'ok' },
   },
 ];
 
@@ -128,7 +164,7 @@ function statusCell(cell: { text: string; type: 'ok' | 'off' | 'strike' | 'neutr
 }
 
 function planMarker(planId: Plan['id']): string {
-  if (planId === 'shengxin') return '✨';
+  if (planId === 'shengxin') return '💎';
   if (planId === 'advanced') return '👑';
   return '';
 }
@@ -144,15 +180,13 @@ function PlanCard({
   onSelect: () => void;
   onBuy: () => void;
 }) {
-  const monthlyPages = plan.credits / CREDITS_PER_PAGE;
-  const approxCostPerPage = plan.price > 0 ? (plan.price / Math.max(1, monthlyPages)).toFixed(2) : '0.20';
-  const ppt10Count = Math.floor(plan.credits / PER_PPT10_PAGES_CREDITS);
+  const approxPages = Math.floor(plan.credits / CREDITS_PER_PAGE);
 
   return (
     <button
       type="button"
       onClick={onSelect}
-      className={`text-left sx-glass rounded-[26px] p-6 border transition-all hover:-translate-y-1 ${
+      className={`min-w-0 w-full max-w-full overflow-hidden text-left sx-glass rounded-[26px] p-6 border transition-all hover:-translate-y-1 ${
         selected ? 'border-indigo-300 shadow-[0_18px_40px_rgba(93,85,255,0.24)]' : 'border-indigo-100/70'
       }`}
     >
@@ -177,32 +211,47 @@ function PlanCard({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 mt-5">
-        <div className="rounded-2xl bg-white/80 border border-indigo-100 p-3">
-          <p className="text-[11px] text-slate-400">积分额度</p>
-          <p className="text-lg font-black text-slate-900 mt-1">{plan.credits}</p>
-          <p className="text-[10px] text-slate-400 mt-1">约可生成 {ppt10Count} 份10页PPT</p>
+      <div className="mt-5 grid grid-cols-3 gap-2 md:gap-3">
+        <div className="min-w-0 rounded-2xl border border-indigo-100 bg-white/80 px-2 py-3 text-center md:p-3.5 md:text-left">
+          <p className="truncate text-[10px] font-semibold tracking-wide text-slate-400 md:text-[11px]">积分额度</p>
+          <p className="mt-1 text-lg font-black text-slate-900 md:text-xl">{plan.credits}</p>
+          <p className="mt-1 truncate text-[9px] leading-4 text-slate-400 md:text-[11px] md:leading-5">约 {approxPages} 页PPT</p>
         </div>
-        <div className="rounded-2xl bg-white/80 border border-indigo-100 p-3">
-          <p className="text-[11px] text-slate-400">单次页数</p>
-          <p className="text-lg font-black text-slate-900 mt-1">{plan.maxPages} 页</p>
+        <div className="min-w-0 rounded-2xl border border-indigo-100 bg-white/80 px-2 py-3 text-center md:p-3.5 md:text-left">
+          <p className="truncate text-[10px] font-semibold tracking-wide text-slate-400 md:text-[11px]">页数上限</p>
+          <p className="mt-1 whitespace-nowrap text-lg font-black text-slate-900 md:text-xl">{plan.maxPages} 页</p>
+          <p className="mt-1 text-[9px] leading-4 text-slate-400 md:text-[11px] md:leading-5">单次生成</p>
         </div>
-        <div className="rounded-2xl bg-white/80 border border-indigo-100 p-3">
-          <p className="text-[11px] text-slate-400">成本参考</p>
-          <p className="text-lg font-black text-slate-900 mt-1">约¥{approxCostPerPage}/页</p>
+        <div className="min-w-0 rounded-2xl border border-indigo-100 bg-white/80 px-2 py-3 text-center md:p-3.5 md:text-left">
+          <p className="truncate text-[10px] font-semibold tracking-wide text-slate-400 md:text-[11px]">每页费用</p>
+          <p className="mt-1 whitespace-nowrap text-lg font-black text-slate-900 md:text-xl">{plan.approxCostPerPage}元</p>
+          <p className="mt-1 text-[9px] leading-4 text-slate-400 md:text-[11px] md:leading-5">约合成本</p>
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl bg-white/75 border border-indigo-100 px-4 py-3">
-        <p className="text-xs text-slate-400">AI 图片模型（按用途自动选）</p>
-        <p className="text-sm font-semibold text-slate-700 mt-1">{plan.aiModels.join(' / ')}</p>
+      <div className="mt-4 rounded-2xl border border-indigo-100 bg-white/75 px-4 py-3.5">
+        <p className="text-[11px] font-semibold tracking-wide text-slate-400">图片模型</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {plan.imageModels.map((model) => (
+            <span
+              key={model.name}
+              className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+                model.available
+                  ? 'border border-indigo-200 bg-indigo-50 text-indigo-700'
+                  : 'border border-slate-200 bg-slate-100 text-slate-400'
+              }`}
+            >
+              {model.name}
+            </span>
+          ))}
+        </div>
       </div>
 
       <ul className="mt-4 space-y-2">
         {plan.features.map((item) => (
-          <li key={item} className="text-sm text-slate-600 flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-[11px]">✓</span>
-            {item}
+          <li key={item} className="flex items-start gap-2 text-sm leading-6 text-slate-600">
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[11px] text-indigo-600">✓</span>
+            <span>{item}</span>
           </li>
         ))}
       </ul>
@@ -314,7 +363,7 @@ export default function PricingPage() {
       <div className="min-h-screen sx-shell">
         <Navbar />
 
-        <div className="max-w-6xl mx-auto px-4 md:px-8 py-6 md:py-10">
+        <div className="mx-auto w-full min-w-0 max-w-6xl overflow-x-clip px-4 py-6 md:px-8 md:py-10">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
             <Link
               href="/"
@@ -322,18 +371,18 @@ export default function PricingPage() {
             >
               ← 返回首页
             </Link>
-            <p className="text-xs text-slate-500">套餐：免费用户 / 省心会员 / 高级会员</p>
+            <p className="min-w-0 text-xs text-slate-500">套餐：免费用户 / 省心会员 / 尊享会员</p>
           </div>
 
           <section className="text-center mb-8">
             <h1 className="text-4xl md:text-5xl font-black tracking-tight sx-gradient-text">会员套餐</h1>
-            <p className="mt-3 text-sm md:text-base text-slate-500">突出会员优势，免费用户仅保留基础能力。当前按 4 积分≈1 页内容生成能力估算套餐页数。</p>
+            <p className="mt-3 text-sm leading-6 md:text-base text-slate-500">按使用频率拆分三档权益，整站统一按积分结算，生成阶段按页扣分，会员方案重点强化积分额度与图片模型能力。</p>
             {!paymentEnabled && (
               <p className="mt-3 text-xs font-semibold text-amber-600">支付通道申请中：当前仅开放非支付功能。</p>
             )}
           </section>
 
-          <section className="grid lg:grid-cols-3 gap-5">
+          <section className="grid min-w-0 gap-5 lg:grid-cols-3">
             {PLANS.map((plan) => (
               <PlanCard
                 key={plan.id}
@@ -355,8 +404,8 @@ export default function PricingPage() {
                   <tr className="text-left text-slate-500">
                     <th className="py-3 pr-4">项目</th>
                     <th className="py-3 px-3">免费用户</th>
-                    <th className="py-3 px-3">✨ 省心会员（推荐）</th>
-                    <th className="py-3 px-3">👑 高级会员</th>
+                    <th className="py-3 px-3">💎 省心会员（推荐）</th>
+                    <th className="py-3 px-3">👑 尊享会员</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -377,36 +426,33 @@ export default function PricingPage() {
             <h2 className="text-lg font-black text-slate-900">积分单独充值</h2>
             <p className="text-sm text-slate-500 mt-1">
               {creditTier === 'member'
-                ? '会员充值按 1元≈20积分；不影响当前会员等级。'
-                : '免费用户充值按 1元≈10积分（会员价两倍），也可直接按页付费下载。'}
+                ? '会员可按固定包价补充积分，不影响当前会员等级。'
+                : '免费用户也可按固定包价补充积分，生成与下载统一按积分结算。'}
             </p>
             {creditMessage && <p className="mt-3 text-sm text-indigo-600 font-semibold">{creditMessage}</p>}
             <div className="grid md:grid-cols-3 gap-3 mt-4">
               {(creditPackages.length > 0 ? creditPackages : [
-                { id: 'topup-100', name: '体验包', credits: 100, price: 1000, price_yuan: 10, rate_text: '免费用户价 1元≈10积分', price_tier: 'free' as const },
-                { id: 'topup-500', name: '基础包', credits: 500, price: 5000, price_yuan: 50, rate_text: '免费用户价 1元≈10积分', price_tier: 'free' as const },
-                { id: 'topup-2000', name: '超值包', credits: 2000, price: 20000, price_yuan: 200, rate_text: '免费用户价 1元≈10积分', price_tier: 'free' as const },
+                { id: 'topup-100', name: '体验包', credits: 100, price: 1000, price_yuan: 10, rate_text: '固定包价：¥10 / 100积分', price_tier: 'free' as const },
+                { id: 'topup-500', name: '基础包', credits: 500, price: 2000, price_yuan: 20, rate_text: '固定包价：¥20 / 500积分', price_tier: 'free' as const },
+                { id: 'topup-3000', name: '超值包', credits: 3000, price: 10000, price_yuan: 100, rate_text: '固定包价：¥100 / 3000积分', price_tier: 'free' as const },
               ]).map((pkg) => (
-                <div key={pkg.id} className="rounded-2xl border border-indigo-100 bg-white/80 p-4">
-                  <p className="text-sm font-bold text-slate-800">{pkg.name}</p>
-                  <p className="mt-2 text-2xl font-black sx-accent-text">{pkg.credits} 积分</p>
-                  <p className="text-sm text-slate-500 mt-1">¥{(Number(pkg.price_yuan ?? Number(pkg.price) / 100)).toFixed(2)}</p>
-                  <p className="text-[11px] text-slate-400 mt-1">{pkg.rate_text || (creditTier === 'member' ? '会员价 1元≈20积分' : '免费用户价 1元≈10积分')}</p>
+                <div key={pkg.id} className="flex items-center gap-3 rounded-2xl border border-indigo-100 bg-white/80 p-4 md:block">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-slate-800">{pkg.name}</p>
+                    <p className="mt-1.5 whitespace-nowrap text-2xl font-black sx-accent-text md:mt-2">{pkg.credits} 积分</p>
+                    <p className="mt-1 text-sm text-slate-500">¥{(Number(pkg.price_yuan ?? Number(pkg.price) / 100)).toFixed(2)}</p>
+                    <p className="mt-1 truncate text-[11px] text-slate-400">{pkg.rate_text || '固定包价'}</p>
+                  </div>
                   <button
                     onClick={() => createCreditOrder(pkg)}
                     disabled={creditLoading || !paymentEnabled}
-                    className="mt-4 w-full py-2.5 rounded-xl bg-white border border-indigo-200 text-indigo-700 text-sm font-bold hover:bg-indigo-50"
+                    className="w-[112px] shrink-0 rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-bold leading-5 text-indigo-700 hover:bg-indigo-50 md:mt-4 md:w-full"
                   >
                     {paymentEnabled ? '创建充值订单' : '支付通道申请中'}
                   </button>
                 </div>
               ))}
             </div>
-          </section>
-
-          <section id="single-pay" className="mt-7 sx-glass rounded-[24px] p-5 md:p-6">
-            <h2 className="text-lg font-black text-slate-900">单次按页付费</h2>
-            <p className="text-sm text-slate-500 mt-1">适合低频用户，按页付费下载PPTX；建议高频场景优先开通会员，整体成本更低。</p>
           </section>
 
           <div className="pt-6 text-center text-[11px] text-gray-400">版本 {APP_VERSION}</div>

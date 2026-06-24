@@ -215,9 +215,13 @@ export async function GET(request: NextRequest) {
       ),
       total_generation: normalizedUsers.reduce((sum, u) => sum + u.generation_count, 0),
       total_download: normalizedUsers.reduce((sum, u) => sum + u.download_count, 0),
+      admin_user_credits: Number(
+        users.find((u) => u.id === auth.userId)?.credits || 0
+      ),
       admin_gamma_pool_credits: (() => {
         try { return getKeyPoolStatus().totalRemaining; } catch { return 0; }
       })(),
+      admin_gamma_pool_note: 'Gamma API池为最近生成响应追踪值，与管理员用户积分独立',
       feedback_total: effectiveFeedbackRows.length,
       feedback_positive: effectiveFeedbackRows.filter((r) => r.vote === 'up').length,
       feedback_negative: effectiveFeedbackRows.filter((r) => r.vote === 'down').length,

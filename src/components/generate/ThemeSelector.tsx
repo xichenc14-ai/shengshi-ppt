@@ -36,7 +36,8 @@ const TONES = [
 const IMG_MODES = [
   { id: 'theme-img', label: '主题套图', desc: '主题配套强调图', icon: '🖼️', credits: '0' },
   { id: 'web', label: 'Pexels图库', desc: '稳定商用图库', icon: '📚', credits: '0' },
-  { id: 'ai', label: 'AI定制图', desc: '人工智能生成', icon: '✨', credits: '2/张' },
+  { id: 'ai', label: 'AI定制图', desc: '省心会员可用', icon: '✨', credits: '会员专享' },
+  { id: 'ai-pro', label: 'AI尊享图', desc: '尊享会员可用', icon: '👑', credits: '尊享会员' },
   { id: 'noImages', label: '极简无图', desc: '纯文字版式', icon: '✳️', credits: '0' },
 ];
 
@@ -126,7 +127,7 @@ export default function ThemeSelector({ value, onChange, tone, onToneChange, img
         <label className="text-[11px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2.5 sm:mb-3 block">
           配图方案
         </label>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
           {IMG_MODES.map((img) => (
             <button
               key={img.id}

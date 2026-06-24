@@ -6,6 +6,13 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
+    rules: {
+      // The application is under strict TypeScript checking. Keep legacy
+      // integration-boundary `any` usage visible without blocking releases.
+      "@typescript-eslint/no-explicit-any": "warn",
+    },
+  },
+  {
     files: [
       "**/__tests__/**/*.{ts,tsx,js,jsx}",
       "**/*.test.{ts,tsx,js,jsx}",

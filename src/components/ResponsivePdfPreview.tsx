@@ -226,9 +226,9 @@ export default function ResponsivePdfPreview({ src, fetchSrc, title = 'PDF 预�
 
   return (
     <div data-testid="responsive-pdf-preview">
-      <div className="hidden md:block rounded-[24px] bg-[#0f1020] p-4 shadow-inner shadow-black/15">
+      <div className="hidden md:block rounded-[24px] border border-violet-200/60 bg-white/42 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_18px_45px_rgba(91,78,210,0.10)] backdrop-blur-xl">
         {loading && pages.length === 0 ? (
-          <div className="flex min-h-[72vh] items-center justify-center px-6 text-center text-sm text-white/70">
+          <div className="flex min-h-[72vh] items-center justify-center px-6 text-center text-sm text-violet-500/70">
             正在加载 PDF 预览...
           </div>
         ) : null}
@@ -256,22 +256,22 @@ export default function ResponsivePdfPreview({ src, fetchSrc, title = 'PDF 预�
         ) : null}
 
         {error ? (
-          <div className="flex min-h-[72vh] flex-col items-center justify-center gap-4 px-6 text-center text-white">
-            <p className="text-sm text-rose-100">{error}</p>
+          <div className="flex min-h-[72vh] flex-col items-center justify-center gap-4 px-6 text-center">
+            <p className="text-sm text-rose-500">{error}</p>
           </div>
         ) : null}
       </div>
 
       <div className="block md:hidden" data-testid="responsive-pdf-preview-mobile">
-        <div className="rounded-[24px] bg-[#0f1020] p-2 shadow-inner shadow-black/15">
+        <div className="rounded-[24px] border border-violet-200/60 bg-white/42 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_18px_45px_rgba(91,78,210,0.12)] backdrop-blur-xl">
           {loading && pages.length === 0 ? (
-            <div className="flex min-h-[56vh] items-center justify-center px-6 text-center text-sm text-white/70">
+            <div className="flex min-h-[56vh] items-center justify-center px-6 text-center text-sm text-violet-500/70">
               正在加载 PDF 预览...
             </div>
           ) : null}
 
           {pages.length > 0 ? (
-            <div className="rounded-[18px] bg-[#111325] p-2">
+            <div className="rounded-[18px] border border-white/80 bg-gradient-to-br from-white/75 to-violet-50/65 p-2 shadow-inner">
               <div className="sr-only" aria-live="polite">第 {currentPage} / {pages.length} 页</div>
 
               <div className="relative overflow-hidden rounded-[18px] bg-white shadow-[0_10px_28px_rgba(0,0,0,0.22)]">
@@ -325,8 +325,8 @@ export default function ResponsivePdfPreview({ src, fetchSrc, title = 'PDF 预�
                     onClick={() => setCurrentPage(page.pageNumber)}
                     className={`h-1.5 rounded-full transition-all ${
                       page.pageNumber === currentPage
-                        ? 'w-5 bg-white'
-                        : 'w-1.5 bg-white/35'
+                        ? 'w-5 bg-violet-500'
+                        : 'w-1.5 bg-violet-300/45'
                     }`}
                   />
                 ))}
@@ -335,8 +335,8 @@ export default function ResponsivePdfPreview({ src, fetchSrc, title = 'PDF 预�
           ) : null}
 
           {error ? (
-            <div className="flex min-h-[56vh] flex-col items-center justify-center gap-4 px-6 text-center text-white">
-              <p className="text-sm text-rose-100">{error}</p>
+            <div className="flex min-h-[56vh] flex-col items-center justify-center gap-4 px-6 text-center">
+              <p className="text-sm text-rose-500">{error}</p>
             </div>
           ) : null}
         </div>

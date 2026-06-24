@@ -138,7 +138,7 @@ const [directTheme, setDirectTheme] = useState('consultant');
 
 ---
 
-### 2.4 传给 Gamma API（专业模式直通）
+### 2.4 传给 Gamma API（专业模式）
 
 **文件：** `src/app/page.tsx` → `generateDirect()` 函数
 

@@ -47,9 +47,13 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
   const [error, setError] = useState('');
   const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
   const codeRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const pageScrollYRef = useRef(0);
 
   // ===== 重置 =====
   const handleClose = useCallback(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     onClose();
     setPhone(''); setCode(['', '', '', '', '', '']); setCountdown(0);
     setPhoneStep('input');
@@ -57,6 +61,24 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
     setAccount(''); setPassword(''); setShowPwdLogin(false);
     setError(''); setAttemptsLeft(null);
   }, [onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    pageScrollYRef.current = window.scrollY;
+    document.documentElement.classList.add('modal-open');
+    document.body.classList.add('modal-open');
+
+    return () => {
+      document.documentElement.classList.remove('modal-open');
+      document.body.classList.remove('modal-open');
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: pageScrollYRef.current, left: 0, behavior: 'instant' });
+      });
+    };
+  }, [open]);
 
   // 倒计时
   useEffect(() => {
@@ -164,7 +186,11 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
         setLoading(false);
         return;
       }
-      if (data.user) { login(data.user, data.authToken); handleClose(); }
+      if (data.user) {
+        const synced = await login(data.user, data.authToken);
+        if (!synced) throw new Error('登录状态同步失败，请重试');
+        handleClose();
+      }
     } catch { setError('验证失败，请检查网络'); }
     setLoading(false);
   };
@@ -186,7 +212,11 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
       });
       const data = await res.json();
       if (data.error) { setError(data.error); setLoading(false); return; }
-      if (data.user) { login(data.user, data.authToken); handleClose(); }
+      if (data.user) {
+        const synced = await login(data.user, data.authToken);
+        if (!synced) throw new Error('登录状态同步失败，请重试');
+        handleClose();
+      }
     } catch { setError('注册失败，请检查网络'); }
     setLoading(false);
   }, [phone, regUsername, regPassword, regConfirmPwd, login, handleClose]);
@@ -204,7 +234,11 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
       });
       const data = await res.json();
       if (data.error) { setError(data.error); setLoading(false); return; }
-      if (data.user) { login(data.user, data.authToken); handleClose(); }
+      if (data.user) {
+        const synced = await login(data.user, data.authToken);
+        if (!synced) throw new Error('登录状态同步失败，请重试');
+        handleClose();
+      }
     } catch { setError('登录失败，请检查网络'); }
     setLoading(false);
   }, [account, password, login, handleClose]);
@@ -234,7 +268,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
             {phoneStep === 'set_profile' ? '设置你的账号' : '欢迎来到省心PPT'}
           </h3>
           <p className="text-xs text-gray-400 mt-1">
-            {phoneStep === 'set_profile' ? '首次使用，快速设置即可' : '登录即送 50 积分，立即体验AI生成PPT'}
+            {phoneStep === 'set_profile' ? '首次使用，快速设置即可' : '登录即送 40 积分，立即体验AI生成PPT'}
           </p>
         </div>
 
@@ -276,7 +310,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                       onChange={e => { setPhone(formatPhone(e.target.value)); setError(''); }}
                       placeholder="请输入手机号"
                       maxLength={11}
-                      className="w-full pl-14 pr-4 py-3.5 rounded-2xl bg-[#FAFBFE] border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none text-sm transition-all"
+                      className="w-full pl-14 pr-4 py-3.5 rounded-2xl bg-[#FAFBFE] border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none text-base sm:text-sm transition-all"
                       onKeyDown={e => { if (e.key === 'Enter') goToVerify(); }}
                     />
                   </div>
@@ -408,7 +442,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                     onChange={e => { setRegUsername(e.target.value); setError(''); }}
                     placeholder="起一个好听的名字"
                     maxLength={20}
-                    className="w-full px-4 py-3.5 rounded-2xl bg-[#FAFBFE] border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none text-sm transition-all mb-3"
+                    className="w-full px-4 py-3.5 rounded-2xl bg-[#FAFBFE] border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none text-base sm:text-sm transition-all mb-3"
                   />
 
                   {/* 密码 */}
@@ -419,7 +453,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                       value={regPassword}
                       onChange={e => { setRegPassword(e.target.value); setError(''); }}
                       placeholder="至少8位，字母+数字"
-                      className="w-full px-4 py-3.5 pr-12 rounded-2xl bg-[#FAFBFE] border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none text-sm transition-all"
+                      className="w-full px-4 py-3.5 pr-12 rounded-2xl bg-[#FAFBFE] border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none text-base sm:text-sm transition-all"
                     />
                     <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1">
                       {showPassword ? '🙈' : '👁️'}
@@ -432,7 +466,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                     value={regConfirmPwd}
                     onChange={e => { setRegConfirmPwd(e.target.value); setError(''); }}
                     placeholder="再次输入密码"
-                    className={`w-full px-4 py-3.5 rounded-2xl border outline-none text-sm transition-all mb-4 ${
+                    className={`w-full px-4 py-3.5 rounded-2xl border outline-none text-base sm:text-sm transition-all mb-4 ${
                       regConfirmPwd && regConfirmPwd !== regPassword
                         ? 'bg-red-50 border-red-200 focus:border-red-400'
                         : 'bg-[#FAFBFE] border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white'
@@ -471,7 +505,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                 value={account}
                 onChange={e => { setAccount(e.target.value); setError(''); }}
                 placeholder="请输入用户名或手机号"
-                className="w-full px-4 py-3.5 rounded-2xl bg-[#FAFBFE] border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none text-sm transition-all mb-3"
+                className="w-full px-4 py-3.5 rounded-2xl bg-[#FAFBFE] border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none text-base sm:text-sm transition-all mb-3"
               />
 
               <label className="text-xs font-medium text-gray-500 mb-1.5 block">密码</label>
@@ -481,7 +515,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                   value={password}
                   onChange={e => { setPassword(e.target.value); setError(''); }}
                   placeholder="请输入密码"
-                  className="w-full px-4 py-3.5 pr-12 rounded-2xl bg-[#FAFBFE] border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none text-sm transition-all"
+                  className="w-full px-4 py-3.5 pr-12 rounded-2xl bg-[#FAFBFE] border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none text-base sm:text-sm transition-all"
                   onKeyDown={e => { if (e.key === 'Enter') handleAccountLogin(); }}
                 />
                 <button type="button" onClick={() => setShowPwdLogin(!showPwdLogin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1">

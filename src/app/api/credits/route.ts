@@ -13,12 +13,14 @@ type CreditPackPreset = {
   id: string;
   name: string;
   credits: number;
+  amountFen: number;
+  rateText: string;
 };
 
 const CREDIT_PACK_PRESETS: CreditPackPreset[] = [
-  { id: 'topup-100', name: '体验包', credits: 100 },
-  { id: 'topup-500', name: '基础包', credits: 500 },
-  { id: 'topup-2000', name: '超值包', credits: 2000 },
+  { id: 'topup-100', name: '体验包', credits: 100, amountFen: 1000, rateText: '固定包价：¥10 / 100积分' },
+  { id: 'topup-500', name: '基础包', credits: 500, amountFen: 2000, rateText: '固定包价：¥20 / 500积分' },
+  { id: 'topup-3000', name: '超值包', credits: 3000, amountFen: 10000, rateText: '固定包价：¥100 / 3000积分' },
 ];
 
 function getUserIdFromReq(req: NextRequest): string {
@@ -47,16 +49,15 @@ function isMemberPlan(planType: string): boolean {
 
 function buildPricedPackages(planType: string) {
   const member = isMemberPlan(planType);
-  const yuanPerCredit = member ? 0.05 : 0.1; // 会员: 1元≈20积分；免费: 1元≈10积分
   return CREDIT_PACK_PRESETS.map((pkg, idx) => {
-    const amountFen = Math.round(pkg.credits * yuanPerCredit * 100);
+    const amountFen = pkg.amountFen;
     return {
       ...pkg,
       sort_order: idx + 1,
       amount_fen: amountFen,
       price: amountFen,
       price_yuan: Number((amountFen / 100).toFixed(2)),
-      rate_text: member ? '会员价 1元≈20积分' : '免费用户价 1元≈10积分',
+      rate_text: pkg.rateText,
       price_tier: member ? 'member' : 'free',
     };
   });

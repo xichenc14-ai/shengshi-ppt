@@ -65,7 +65,7 @@ type AdminSummary = {
   total_revenue_yuan: number;
   total_generation: number;
   total_download: number;
-  admin_gamma_pool_credits: number;
+  admin_user_credits: number;
   feedback_total: number;
   feedback_positive: number;
   feedback_negative: number;
@@ -259,7 +259,7 @@ export default function AdminPage() {
             ['累计营收(元)', summary?.total_revenue_yuan ?? 0],
             ['生成次数', summary?.total_generation ?? 0],
             ['下载次数', summary?.total_download ?? 0],
-            ['管理员可用积分(API池)', summary?.admin_gamma_pool_credits ?? 0],
+            ['管理员账户积分', summary?.admin_user_credits ?? 0],
             ['反馈总数', summary?.feedback_total ?? 0],
             ['好评/差评', `${summary?.feedback_positive ?? 0}/${summary?.feedback_negative ?? 0}`],
             ['平均评分', summary?.feedback_avg_rating ?? 0],
@@ -304,7 +304,7 @@ export default function AdminPage() {
                 <option value="all">全部套餐</option>
                 <option value="free">免费用户</option>
                 <option value="shengxin">省心会员</option>
-                <option value="advanced">高级会员</option>
+                <option value="advanced">尊享会员</option>
               </select>
               <button onClick={loadData} className="px-4 py-2 rounded-xl sx-primary-btn text-white text-sm font-bold">筛选</button>
             </div>
@@ -406,7 +406,7 @@ export default function AdminPage() {
                       >
                         <option value="free">免费用户</option>
                         <option value="shengxin">省心会员</option>
-                        <option value="advanced">高级会员</option>
+                        <option value="advanced">尊享会员</option>
                       </select>
                       <button
                         disabled={actionLoading}

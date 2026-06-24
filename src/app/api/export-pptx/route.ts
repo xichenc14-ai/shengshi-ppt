@@ -8,6 +8,7 @@ const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const FORMAT = 'pptx' as const;
 const MIME_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+const MIN_PPTX_BYTES = 1024;
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -16,6 +17,25 @@ function getErrorMessage(error: unknown): string {
 function isPptxUrl(url: string): boolean {
   const lower = url.toLowerCase();
   return lower.includes('.pptx') || lower.includes('/pptx/');
+}
+
+function isValidPptxBuffer(buffer: Buffer): boolean {
+  if (buffer.length < MIN_PPTX_BYTES) return false;
+  // PPTX 是 ZIP 容器，合法文件必须以 PK ZIP signature 开头。
+  const hasZipSignature =
+    buffer[0] === 0x50
+    && buffer[1] === 0x4b
+    && (
+      (buffer[2] === 0x03 && buffer[3] === 0x04)
+      || (buffer[2] === 0x05 && buffer[3] === 0x06)
+      || (buffer[2] === 0x07 && buffer[3] === 0x08)
+    );
+  if (!hasZipSignature) return false;
+
+  // ZIP 中的文件名以明文保存；两项均存在才能确认是 PowerPoint 包。
+  const packageIndex = buffer.indexOf(Buffer.from('[Content_Types].xml'));
+  const presentationIndex = buffer.indexOf(Buffer.from('ppt/presentation.xml'));
+  return packageIndex >= 0 && presentationIndex >= 0;
 }
 
 /**
@@ -104,23 +124,55 @@ export async function GET(req: NextRequest) {
     console.log('[ExportPPTX] 获取到PPTX URL:', pptxUrl.substring(0, 80));
 
     // Step 3: 后端代理下载PPTX（解决跨域/302问题）
-    const pptxRes = await fetch(pptxUrl, {
-      headers: { 'User-Agent': GAMMA_UA },
+    const downloadPptx = (withApiKey = false) => fetch(pptxUrl, {
+      headers: {
+        'User-Agent': GAMMA_UA,
+        'Accept': MIME_TYPE,
+        ...(withApiKey ? { 'X-API-KEY': apiKey } : {}),
+      },
       redirect: 'follow',
+      cache: 'no-store',
       signal: AbortSignal.timeout(120000),
     });
 
+    let pptxRes = await downloadPptx();
+
     if (!pptxRes.ok) {
-      console.error('[ExportPPTX] 下载PPTX失败:', pptxRes.status);
+      // 部分 Gamma 导出地址仍要求 API key；首次失败时兼容重试一次。
+      pptxRes = await downloadPptx(true);
+      if (!pptxRes.ok) {
+        console.error('[ExportPPTX] 下载PPTX失败:', pptxRes.status);
+        return NextResponse.json({
+          generationId,
+          status: 'failed',
+          error: { code: 'DOWNLOAD_FAILED', message: `下载PPTX失败: ${pptxRes.status}` },
+        }, { status: 502 });
+      }
+    }
+
+    let buffer = Buffer.from(await pptxRes.arrayBuffer());
+    if (!isValidPptxBuffer(buffer)) {
+      console.warn('[ExportPPTX] 首次响应不是有效 PPTX，使用 API key 重试', {
+        bytes: buffer.length,
+        contentType: pptxRes.headers.get('content-type'),
+      });
+      const retryRes = await downloadPptx(true);
+      if (retryRes.ok) {
+        buffer = Buffer.from(await retryRes.arrayBuffer());
+      }
+    }
+
+    if (!isValidPptxBuffer(buffer)) {
+      console.error('[ExportPPTX] 上游返回无效或不完整的 PPTX:', {
+        bytes: buffer.length,
+        contentType: pptxRes.headers.get('content-type'),
+      });
       return NextResponse.json({
         generationId,
         status: 'failed',
-        error: { code: 'DOWNLOAD_FAILED', message: `下载PPTX失败: ${pptxRes.status}` },
+        error: { code: 'INVALID_PPTX', message: '导出文件不完整，请重新下载或重新生成' },
       }, { status: 502 });
     }
-
-    const arrayBuffer = await pptxRes.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
 
     // Step 4: 返回PPTX文件
     const safeFilename = filename.replace(/[^\w\u4e00-\u9fff.\-]/g, '_');
@@ -130,7 +182,8 @@ export async function GET(req: NextRequest) {
         'Content-Type': MIME_TYPE,
         'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(safeFilename)}`,
         'Content-Length': buffer.length.toString(),
-        'Cache-Control': 'no-cache',
+        'Cache-Control': 'no-store, max-age=0',
+        'X-Content-Type-Options': 'nosniff',
       },
     });
   } catch (e: unknown) {

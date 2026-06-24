@@ -1,8 +1,8 @@
 // src/lib/ai/fallback-orchestrator.ts
-// v10.50: MiniMax + DeepSeek 双 Provider Fallback（默认 DeepSeek）
+// MiniMax + DeepSeek 双 Provider Fallback（默认 MiniMax M2.7）
 //
 // 架构决策: AI 服务支持 MiniMax（主） + DeepSeek（备）
-// - 默认 DeepSeek 优先，失败后切换 MiniMax
+// - 默认 MiniMax M2.7 优先，失败后切换 DeepSeek
 // - 可通过 OUTLINE_PRIMARY_PROVIDER / AI_PRIMARY_PROVIDER 覆盖优先级
 
 import { callMiniMaxWithRetry } from '@/lib/minimax-client';
@@ -104,7 +104,7 @@ function buildProviderOrder(): FallbackProvider[] {
   const preferred =
     normalizeProvider(process.env.OUTLINE_PRIMARY_PROVIDER)
     || normalizeProvider(process.env.AI_PRIMARY_PROVIDER)
-    || 'deepseek'; // 默认改为 DeepSeek（用户要求）
+    || 'minimax';
 
   const secondary: FallbackProvider = preferred === 'deepseek' ? 'minimax' : 'deepseek';
   return [preferred, secondary, preferred];

@@ -1,31 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { getSession } from '@/lib/session';
 import { verifyAuthProof } from '@/lib/auth-proof';
 import { getClientIP, rateLimit } from '@/lib/rate-limit';
 import { isAdminIdentity } from '@/lib/admin-auth';
-import { getKeyPoolStatus } from '@/lib/gamma-key-pool';
 
-function adminCreditsFallback(rawCredits: number | undefined): number {
-  try {
-    return getKeyPoolStatus().totalRemaining;
-  } catch {
-    return Number(rawCredits || 0);
-  }
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
+
+async function readTrustedUser(userId: string) {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const withExpiry = await sb
+    .from('users')
+    .select('id,phone,nickname,avatar,credits,plan_type,plan_expires_at,is_active')
+    .eq('id', userId)
+    .single();
+  if (!withExpiry.error && withExpiry.data) return withExpiry.data;
+  const fallback = await sb
+    .from('users')
+    .select('id,phone,nickname,avatar,credits,plan_type,is_active')
+    .eq('id', userId)
+    .single();
+  return fallback.data || null;
 }
 
 // GET: 读取当前session
 export async function GET() {
   try {
     const session = await getSession();
+    const trustedUser = session.user?.id ? await readTrustedUser(session.user.id) : null;
+    if (trustedUser && session.user) {
+      session.user = {
+        ...session.user,
+        ...trustedUser,
+        credits: Number(trustedUser.credits || 0),
+      };
+      await session.save();
+    }
     const user = session.user
       ? {
           ...session.user,
           is_admin: isAdminIdentity({ id: session.user.id, phone: session.user.phone }),
         }
       : null;
-    if (user?.is_admin) {
-      user.credits = adminCreditsFallback(user.credits);
-    }
     return NextResponse.json({
       user,
       isLoggedIn: session.isLoggedIn || false,
@@ -53,10 +75,17 @@ export async function POST(req: NextRequest) {
       if (!verifyAuthProof(authToken, userId)) {
         return NextResponse.json({ error: '登录校验失败，请重试' }, { status: 401 });
       }
-      const nextUser = { ...body.user };
+      const trustedUser = await readTrustedUser(userId);
+      if (!trustedUser) {
+        return NextResponse.json({ error: '用户信息不存在' }, { status: 404 });
+      }
+      const nextUser = {
+        ...body.user,
+        ...trustedUser,
+        credits: Number(trustedUser.credits || 0),
+      };
       const isAdmin = isAdminIdentity({ id: nextUser.id, phone: nextUser.phone });
       if (isAdmin) {
-        nextUser.credits = adminCreditsFallback(nextUser.credits);
         nextUser.is_admin = true;
       }
       session.user = nextUser;

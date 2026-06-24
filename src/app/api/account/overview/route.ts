@@ -105,16 +105,17 @@ export async function GET() {
       .reduce((sum, o) => sum + Number(o.amount || 0) / 100, 0);
 
     const isAdmin = isAdminIdentity({ id: user.id, phone: user.phone || '' });
-    const displayCredits = isAdmin ? (() => {
-      try { return getKeyPoolStatus().totalRemaining; } catch { return Number(user.credits || 0); }
-    })() : Number(user.credits || 0);
+    const userCredits = Number(user.credits || 0);
+    const gammaPoolCredits = isAdmin ? (() => {
+      try { return getKeyPoolStatus().totalRemaining; } catch { return 0; }
+    })() : null;
 
     return NextResponse.json({
       user: {
         id: user.id,
         phone: user.phone || '',
         nickname: user.nickname || '用户',
-        credits: displayCredits,
+        credits: userCredits,
         plan_type: user.plan_type || 'free',
         plan_expires_at: planExpiresAt,
         total_credits_used: Number((user as { total_credits_used?: number | null }).total_credits_used || 0),
@@ -127,7 +128,8 @@ export async function GET() {
         paid_amount_yuan: Number(paidAmountYuan.toFixed(2)),
       },
       admin: isAdmin ? {
-        gamma_pool_credits: displayCredits,
+        gamma_pool_credits: gammaPoolCredits,
+        gamma_pool_note: '基于最近一次 Gamma 生成响应追踪；与用户积分独立',
       } : null,
       recentOrders: orders.slice(0, 20),
       recentTransactions: transactions.slice(0, 80),

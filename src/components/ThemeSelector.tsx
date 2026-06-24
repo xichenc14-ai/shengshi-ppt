@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { COLOR_CATEGORIES, getRecommendedThemes, getThemeById, getThemesByCategory, type ThemeData } from '@/lib/theme-database';
+import React, { useMemo, useRef, useState } from 'react';
+import { COLOR_CATEGORIES, getRecommendedThemes, getThemesByCategory, type ThemeData } from '@/lib/theme-database';
 
 interface ThemeSelectorProps {
   value: string;
@@ -16,7 +16,64 @@ type ThemeCategoryOption = {
   count: number;
   themes: ThemeData[];
 };
-const MAX_THEMES_PER_PANEL = 12;
+const MAX_THEMES_PER_PANEL = 8;
+const CATEGORY_NECKLACE_ORDER = [
+  'recommended',
+  'orangeBrown',
+  'yellowCream',
+  'green',
+  'blue',
+  'purplePink',
+  'whiteGray',
+  'black',
+] as const;
+const RECOMMENDED_NECKLACE_COLORS = ['#2150FE', '#6237C8', '#3371A5', '#DA9B49'];
+const CATEGORY_GRADIENTS: Record<string, string> = {
+  recommended: 'linear-gradient(115deg, #4F8DF7 0%, #7C5CE7 38%, #D94CB7 70%, #F18A45 100%)',
+  orangeBrown: 'linear-gradient(115deg, #F18A45 0%, #D45A20 48%, #8A351C 100%)',
+  yellowCream: 'linear-gradient(115deg, #E9B866 0%, #F6D98D 48%, #F8E9B9 100%)',
+  green: 'linear-gradient(115deg, #C8E9B1 0%, #55CF9A 48%, #16976F 100%)',
+  blue: 'linear-gradient(115deg, #56B9C5 0%, #397EDB 48%, #3157B7 100%)',
+  purplePink: 'linear-gradient(115deg, #5367C8 0%, #8061DC 46%, #CE58B3 100%)',
+  whiteGray: 'linear-gradient(115deg, #E5D9E9 0%, #E8EDF4 50%, #B6C2D1 100%)',
+  black: 'linear-gradient(115deg, #7D899A 0%, #344054 48%, #111827 100%)',
+};
+const CONTINUOUS_SPECTRUM_GRADIENT = `linear-gradient(90deg,
+  #4F8DF7 0%,
+  #7C5CE7 5%,
+  #D94CB7 9%,
+  #F18A45 13%,
+  #D45A20 19%,
+  #8A351C 25%,
+  #E9B866 29%,
+  #F6D98D 34%,
+  #F8E9B9 38%,
+  #C8E9B1 41%,
+  #55CF9A 47%,
+  #16976F 51%,
+  #56B9C5 55%,
+  #397EDB 61%,
+  #3157B7 65%,
+  #5367C8 68%,
+  #8061DC 73%,
+  #CE58B3 77%,
+  #E5D9E9 81%,
+  #E8EDF4 86%,
+  #B6C2D1 89%,
+  #7D899A 92%,
+  #344054 96%,
+  #111827 100%
+)`;
+const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
+  recommended: '推荐',
+  orangeBrown: '橙棕',
+  yellowCream: '米黄',
+  green: '绿色',
+  blue: '蓝色',
+  purplePink: '紫粉',
+  whiteGray: '白灰',
+  black: '深色',
+};
 
 function getThemeCard(theme: ThemeData, active: boolean, onChange: (themeId: string) => void) {
   const [bg, accent, font] = theme.colors;
@@ -26,26 +83,26 @@ function getThemeCard(theme: ThemeData, active: boolean, onChange: (themeId: str
     <button
       key={theme.id}
       onClick={() => onChange(theme.id)}
-      className={`relative rounded-full border-2 px-1 py-1 md:px-1.5 md:py-1.5 text-left transition-all ${
+      className={`relative w-[calc((100%_-_16px)/3)] min-w-[calc((100%_-_16px)/3)] snap-start rounded-full border-2 p-0.5 text-left transition-all sm:w-auto sm:min-w-0 sm:p-1 ${
         active
           ? 'border-[#5B4FE9] bg-[#F5F3FF] shadow-sm'
           : 'border-slate-200 bg-white hover:border-indigo-200'
       }`}
     >
       <div
-        className="relative h-[46px] md:h-[58px] rounded-full border border-black/5 overflow-hidden p-1"
+        className="relative h-[38px] overflow-hidden rounded-full border border-black/5 sm:h-[46px]"
         style={{ backgroundColor: bg }}
       >
         <span
-          className="absolute top-1 right-1 h-3.5 px-1 rounded-md border border-white/40 text-[8px] font-semibold leading-[12px] shadow-sm md:h-4 md:text-[8px] md:leading-[14px]"
+          className="absolute right-1 top-0.5 h-3.5 rounded-md border border-white/40 px-1 text-[7px] font-semibold leading-[12px] shadow-sm sm:top-1 sm:text-[8px]"
           style={{ backgroundColor: accent, color: textColor }}
         >
           强调
         </span>
-        <div className="absolute left-2.5 md:left-3 bottom-1.5 right-2">
+        <div className="absolute bottom-1 left-2.5 right-2 sm:bottom-1.5 sm:left-3">
           <div className="flex items-center gap-1.5">
-            <span className="text-[9px] md:text-[10px] font-medium tracking-[0.01em] truncate leading-[1.15]" style={{ color: textColor }}>{theme.nameZh}</span>
-            <div className="hidden md:flex items-center gap-1">
+            <span className="truncate text-[11px] font-medium leading-[1.15] tracking-[0.01em] sm:text-xs" style={{ color: textColor }}>{theme.nameZh}</span>
+            <div className="hidden lg:flex items-center gap-1">
               <span className="w-2 h-2 rounded-full border border-white/60" style={{ backgroundColor: bg }} title={`背景色 ${bg}`} />
               <span className="w-2 h-2 rounded-full border border-white/60" style={{ backgroundColor: accent }} title={`强调色 ${accent}`} />
               <span className="w-2 h-2 rounded-full border border-white/60" style={{ backgroundColor: textColor }} title={`字体色 ${textColor}`} />
@@ -59,42 +116,50 @@ function getThemeCard(theme: ThemeData, active: boolean, onChange: (themeId: str
 
 export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('recommended');
-  const selectedTheme = getThemeById(value);
+  const spectrumRef = useRef<HTMLDivElement>(null);
+  const activePointerRef = useRef<number | null>(null);
+  const pointerStartIndexRef = useRef<number | null>(null);
+  const suppressClickRef = useRef(false);
+  const themesRailRef = useRef<HTMLDivElement>(null);
+  const themeDragRef = useRef({
+    active: false,
+    startX: 0,
+    startScrollLeft: 0,
+    moved: false,
+  });
 
   const recommendedThemeList = useMemo(() => {
     return getRecommendedThemes();
   }, []);
 
-  const recommendedSwatch = useMemo(() => {
-    const fallback = ['#5B4FE9', '#22C55E', '#EC4899'];
-    const colors = recommendedThemeList.slice(0, 3).map((t) => t.colors[0]).filter(Boolean);
-    return colors.length === 3 ? colors : fallback;
-  }, [recommendedThemeList]);
+  const recommendedSwatch = RECOMMENDED_NECKLACE_COLORS;
 
   const categoryOptions = useMemo(() => {
-    const options: ThemeCategoryOption[] = [
-      {
-        id: 'recommended',
-        name: '推荐色系',
-        colors: recommendedSwatch,
-        count: recommendedThemeList.length,
-        themes: recommendedThemeList.slice(0, MAX_THEMES_PER_PANEL),
-      },
-    ];
+    const optionsById = new Map<string, ThemeCategoryOption>();
+    optionsById.set('recommended', {
+      id: 'recommended',
+      name: '推荐',
+      colors: recommendedSwatch,
+      count: recommendedThemeList.length,
+      themes: recommendedThemeList.slice(0, MAX_THEMES_PER_PANEL),
+    });
 
     for (const cat of COLOR_CATEGORIES) {
       const catThemes = getThemesByCategory(cat.id).slice(0, MAX_THEMES_PER_PANEL);
       if (!catThemes.length) continue;
       const previewColors = catThemes.slice(0, 3).map((t) => t.colors[0]).filter(Boolean);
-      options.push({
+      optionsById.set(cat.id, {
         id: cat.id,
-        name: cat.name,
+        name: CATEGORY_DISPLAY_NAMES[cat.id] || cat.name.replace(/系$/, ''),
         colors: previewColors.length === 3 ? previewColors : cat.colors.slice(0, 3),
         count: catThemes.length,
         themes: catThemes,
       });
     }
-    return options;
+
+    return CATEGORY_NECKLACE_ORDER
+      .map((id) => optionsById.get(id))
+      .filter((item): item is ThemeCategoryOption => Boolean(item));
   }, [recommendedSwatch, recommendedThemeList]);
 
   const themes = useMemo(() => {
@@ -111,58 +176,163 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
         count: selected.count,
       };
     }
-    return { id: 'recommended', name: '推荐色系', colors: recommendedSwatch, count: recommendedThemeList.length };
+    return { id: 'recommended', name: '推荐', colors: recommendedSwatch, count: recommendedThemeList.length };
   }, [selectedCategory, categoryOptions, recommendedSwatch, recommendedThemeList.length]);
+
+  const getCategoryIndexAt = (clientX: number) => {
+    const spectrum = spectrumRef.current;
+    if (!spectrum || categoryOptions.length === 0) return 0;
+    const rect = spectrum.getBoundingClientRect();
+    const innerInset = 6;
+    const innerWidth = Math.max(1, rect.width - innerInset * 2);
+    const relativeX = Math.max(0, Math.min(innerWidth - 1, clientX - rect.left - innerInset));
+    return Math.min(categoryOptions.length - 1, Math.floor(relativeX / (innerWidth / categoryOptions.length)));
+  };
+
+  const selectCategoryAt = (clientX: number) => {
+    const category = categoryOptions[getCategoryIndexAt(clientX)];
+    if (category) setSelectedCategory(category.id);
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const index = getCategoryIndexAt(event.clientX);
+    activePointerRef.current = event.pointerId;
+    pointerStartIndexRef.current = index;
+    suppressClickRef.current = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    selectCategoryAt(event.clientX);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerRef.current !== event.pointerId) return;
+    const index = getCategoryIndexAt(event.clientX);
+    if (pointerStartIndexRef.current !== null && index !== pointerStartIndexRef.current) {
+      suppressClickRef.current = true;
+    }
+    selectCategoryAt(event.clientX);
+  };
+
+  const finishPointerSelection = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerRef.current !== event.pointerId) return;
+    selectCategoryAt(event.clientX);
+    activePointerRef.current = null;
+    pointerStartIndexRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
+  };
+
+  const cancelPointerSelection = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerRef.current !== event.pointerId) return;
+    activePointerRef.current = null;
+    pointerStartIndexRef.current = null;
+    suppressClickRef.current = false;
+  };
+
+  const handleThemeMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || !themesRailRef.current) return;
+    themeDragRef.current = {
+      active: true,
+      startX: event.clientX,
+      startScrollLeft: themesRailRef.current.scrollLeft,
+      moved: false,
+    };
+  };
+
+  const handleThemeMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    const rail = themesRailRef.current;
+    const drag = themeDragRef.current;
+    if (!rail || !drag.active) return;
+    const deltaX = event.clientX - drag.startX;
+    if (Math.abs(deltaX) > 4) {
+      drag.moved = true;
+      event.preventDefault();
+    }
+    rail.scrollLeft = drag.startScrollLeft - deltaX;
+  };
+
+  const finishThemeDrag = () => {
+    const moved = themeDragRef.current.moved;
+    themeDragRef.current.active = false;
+    window.setTimeout(() => {
+      themeDragRef.current.moved = false;
+    }, moved ? 0 : 0);
+  };
+
+  const suppressThemeClickAfterDrag = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!themeDragRef.current.moved) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
   return (
     <div>
-      {/* 分类行：推荐色系在第一位，和其他色系同栏同逻辑 */}
-      <div className="flex items-center gap-2.5 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide whitespace-nowrap">
-        {categoryOptions.map((cat) => (
-          <button
-            key={cat.id}
-            onClick={() => setSelectedCategory(cat.id)}
-            className={`flex-shrink-0 flex flex-col items-center h-14 px-3 justify-center rounded-full border-2 transition-all duration-200 ${
-              selectedCategory === cat.id
-                ? 'border-[#5B4FE9] bg-[#F5F3FF] scale-[1.03] shadow-sm'
-                : 'border-gray-100 hover:border-gray-200 bg-white hover:shadow-sm'
-            }`}
-            title={cat.id === 'recommended' ? '推荐色系（按场景）' : cat.name}
-          >
-            <div className="flex gap-1 mb-1">
-              {cat.colors.slice(0, 3).map((c, i) => (
-                <span key={`${cat.id}-${i}`} className="w-3.5 h-3.5 md:w-4 md:h-4 rounded-full shadow-sm border border-white/60" style={{ backgroundColor: c }} />
-              ))}
-            </div>
-            <span className="text-[11px] font-medium text-gray-600 whitespace-nowrap">{cat.name}</span>
-          </button>
-        ))}
+      <div className="mb-1.5 flex items-baseline gap-1.5">
+        <h3 className="text-[15px] font-bold tracking-tight text-slate-800">主题色系</h3>
+        <span className="text-xs font-semibold text-violet-600">· {selectedMeta.name}</span>
+        <span className="text-[11px] text-slate-400">· 拖动彩条、色块·选定主题</span>
       </div>
 
-      <div className="bg-[#FAFBFE] rounded-2xl p-3 md:p-4 mt-2 animate-fade-in border border-slate-100">
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="flex gap-1">
-              {selectedMeta.colors.slice(0, 3).map((c, i) => (
-                <span key={`${selectedMeta.id}-${i}`} className="w-3 h-3 rounded-full border border-slate-200" style={{ backgroundColor: c }} />
-              ))}
-            </div>
-            <span className="text-[15px] font-semibold text-gray-700 truncate">{selectedMeta.name}</span>
-            <span className="text-xs text-gray-400 shrink-0">· {selectedMeta.count} 个主题</span>
+      <div className="min-w-0 rounded-2xl border border-violet-100/75 bg-white/42 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.86)] backdrop-blur">
+        <div
+          ref={spectrumRef}
+          className="relative -my-2 mx-auto h-8 w-[88%] max-w-[680px] touch-pan-y select-none sm:w-[76%]"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={finishPointerSelection}
+          onPointerCancel={cancelPointerSelection}
+          aria-label="主题色系连续选择器，可点击或左右拖动选择"
+        >
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 h-4 -translate-y-1/2 rounded-full border border-violet-200/65 bg-white/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.96),0_2px_7px_rgba(99,102,241,0.06)]" />
+          <div
+            className="pointer-events-none absolute inset-x-1 top-1/2 h-1 -translate-y-1/2 rounded-full border border-white/85 shadow-[inset_0_1px_1px_rgba(255,255,255,0.45),0_1px_3px_rgba(15,23,42,0.10)]"
+            style={{ background: CONTINUOUS_SPECTRUM_GRADIENT }}
+          >
+            <span className="absolute inset-x-1 top-[1px] h-[35%] rounded-full bg-white/20 blur-[1px]" />
           </div>
-          {selectedTheme && (
-            <div className="hidden md:flex items-center gap-2 text-[11px] text-slate-500">
-              <span>当前</span>
-              <span className="font-semibold text-slate-700">{selectedTheme.nameZh}</span>
-              <span className="w-2.5 h-2.5 rounded-full border border-slate-200" style={{ backgroundColor: selectedTheme.colors[0] }} title={`背景色 ${selectedTheme.colors[0]}`} />
-              <span className="w-2.5 h-2.5 rounded-full border border-slate-200" style={{ backgroundColor: selectedTheme.colors[1] }} title={`强调色 ${selectedTheme.colors[1]}`} />
-              <span className="w-2.5 h-2.5 rounded-full border border-slate-200" style={{ backgroundColor: selectedTheme.colors[2] }} title={`字体色 ${selectedTheme.colors[2]}`} />
-            </div>
-          )}
+
+          <div className="absolute inset-x-1 top-1/2 grid h-3.5 -translate-y-1/2 grid-cols-8 gap-[3px]">
+            {categoryOptions.map((cat) => {
+              const active = selectedCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    if (suppressClickRef.current) return;
+                    setSelectedCategory(cat.id);
+                  }}
+                  className={`relative mx-[8%] rounded-full border transition-[border-color,box-shadow,background,transform] duration-150 ${
+                    active
+                      ? 'z-10 scale-[1.04] border-white/95 shadow-[0_0_0_1.5px_rgba(109,83,235,0.72),0_2px_7px_rgba(76,61,184,0.22),inset_0_1px_1px_rgba(255,255,255,0.4)]'
+                      : 'border-transparent bg-transparent'
+                  }`}
+                  style={active ? { background: CATEGORY_GRADIENTS[cat.id] || CATEGORY_GRADIENTS.recommended } : undefined}
+                  aria-label={`${cat.name}，${cat.count}个主题`}
+                  aria-pressed={active}
+                  title={`${cat.name} · ${cat.count}个主题`}
+                />
+              );
+            })}
+          </div>
         </div>
 
-        <div className="grid grid-cols-5 !grid-cols-3 md:!grid-cols-5 gap-2 md:gap-3">
-          {themes.map((theme) => getThemeCard(theme, value === theme.id, onChange))}
+        <div className="relative mt-1.5 min-w-0 animate-fade-in border-t border-violet-100/60 pt-1.5">
+          <div
+            ref={themesRailRef}
+            className="flex min-w-0 snap-x snap-mandatory gap-2 overflow-x-auto px-1 pb-0.5 scrollbar-hide sm:grid sm:grid-cols-4 sm:gap-2.5 sm:overflow-visible sm:px-0 sm:pb-0"
+            onMouseDown={handleThemeMouseDown}
+            onMouseMove={handleThemeMouseMove}
+            onMouseUp={finishThemeDrag}
+            onMouseLeave={finishThemeDrag}
+            onClickCapture={suppressThemeClickAfterDrag}
+            aria-label={`当前${selectedMeta.name}色系主题，电脑端四列两排完整展示，移动端可左右滑动，共 ${MAX_THEMES_PER_PANEL} 个`}
+          >
+            {themes.map((theme) => getThemeCard(theme, value === theme.id, onChange))}
+          </div>
         </div>
       </div>
     </div>

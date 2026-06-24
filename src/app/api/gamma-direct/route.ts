@@ -6,10 +6,10 @@ import { selectBestKey, updateKeyBalance, recordKeyFailure } from '@/lib/gamma-k
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
 import { buildGammaImageOptions, normalizeUserInput } from '@/lib/adapters/ppt-param-adapter';
 import { checkPermission } from '@/lib/membership';
+import { estimateGenerationCredits } from '@/lib/generation-credits';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-const LIGHT_MINIMAL_STYLE_RE = /(白色简约|白色极简|纯白简约|简约白|极简白|白色风格|极简风|浅色极简|简约风|米绿|优雅米绿)/i;
 const PPTX_SAFE_ICON_RULES = `【PPTX安全图标与字体规范-最高优先级】
 - PPTX下载必须离线完整显示，禁止使用Gamma Icons、Font Awesome、Material Icons、Ionicons、web SVG图标、外部图片型图标或任何需要远程加载的装饰图标。
 - 要点标记必须使用PPTX稳定元素：圆形/胶囊形/数字徽章/短线/分隔线/色块/Unicode文字符号，确保导出PPTX后不出现破图、红叉、缺图图标。
@@ -57,10 +57,15 @@ function buildUploadedFilesInstruction(uploadedFiles: unknown): string {
 
   const fileLines = uploadedFiles
     .slice(0, 10)
-    .map((file: any) => {
-      const size = typeof file?.size === 'number' ? `${(file.size / 1024 / 1024).toFixed(2)}MB` : '未知大小';
-      const passthrough = file?.passthrough ? '，未做站内文字提取' : '';
-      return `- ${file?.name || '未命名附件'} (${file?.type || 'application/octet-stream'}, ${size}${passthrough})`;
+    .map((file: unknown) => {
+      const record = file && typeof file === 'object'
+        ? file as Record<string, unknown>
+        : {};
+      const size = typeof record.size === 'number'
+        ? `${(record.size / 1024 / 1024).toFixed(2)}MB`
+        : '未知大小';
+      const passthrough = record.passthrough ? '，未做站内文字提取' : '';
+      return `- ${String(record.name || '未命名附件')} (${String(record.type || 'application/octet-stream')}, ${size}${passthrough})`;
     })
     .join('\n');
 
@@ -183,7 +188,7 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 - 保持演讲者备注(通过 > 引用块)`,
 };
 
-// POST: 直通模式 - 调用 Gamma API 并等待完成,直接返回下载链接
+// POST: 专业模式 - 调用 Gamma API 创建生成任务
 export async function POST(request: NextRequest) {
   // ===== Layer 1: Auth Guard（session + header fallback） =====
   const authedUser = await resolveAuthUser(request);
@@ -239,7 +244,13 @@ export async function POST(request: NextRequest) {
     const normalizedInputText = typeof normalized.inputText === 'string' ? normalized.inputText : '';
     const requestInputText = typeof inputText === 'string' ? inputText : '';
     const uploadedFileNames = Array.isArray(uploadedFiles)
-      ? uploadedFiles.map((f: any) => String(f?.name || '').trim()).filter(Boolean)
+      ? uploadedFiles
+        .map((file: unknown) => (
+          file && typeof file === 'object'
+            ? String((file as Record<string, unknown>).name || '').trim()
+            : ''
+        ))
+        .filter(Boolean)
       : [];
     const effectiveInputText = requestInputText || normalizedInputText || (
       uploadedFileNames.length > 0
@@ -262,13 +273,6 @@ export async function POST(request: NextRequest) {
     }
 
     const imageOptions = buildGammaImageOptions(requestedImageSource, finalThemeId);
-    if (
-      imageOptions?.source === 'themeAccent'
-      && LIGHT_MINIMAL_STYLE_RE.test(String(effectiveInputText || ''))
-    ) {
-      imageOptions.source = 'pexels';
-      console.warn('[GammaDirect] LIGHT_STYLE_THEMEACCENT_FALLBACK source=themeAccent -> pexels');
-    }
     const finalImageSource = String(imageOptions.source || 'themeAccent');
 
     // ===== Layer 4: Membership/Permission Check =====
@@ -287,27 +291,22 @@ export async function POST(request: NextRequest) {
     }
     console.log(`[GammaDirect] QUOTA_OK required=${pageCount} pages imageSource=${finalImageSource}`);
 
-    // ===== Layer 5: Credit Check (before Gamma call) =====
-    // Estimate credits needed: 双生成成本，4 credits/page + AI image credits if applicable
-    const BASE_CREDIT_PER_PAGE = 4;
-    let totalCredit = pageCount * BASE_CREDIT_PER_PAGE;
-    if (finalImageSource === 'aiGenerated') {
-      const HIGH_MODELS = ['imagen-3-pro', 'flux-1-pro', 'ideogram-v3-turbo', 'luma-photon-1', 'leonardo-phoenix', 'flux-kontext-pro', 'imagen-4-pro', 'ideogram-v3', 'gemini-2.5-flash-image'];
-      const model = aiModel || 'imagen-3-flash';
-      const imageCreditsPerImage = HIGH_MODELS.includes(model) ? 20 : 4;
-      const estimatedImageCount = Math.ceil(pageCount / 2);
-      totalCredit += estimatedImageCount * imageCreditsPerImage;
-    }
-    if (userCredits < totalCredit) {
-      console.log(`[GammaDirect] CREDIT_INSUFFICIENT userId=${userId} needed=${totalCredit} balance=${userCredits}`);
+    // ===== Layer 5: Credit Budget Check (before Gamma call) =====
+    const creditEstimate = estimateGenerationCredits({
+      numPages: pageCount,
+      imageSource: finalImageSource,
+      imageModel: aiModel,
+    });
+    if (userCredits < creditEstimate.totalCredits) {
+      console.log(`[GammaDirect] CREDIT_INSUFFICIENT userId=${userId} needed=${creditEstimate.totalCredits} balance=${userCredits}`);
       return NextResponse.json({
         error: '积分不足',
         code: 'INSUFFICIENT_CREDITS',
-        needed: totalCredit,
+        needed: creditEstimate.totalCredits,
         balance: userCredits,
       }, { status: 402 });
     }
-    console.log(`[GammaDirect] CREDIT_CHECK_OK userId=${userId} required=${totalCredit} balance=${userCredits}`);
+    console.log(`[GammaDirect] CREDIT_CHECK_OK userId=${userId} required=${creditEstimate.totalCredits} balance=${userCredits}`);
 
     // ===== Layer 6: Gamma API Call (existing code unchanged) =====
 
@@ -331,7 +330,7 @@ export async function POST(request: NextRequest) {
       : '';
     // 免费套图:追加强调布局图指令
     const themeAppend = (finalImageSource === 'themeAccent')
-      ? `\n\n【主题套图策略】\n优先使用 themeAccent 主题强调图；只有在图片已成功加载且可见时才保留图片元素。若图片不可用，必须删除图片元素和图片容器，改用图标、色块或大字布局，禁止空图片框。`
+      ? `\n\n【主题套图策略】\n严格使用 themeAccent，不得切换为 Pexels、AI 图或其它图片源。主题强调图仅可作为已经真实加载成功的背景装饰或插图；禁止使用 Emphasize 大图模板、固定图片槽、空白图片框和图片占位符。若主题图不可用，必须删除整个图片元素及容器，改用完整的文字、图标、色块布局。`
       : '';
     const keyPageSourceHint =
       finalImageSource === 'pexels'
@@ -347,19 +346,19 @@ export async function POST(request: NextRequest) {
     const finalInstructions = normalizePptxSafeInstructions(instructions + metaphorAppend + themeAppend + imageStrategy);
 
     // 🚨 V8.2：Gamma 固定使用 preserve 模式
-    // gamma-direct 的 inputText 已经是前端处理好的 markdown
+    // 专业模式的 inputText 已经是前端处理好的 markdown
     // （可能来自 buildPreserveMarkdown 或用户手动输入的结构化内容）
     // Gamma 只负责排版渲染，不做内容扩充/缩减
     //
     // textMode 语义说明：
     //   - generate: AI 扩写（我们的架构中由 outline API 处理）
     //   - condense: AI 精简（我们的架构中由 outline API 处理）
-    //   - preserve: 保持原文（我们的架构中用于直通模式和确认后生成）
+    //   - preserve: 保持原文（我们的架构中用于专业模式和确认后生成）
     // 由于 outline API 已经在预处理阶段根据 textMode 生成不同风格的大纲，
     // Gamma 在我们的架构中只承担排版渲染职责，因此固定为 'preserve'
     const criticalInstruction = '\n\n【CRITICAL - 强制排版引擎模式】\n你是一个排版渲染引擎（layout engine ONLY）。禁止创作或修改任何事实信息。严格按照提供的Markdown层级和---分割线生成卡片。禁止自动合并或拆分页面。全局正文强制使用大文本（### 或 **粗体**），禁止普通小字。';
     const strictPreserveInstruction = Boolean(strictPreserve)
-      ? '\n\n【严格保真开关】\n禁止改写或重命名标题；禁止添加“续页”后缀；禁止在正文中注入填充提示语或额外说明。\n【保真补充】\n在不改写正文前提下，必须执行图片策略并补足可见主图，禁止输出纯文字大白板。'
+      ? '\n\n【严格保真开关】\n禁止改写或重命名标题；禁止添加“续页”后缀；禁止在正文中注入填充提示语或额外说明。\n【保真补充】\n在不改写正文前提下执行图片策略；图片只有在真实可见时才可保留。若图片不可用，必须删除图片元素和图片容器，使用完整的纯文字、图标、色块或大字布局，禁止空图片槽、灰框和缺图图标。'
       : '';
 
     // 步骤1:创建 Gamma 生成任务(恢复技术部验证的完整参数)
@@ -413,49 +412,22 @@ export async function POST(request: NextRequest) {
       console.log('[GammaDirect] 积分扣除:', createData.credits.deducted, '| 剩余:', createData.credits.remaining);
     }
 
-    // ===== Layer 7: Credit Deduction (after successful Gamma creation) =====
-    // Deduct credits via user API
-    try {
-      const deductRes = await fetch(new URL('/api/user', request.url).toString(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'deduct',
-          userId: userId,
-          numPages: pageCount,
-          imageSource: finalImageSource,
-          imageModel: aiModel,
-          estimatedImages: Math.ceil(pageCount / 2),
-        }),
-      });
-      const deductData = await deductRes.json();
-      if (!deductRes.ok) {
-        // Credit deduction failed — log but don't fail the generation
-        console.log(`[GammaDirect] CREDIT_DEDUCT_FAILED userId=${userId} error=${deductData.error}`);
-      } else {
-        const newBalance = deductData.balance ?? (userCredits - totalCredit);
-        console.log(`[GammaDirect] CREDIT_DEDUCTED userId=${userId} amount=${totalCredit} newBalance=${newBalance}`);
-      }
-    } catch (deductErr) {
-      console.error('[GammaDirect] Credit deduction error:', deductErr);
-      // Don't fail the response — generation already succeeded
-    }
-
     // 🚨 D3 Fix Q3: 补充 config 字段，与 gamma/route.ts 保持一致
     return NextResponse.json({
       generationId,
       taskId: generationId,
-      status: 'pending', // 直通模式不等待完成
-      message: '直通生成任务已创建',
+      status: 'pending', // 专业模式不等待完成
+      message: '专业模式生成任务已创建',
       artifact: {
         pollingUrl: `/api/gamma?id=${generationId}`,
       },
-      config: { themeId: finalThemeId, tone: finalTone, pageCount },
+      config: { themeId: finalThemeId, tone: finalTone, imageMode: finalImageSource, pageCount },
       credits: createData.credits,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '生成失败';
     console.error('Gamma direct error:', error);
-    console.log(`[GammaDirect] ERROR reason=${error.message || 'unknown'} code=INTERNAL_ERROR status=500`);
-    return NextResponse.json({ error: error.message || '生成失败' }, { status: 500 });
+    console.log(`[GammaDirect] ERROR reason=${message} code=INTERNAL_ERROR status=500`);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

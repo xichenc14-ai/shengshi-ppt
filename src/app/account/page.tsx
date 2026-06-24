@@ -6,6 +6,19 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import Navbar from '@/components/Navbar';
 import { APP_VERSION } from '@/lib/version';
+import {
+  ArrowRight,
+  ClockCounterClockwise,
+  Coins,
+  DownloadSimple,
+  IdentificationCard,
+  LockKey,
+  PresentationChart,
+  Receipt,
+  SignOut,
+  DeviceMobile,
+  Sparkle,
+} from '@phosphor-icons/react';
 
 interface HistoryItem {
   id: string;
@@ -28,18 +41,19 @@ interface AccountOverview {
   };
   admin?: {
     gamma_pool_credits?: number;
+    gamma_pool_note?: string;
   } | null;
 }
 
 const PLAN_NAMES: Record<string, { label: string; emoji: string; badgeClass: string }> = {
   free: { label: '免费用户', emoji: '💚', badgeClass: 'bg-slate-100 text-slate-600' },
-  shengxin: { label: '省心会员', emoji: '✨', badgeClass: 'bg-indigo-100 text-indigo-700' },
-  advanced: { label: '高级会员', emoji: '👑', badgeClass: 'bg-violet-100 text-violet-700' },
-  basic: { label: '省心会员', emoji: '✨', badgeClass: 'bg-indigo-100 text-indigo-700' },
-  standard: { label: '高级会员', emoji: '👑', badgeClass: 'bg-violet-100 text-violet-700' },
-  pro: { label: '高级会员', emoji: '👑', badgeClass: 'bg-violet-100 text-violet-700' },
-  vip: { label: '高级会员', emoji: '👑', badgeClass: 'bg-violet-100 text-violet-700' },
-  supreme: { label: '高级会员', emoji: '👑', badgeClass: 'bg-violet-100 text-violet-700' },
+  shengxin: { label: '省心会员', emoji: '💎', badgeClass: 'bg-indigo-100 text-indigo-700' },
+  advanced: { label: '尊享会员', emoji: '👑', badgeClass: 'bg-violet-100 text-violet-700' },
+  basic: { label: '省心会员', emoji: '💎', badgeClass: 'bg-indigo-100 text-indigo-700' },
+  standard: { label: '尊享会员', emoji: '👑', badgeClass: 'bg-violet-100 text-violet-700' },
+  pro: { label: '尊享会员', emoji: '👑', badgeClass: 'bg-violet-100 text-violet-700' },
+  vip: { label: '尊享会员', emoji: '👑', badgeClass: 'bg-violet-100 text-violet-700' },
+  supreme: { label: '尊享会员', emoji: '👑', badgeClass: 'bg-violet-100 text-violet-700' },
 };
 
 const AVATAR_CHOICES = ['✨', '📘', '🎯', '💡', '🚀', '🌟', '🧠', '🪄'];
@@ -81,7 +95,6 @@ export default function AccountPage() {
   const [countdown, setCountdown] = useState(0);
 
   const [historyLoading, setHistoryLoading] = useState(true);
-  const [historyCount, setHistoryCount] = useState(0);
   const [recentHistory, setRecentHistory] = useState<HistoryItem[]>([]);
   const [overview, setOverview] = useState<AccountOverview | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>('membership');
@@ -118,7 +131,6 @@ export default function AccountPage() {
         if (!cancelled) {
           const list = Array.isArray(historyData?.history) ? historyData.history : [];
           setRecentHistory(list.slice(0, 4));
-          setHistoryCount(typeof historyData?.count === 'number' ? historyData.count : list.length);
           if (overviewRes.ok) {
             setOverview(overviewData);
             const nextExpire = overviewData?.user?.plan_expires_at || null;
@@ -135,7 +147,6 @@ export default function AccountPage() {
       } catch {
         if (!cancelled) {
           setRecentHistory([]);
-          setHistoryCount(0);
           setOverview(null);
         }
       } finally {
@@ -153,7 +164,6 @@ export default function AccountPage() {
   const generationCount = overview?.metrics?.generation_count || 0;
   const downloadCount = overview?.metrics?.download_count || 0;
   const paidAmount = overview?.metrics?.paid_amount_yuan || 0;
-  const adminGammaPoolCredits = user?.is_admin ? Number(overview?.admin?.gamma_pool_credits || user.credits || 0) : null;
 
   const saveProfile = async () => {
     if (!user) return;
@@ -319,113 +329,111 @@ export default function AccountPage() {
     <div className="min-h-screen sx-shell">
       <Navbar />
 
-      <div className="max-w-6xl mx-auto px-4 md:px-8 py-6 md:py-10 space-y-5">
-        <section className="relative overflow-hidden rounded-[30px] bg-gradient-to-br from-[#5c55ff] via-[#346cff] to-[#33c8ff] p-6 md:p-8 shadow-2xl shadow-indigo-200/50">
-          <div className="flex flex-col md:flex-row md:items-center gap-5 text-white">
-            <div className="w-20 h-20 rounded-full bg-white/18 border border-white/38 text-white text-3xl font-black flex items-center justify-center backdrop-blur-md">
+      <main className="mx-auto max-w-5xl space-y-4 px-4 py-5 md:px-8 md:py-9">
+        <section className="relative overflow-hidden rounded-[28px] border border-white/50 bg-gradient-to-br from-[#4F75F6] via-[#7458EE] to-[#B842E7] p-5 text-white shadow-[0_20px_55px_rgba(96,72,215,0.24)] md:p-7">
+          <div className="pointer-events-none absolute -right-12 -top-16 h-44 w-44 rounded-full bg-cyan-300/30 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-20 left-1/3 h-40 w-40 rounded-full bg-fuchsia-300/20 blur-3xl" />
+          <div className="relative flex items-center gap-4">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[20px] border border-white/35 bg-white/16 text-2xl font-black shadow-inner backdrop-blur-md md:h-20 md:w-20 md:text-3xl">
               {avatar || user.nickname?.charAt(0) || 'U'}
             </div>
-            <div className="flex-1 min-w-0">
-              <h1 className="text-2xl md:text-3xl font-black truncate">{user.nickname || '用户'}</h1>
-              <p className="text-sm text-white/80 mt-1">{user.phone}</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-semibold tracking-[0.18em] text-white/65">ACCOUNT CENTER</p>
+              <h1 className="mt-1 truncate text-2xl font-black md:text-3xl">{user.nickname || '用户'}</h1>
+              <p className="mt-1 text-sm text-white/75">{user.phone}</p>
             </div>
-            <div className="flex flex-col items-start md:items-end gap-2">
-              <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-bold ${plan.badgeClass}`}>
-                {plan.emoji} {plan.label}
+            <div className="shrink-0 text-right">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/35 bg-white/90 px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-sm">
+                <Sparkle size={14} weight="fill" />
+                {plan.label}
               </span>
-              <span className="text-xs text-white/80">到期：{planExpiresAt ? fmtDate(planExpiresAt) : '未设置（按回调补齐）'}</span>
+              <p className="mt-2 text-[11px] text-white/70">
+                {planExpiresAt ? `${fmtDate(planExpiresAt)} 到期` : '当前有效'}
+              </p>
             </div>
           </div>
         </section>
 
         {(message || error) && (
-          <section className={`rounded-2xl px-4 py-3 text-sm font-semibold ${error ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+          <section className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${error ? 'border-red-200 bg-red-50 text-red-600' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
             {error || message}
           </section>
         )}
 
-        <section className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="sx-glass rounded-[22px] p-5">
-            <p className="text-xs text-slate-500">{user.is_admin ? 'Gamma 总积分池' : '当前积分'}</p>
-            <p className="text-3xl font-black text-slate-900 mt-1">{user.credits}</p>
-            {user.is_admin && (
-              <p className="mt-1 text-[11px] text-slate-400">管理员账户已对齐实时 Gamma 总余额</p>
-            )}
-          </div>
-          <div className="sx-glass rounded-[22px] p-5">
-            <p className="text-xs text-slate-500">生成次数</p>
-            <p className="text-3xl font-black text-slate-900 mt-1">{generationCount}</p>
-          </div>
-          <div className="sx-glass rounded-[22px] p-5">
-            <p className="text-xs text-slate-500">下载次数</p>
-            <p className="text-3xl font-black text-slate-900 mt-1">{downloadCount}</p>
-          </div>
-          <div className="sx-glass rounded-[22px] p-5">
-            <p className="text-xs text-slate-500">累计支付</p>
-            <p className="text-3xl font-black text-slate-900 mt-1">¥{paidAmount.toFixed(2)}</p>
-          </div>
+        <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {[
+            { label: '可用积分', value: user.credits, icon: Coins, color: 'from-amber-400 to-orange-500' },
+            { label: '生成次数', value: generationCount, icon: PresentationChart, color: 'from-blue-500 to-indigo-500' },
+            { label: '下载次数', value: downloadCount, icon: DownloadSimple, color: 'from-cyan-500 to-blue-500' },
+            { label: '累计支付', value: `¥${paidAmount.toFixed(2)}`, icon: Receipt, color: 'from-violet-500 to-fuchsia-500' },
+          ].map(({ label, value, icon: Icon, color }) => (
+            <div key={label} className="rounded-[20px] border border-white/80 bg-white/72 p-4 shadow-[0_8px_24px_rgba(88,74,174,0.08)] backdrop-blur-xl">
+              <div className={`flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br ${color} text-white shadow-sm`}>
+                <Icon size={17} weight="bold" />
+              </div>
+              <p className="mt-3 text-[11px] font-medium text-slate-400">{label}</p>
+              <p className="mt-0.5 text-2xl font-black tracking-tight text-slate-900">{value}</p>
+            </div>
+          ))}
         </section>
 
-        {user.is_admin && adminGammaPoolCredits !== null && (
-          <section className="sx-glass rounded-[22px] p-5">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs text-slate-500">管理员实时监控</p>
-                <p className="text-lg font-black text-slate-900 mt-1">Gamma 总积分池</p>
-                <p className="mt-1 text-sm text-slate-500">该数值直接对齐当前 key 池实时总余额，便于监控外部可用积分。</p>
-              </div>
-              <div className="text-right">
-                <p className="text-4xl font-black text-slate-900">{adminGammaPoolCredits}</p>
-                <p className="mt-1 text-xs text-slate-400">实时汇总</p>
-              </div>
-            </div>
-          </section>
-        )}
+        <section className="rounded-[24px] border border-white/80 bg-white/58 p-2 shadow-[0_14px_40px_rgba(88,74,174,0.09)] backdrop-blur-xl">
+          <nav className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+            {[
+              { key: 'membership', label: '会员权益', icon: Sparkle },
+              { key: 'profile', label: '个人资料', icon: IdentificationCard },
+              { key: 'security', label: '密码安全', icon: LockKey },
+              { key: 'phone', label: '手机管理', icon: DeviceMobile },
+              { key: 'history', label: '生成记录', icon: ClockCounterClockwise },
+            ].map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => {
+                  setActiveTab(key as TabKey);
+                  setError('');
+                  setMessage('');
+                }}
+                className={`flex h-10 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-xs font-bold transition-all ${
+                  activeTab === key
+                    ? 'sx-primary-btn text-white shadow-md shadow-indigo-200/60'
+                    : 'border border-indigo-100 bg-white/80 text-slate-600 hover:bg-indigo-50'
+                }`}
+              >
+                <Icon size={15} weight={activeTab === key ? 'fill' : 'bold'} />
+                {label}
+              </button>
+            ))}
+          </nav>
 
-        <section className="grid lg:grid-cols-[240px_1fr] gap-4">
-          <aside className="sx-glass rounded-[22px] p-3 h-fit">
-            <div className="grid grid-cols-2 lg:grid-cols-1 gap-2">
-              {[
-                ['membership', '会员与账单'],
-                ['profile', '编辑资料'],
-                ['security', '密码安全'],
-                ['phone', '手机号管理'],
-                ['history', '最近生成'],
-              ].map(([k, label]) => (
-                <button
-                  key={k}
-                  onClick={() => setActiveTab(k as TabKey)}
-                  className={`text-left px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                    activeTab === k ? 'sx-primary-btn text-white' : 'bg-white border border-indigo-100 text-slate-700 hover:bg-indigo-50'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </aside>
-
-          <div className="sx-glass rounded-[24px] p-5 md:p-6">
+          <div className="mt-1 rounded-[20px] border border-indigo-100/70 bg-white/82 p-4 md:p-6">
             {activeTab === 'membership' && (
-              <div className="space-y-4">
-                <h2 className="text-xl font-black text-slate-900">会员与账单</h2>
-                <div className="grid md:grid-cols-2 gap-3">
-                  <div className="rounded-2xl border border-indigo-100 bg-white/75 p-4">
-                    <p className="text-xs text-slate-500">当前套餐</p>
-                    <p className="mt-1 text-2xl font-black text-slate-900">{plan.label}</p>
-                    <p className="mt-2 text-sm text-slate-500">到期时间：{planExpiresAt ? fmtDate(planExpiresAt) : '待支付回调后写入'}</p>
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold tracking-wide text-indigo-500">MEMBERSHIP</p>
+                    <h2 className="mt-1 text-xl font-black text-slate-900">会员与积分</h2>
                   </div>
-                  <div className="rounded-2xl border border-indigo-100 bg-white/75 p-4">
-                    <p className="text-xs text-slate-500">积分消耗</p>
-                    <p className="mt-1 text-2xl font-black text-slate-900">{totalCreditsUsed}</p>
-                    <p className="mt-2 text-sm text-slate-500">历史项目：{historyLoading ? '...' : historyCount} 个</p>
+                  <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${plan.badgeClass}`}>
+                    {plan.emoji} {plan.label}
+                  </span>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50/55 p-4">
+                    <p className="text-[11px] text-slate-400">套餐有效期</p>
+                    <p className="mt-1 text-base font-black text-slate-900">{planExpiresAt ? fmtDate(planExpiresAt) : '当前有效'}</p>
+                  </div>
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50/55 p-4">
+                    <p className="text-[11px] text-slate-400">累计积分消耗</p>
+                    <p className="mt-1 text-base font-black text-slate-900">{totalCreditsUsed}</p>
                   </div>
                 </div>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                  <Link href="/pricing" className="text-center px-4 py-2.5 rounded-xl sx-primary-btn text-white text-sm font-bold">升级套餐</Link>
-                  <Link href="/pricing#credit-topup" className="text-center px-4 py-2.5 rounded-xl bg-white border border-indigo-200 text-indigo-700 text-sm font-bold">单独充值积分</Link>
-                  <Link href="/pricing#single-pay" className="text-center px-4 py-2.5 rounded-xl bg-white border border-indigo-200 text-indigo-700 text-sm font-bold">单次按页付费</Link>
-                  <Link href="/history" className="text-center px-4 py-2.5 rounded-xl bg-white border border-indigo-200 text-indigo-700 text-sm font-bold">查看完整历史</Link>
+                <div className="mt-4 grid grid-cols-2 gap-2.5">
+                  <Link href="/pricing" className="flex items-center justify-center gap-1.5 rounded-xl sx-primary-btn px-4 py-3 text-sm font-bold text-white">
+                    查看套餐 <ArrowRight size={14} weight="bold" />
+                  </Link>
+                  <Link href="/pricing#credit-topup" className="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm font-bold text-indigo-700">
+                    充值积分 <ArrowRight size={14} weight="bold" />
+                  </Link>
                 </div>
               </div>
             )}
@@ -433,7 +441,7 @@ export default function AccountPage() {
             {activeTab === 'profile' && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-black text-slate-900">编辑资料</h2>
+                  <h2 className="text-xl font-black text-slate-900">个人资料</h2>
                   <button
                     onClick={() => {
                       setEditingProfile((v) => !v);
@@ -588,14 +596,16 @@ export default function AccountPage() {
           </div>
         </section>
 
-        <section className="grid md:grid-cols-3 gap-4">
-          <Link href="/pricing" className="sx-primary-btn rounded-[22px] p-5 text-white font-black text-center">升级套餐</Link>
-          <Link href="/pricing#credit-topup" className="sx-glass rounded-[22px] p-5 text-slate-800 font-bold text-center border border-indigo-200">充值积分</Link>
-          <button onClick={() => { logout(); router.push('/'); }} className="sx-glass rounded-[22px] p-5 text-red-500 font-bold border border-red-200/70">退出登录</button>
-        </section>
+        <button
+          onClick={() => { logout(); router.push('/'); }}
+          className="flex w-full items-center justify-center gap-2 rounded-[18px] border border-rose-200/80 bg-white/70 py-3.5 text-sm font-bold text-rose-500 backdrop-blur transition-colors hover:bg-rose-50"
+        >
+          <SignOut size={18} weight="bold" />
+          退出登录
+        </button>
 
-        <div className="pt-2 text-center text-[11px] text-gray-400">版本 {APP_VERSION}</div>
-      </div>
+        <div className="pb-3 pt-1 text-center text-[11px] text-gray-400">版本 {APP_VERSION}</div>
+      </main>
     </div>
   );
 }

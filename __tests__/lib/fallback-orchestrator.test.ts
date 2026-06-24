@@ -25,8 +25,8 @@ describe('fallback-orchestrator', () => {
     delete process.env.AI_PRIMARY_PROVIDER;
   });
 
-  it('uses deepseek as default primary provider', async () => {
-    callDeepSeekWithRetry.mockResolvedValueOnce('deepseek ok');
+  it('uses minimax as default primary provider', async () => {
+    callMiniMaxWithRetry.mockResolvedValueOnce('minimax ok');
 
     const result = await callWithFallback({
       systemPrompt: 'sys',
@@ -35,18 +35,19 @@ describe('fallback-orchestrator', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.provider).toBe('deepseek');
-    expect(callDeepSeekWithRetry).toHaveBeenCalledTimes(1);
-    expect(callMiniMaxWithRetry).not.toHaveBeenCalled();
+    expect(result.provider).toBe('minimax');
+    expect(callMiniMaxWithRetry).toHaveBeenCalledTimes(1);
+    expect(callDeepSeekWithRetry).not.toHaveBeenCalled();
 
-    const options = callDeepSeekWithRetry.mock.calls[0][1];
+    const options = callMiniMaxWithRetry.mock.calls[0][1];
     expect(options.maxRetries).toBe(2);
     expect(options.timeoutMs).toBe(30000);
   });
 
-  it('accepts deepseek key from DEEPSEEK_API_KEYS pool', async () => {
+  it('accepts deepseek key from DEEPSEEK_API_KEYS pool when explicitly selected', async () => {
     delete process.env.DEEPSEEK_API_KEY;
     process.env.DEEPSEEK_API_KEYS = 'pool-key-1,pool-key-2';
+    process.env.OUTLINE_PRIMARY_PROVIDER = 'deepseek';
     callDeepSeekWithRetry.mockResolvedValueOnce('deepseek pool ok');
 
     const result = await callWithFallback({
@@ -60,7 +61,8 @@ describe('fallback-orchestrator', () => {
     expect(callDeepSeekWithRetry).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to minimax when deepseek fails', async () => {
+  it('falls back to minimax when explicitly selected deepseek fails', async () => {
+    process.env.OUTLINE_PRIMARY_PROVIDER = 'deepseek';
     callDeepSeekWithRetry.mockRejectedValueOnce(new Error('DeepSeek API 失败: 500'));
     callMiniMaxWithRetry.mockResolvedValueOnce('minimax ok');
 
@@ -77,6 +79,7 @@ describe('fallback-orchestrator', () => {
   });
 
   it('still tries backup provider on auth error', async () => {
+    process.env.OUTLINE_PRIMARY_PROVIDER = 'deepseek';
     callDeepSeekWithRetry.mockRejectedValueOnce(new Error('DeepSeek API 失败: 401'));
     callMiniMaxWithRetry.mockResolvedValueOnce('minimax ok');
 

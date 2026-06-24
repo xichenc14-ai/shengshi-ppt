@@ -32,6 +32,7 @@ describe('ppt-param-adapter', () => {
   it('maps app image modes to Gamma sources', () => {
     expect(buildGammaImageOptions('theme-img', 'consultant').source).toBe('themeAccent');
     expect(buildGammaImageOptions('theme-img', 'founder').source).toBe('themeAccent');
+    expect(buildGammaImageOptions('themeAccent', 'consultant').source).toBe('themeAccent');
     expect(buildGammaImageOptions('weballimages', 'consultant').source).toBe('pexels');
     expect(buildGammaImageOptions('webfreetouse', 'consultant').source).toBe('pexels');
     expect(buildGammaImageOptions('noImages', 'consultant').source).toBe('noImages');
@@ -59,5 +60,12 @@ describe('ppt-param-adapter', () => {
     expect(options).not.toHaveProperty('model');
     expect(options).not.toHaveProperty('style');
     expect(options).not.toHaveProperty('prompt');
+  });
+
+  it('never silently changes an explicit image source', () => {
+    expect(buildGammaImageOptions('theme-img').source).toBe('themeAccent');
+    expect(buildGammaImageOptions('web').source).toBe('pexels');
+    expect(buildGammaImageOptions('noImages').source).toBe('noImages');
+    expect(buildGammaImageOptions('ai').source).toBe('aiGenerated');
   });
 });

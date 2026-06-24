@@ -1,5 +1,5 @@
 // useGammaGeneration.ts — Gamma 生成 + 轮询 Hook
-// 提取自 page.tsx，统一管理直通模式和省心模式的生成逻辑
+// 提取自 page.tsx，统一管理专业模式和省心模式的生成逻辑
 
 import { useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
@@ -98,7 +98,7 @@ export function useGammaGeneration(): UseGammaGenerationReturn {
           body: JSON.stringify(gammaPayload),
         });
       } else {
-        // 直通模式
+        // 专业模式
         gRes = await fetch('/api/gamma-direct', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

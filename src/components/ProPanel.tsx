@@ -26,7 +26,8 @@ const IMAGE_MODES = [
   { id: 'noImages', name: '极简无图', desc: '纯版式' },
   { id: 'theme-img', name: '主题套图', desc: '默认' },
   { id: 'web', name: 'Pexels图库', desc: '稳定图库' },
-  { id: 'ai', name: 'AI图', desc: '会员✨' },
+  { id: 'ai', name: 'AI定制图', desc: '省心会员💎' },
+  { id: 'ai-pro', name: 'AI尊享图', desc: '尊享会员👑' },
 ];
 
 interface ProPanelProps {

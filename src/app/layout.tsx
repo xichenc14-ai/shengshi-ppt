@@ -1,9 +1,11 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import Script from 'next/script';
 import { AuthProvider } from '@/lib/auth-context';
+import ViewportStabilizer from '@/components/ViewportStabilizer';
 import './globals.css';
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://xinppt.cn'),
   title: '省心PPT - AI一键生成专业PPT | 30秒出稿 | 免费试用',
   description: '省心PPT是AI驱动的PPT在线生成工具，输入主题即可30秒生成专业PPT。支持工作汇报、商业路演、教学课件、毕业答辩等8大场景，提供大纲编辑、多主题色系、PPTX/PDF导出。免费试用，每月3次免费生成。',
   keywords: '省心PPT,AI生成PPT,PPT在线生成,自动生成PPT,AI PPT,PPT制作工具,工作汇报PPT,免费PPT,在线PPT生成器',
@@ -13,6 +15,12 @@ export const metadata: Metadata = {
     type: 'website',
     siteName: '省心PPT',
   },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 };
 
 const BAIDU_TONGJI_ID = process.env.NEXT_PUBLIC_BAIDU_TONGJI_ID;
@@ -34,6 +42,7 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         <AuthProvider>
+          <ViewportStabilizer />
           {children}
         </AuthProvider>
       </body>

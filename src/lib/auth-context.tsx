@@ -32,7 +32,7 @@ interface AuthContextType {
   showLogin: boolean;
   showPayment: boolean;
   paymentPlan: PaymentPlan | null;
-  login: (user: UserInfo, authToken?: string) => void;
+  login: (user: UserInfo, authToken?: string) => Promise<boolean>;
   logout: () => void;
   updateCredits: (credits: number) => void;
   updateUser: (data: Partial<UserInfo>) => void;
@@ -90,23 +90,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loading, user]);
 
   const login = useCallback((u: UserInfo, authToken?: string) => {
-    setUser(u);
-    setShowLogin(false);
-    // 写入服务端httpOnly cookie
-    fetch('/api/session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'login', user: u, authToken }),
-    })
-      .then(async (res) => {
-        if (!res.ok) return;
-        const syncRes = await fetch('/api/session');
-        const syncData = await syncRes.json();
-        if (syncData?.isLoggedIn && syncData?.user) {
-          setUser(syncData.user);
+    // 登录接口本身会原子写入 Session；先直接回读。保留 POST 仅兼容旧响应。
+    return fetch('/api/session', { cache: 'no-store' })
+      .then(async (syncRes) => {
+        if (!syncRes.ok) return false;
+        let syncData = await syncRes.json();
+        if (syncData?.user?.id !== u.id) {
+          const legacyRes = await fetch('/api/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'login', user: u, authToken }),
+          });
+          if (!legacyRes.ok) return false;
+          const retryRes = await fetch('/api/session', { cache: 'no-store' });
+          if (!retryRes.ok) return false;
+          syncData = await retryRes.json();
         }
+        if (syncData?.user?.id === u.id) {
+          setUser(syncData.user);
+          setShowLogin(false);
+          return true;
+        }
+        return false;
       })
-      .catch(() => {});
+      .catch(() => false);
   }, []);
 
   const logout = useCallback(() => {

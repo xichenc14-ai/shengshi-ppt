@@ -20,10 +20,18 @@ vi.mock('@/lib/deepseek-client', () => ({
   callDeepSeekWithRetry: vi.fn().mockRejectedValue(new Error('DeepSeek error')),
 }));
 
+vi.mock('@/lib/session', () => ({
+  getSession: vi.fn().mockResolvedValue({
+    isLoggedIn: true,
+    user: { id: 'test-user', plan_type: 'shengxin' },
+  }),
+}));
+
 import { POST } from '@/app/api/outline/route';
 import { callMiniMaxWithRetry } from '@/lib/minimax-client';
 import { callDeepSeekWithRetry } from '@/lib/deepseek-client';
 import { LIMITS } from '@/lib/input-validation';
+import { getSession } from '@/lib/session';
 
 function mockRequest(body: Record<string, unknown> = {}) {
   return new Request('http://localhost/api/outline', {
@@ -39,6 +47,19 @@ describe('POST /api/outline', () => {
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toBeDefined();
+  });
+
+  it('accepts a valid historical encrypted session even when isLoggedIn is missing', async () => {
+    vi.mocked(getSession).mockResolvedValueOnce({
+      user: { id: 'legacy-user', plan_type: 'shengxin' },
+    } as Awaited<ReturnType<typeof getSession>>);
+
+    const res = await POST(new Request('http://localhost/api/outline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '127.0.0.77' },
+      body: JSON.stringify({ inputText: '生成一份商务汇报' }),
+    }) as unknown as NextRequest);
+    expect(res.status).toBe(200);
   });
 
   it('should return 400 when inputText is empty', async () => {
@@ -129,16 +150,15 @@ describe('POST /api/outline', () => {
     expect(data.imageMode).toBe('noImages');
   });
 
-  it('should return fallback outline when all LLM providers fail', async () => {
+  it('should reject the request when all LLM providers fail instead of returning unprocessed text', async () => {
     vi.mocked(callMiniMaxWithRetry).mockRejectedValue(new Error('MiniMax error'));
     vi.mocked(callDeepSeekWithRetry).mockRejectedValue(new Error('DeepSeek error'));
 
     const res = await POST(mockRequest({ inputText: '测试内容' }));
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(503);
     const data = await res.json();
-    expect(data._fallback).toBe(true);
-    expect(Array.isArray(data.slides)).toBe(true);
-    expect(data.slides.length).toBeGreaterThanOrEqual(3);
+    expect(data.code).toBe('OUTLINE_AI_UNAVAILABLE');
+    expect(data.slides).toBeUndefined();
   });
 
   it('should prefer coffee scene theme and smart default image mode in smart mode even when AI suggests dark fallback theme', async () => {
@@ -181,7 +201,7 @@ describe('POST /api/outline', () => {
     }) as unknown as NextRequest);
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.themeId).toBe('consultant');
+    expect(data.themeId).toBe('dune');
     expect(data.imageMode).toBe('web');
   });
 
@@ -305,7 +325,7 @@ describe('POST /api/outline', () => {
     }) as unknown as NextRequest);
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.themeId).toBe('atmosphere');
+    expect(data.themeId).toBe('dialogue');
     expect(data.meta.intent.themeLocked).toBe(true);
     expect(data.meta.intent.themeLabel).toBe('红色系');
   });

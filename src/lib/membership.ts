@@ -16,11 +16,11 @@ export interface MembershipPlan {
   // 省心定制（preserve模式）权限
   smartMode: boolean;
 
-  // 🆕 兮晨哥哥2026-04-15方案：免费用户下载配额
-  monthlyFreeDownloads?: number;  // 旧 PDF 下载额度字段，保留兼容历史数据
-  monthlyPptTrial?: number;       // 每月原生PPT体验次数
+  // 兼容历史字段，当前下载不再单独计费
+  monthlyFreeDownloads?: number;
+  monthlyPptTrial?: number;
   smartTrialUsed?: boolean;       // 新用户省心模式体验标记
-  pricePerPage?: number;          // 超出后按页付费（¥0.2/页）
+  pricePerPage?: number;
 }
 
 export interface UserDownloadInfo {
@@ -35,24 +35,24 @@ const PLANS: Record<string, MembershipPlan> = {
     id: 'free',
     name: '免费',
     emoji: '💚',
-    credits: 50,
+    credits: 40,
     maxPages: 8,
     priceMonthly: 0,
     priceAnnual: 0,
     allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages'],
     allowedAiModels: [],
     smartMode: false,
-    // 🆕 兮晨哥哥2026-04-15方案
-    monthlyFreeDownloads: 3,     // 历史 PDF 下载额度，当前下载入口已关闭 PDF
-    monthlyPptTrial: 1,          // 每月1次体验原生PPT
+    monthlyFreeDownloads: -1,
+    monthlyPptTrial: -1,
     smartTrialUsed: false,       // 新用户首次省心模式体验（一次）
+    pricePerPage: 0,
   },
-  // 省心会员：19.9元，400积分（按 400积分≈10元成本基准保留安全毛利）
+  // 省心会员：19.9元，500积分
   shengxin: {
     id: 'shengxin',
     name: '省心会员',
-    emoji: '✨',
-    credits: 400,
+    emoji: '💎',
+    credits: 500,
     maxPages: 20,
     priceMonthly: 19.9,
     priceAnnual: 199,
@@ -63,15 +63,15 @@ const PLANS: Record<string, MembershipPlan> = {
     monthlyPptTrial: -1,       // 无限制
     pricePerPage: 0,           // 会员免费下载
   },
-  // 高级会员：39.9元，1000积分（解锁高阶AI图与更高页数）
+  // 尊享会员：49.9元，1500积分（解锁高阶AI图与更高页数）
   advanced: {
     id: 'advanced',
-    name: '高级会员',
+    name: '尊享会员',
     emoji: '👑',
-    credits: 1000,
+    credits: 1500,
     maxPages: 40,
-    priceMonthly: 39.9,
-    priceAnnual: 399,
+    priceMonthly: 49.9,
+    priceAnnual: 499,
     allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'],
     allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'],
     smartMode: true,
@@ -80,11 +80,11 @@ const PLANS: Record<string, MembershipPlan> = {
     pricePerPage: 0,
   },
   // 兼容旧数据别名（旧 plan_type 自动映射到双套餐）
-  basic: { id: 'shengxin', name: '省心会员', emoji: '✨', credits: 400, maxPages: 20, priceMonthly: 19.9, priceAnnual: 199, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
-  standard: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
-  pro: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
-  vip: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
-  supreme: { id: 'advanced', name: '高级会员', emoji: '👑', credits: 1000, maxPages: 40, priceMonthly: 39.9, priceAnnual: 399, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  basic: { id: 'shengxin', name: '省心会员', emoji: '💎', credits: 500, maxPages: 20, priceMonthly: 19.9, priceAnnual: 199, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  standard: { id: 'advanced', name: '尊享会员', emoji: '👑', credits: 1500, maxPages: 40, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  pro: { id: 'advanced', name: '尊享会员', emoji: '👑', credits: 1500, maxPages: 40, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  vip: { id: 'advanced', name: '尊享会员', emoji: '👑', credits: 1500, maxPages: 40, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  supreme: { id: 'advanced', name: '尊享会员', emoji: '👑', credits: 1500, maxPages: 40, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
 };
 
 export const PLAN_LIST: MembershipPlan[] = [PLANS.free, PLANS.shengxin, PLANS.advanced];
@@ -174,12 +174,10 @@ export function mapImgModeToSource(imgMode: string): string {
 }
 
 /**
- * 🆕 兮晨哥哥2026-04-15方案：下载权限检查
- * 免费用户：每月1次体验原生PPT
- * 超出后按页数付费（¥0.2/页）
- * 付费会员：无限制免费下载
+ * 下载权限检查
+ * 当前策略：生成阶段统一按积分结算，生成成功后可直接下载。
  */
-export function checkDownloadPermission(user: UserDownloadInfo, pageCount: number, format: 'pptx'): {
+export function checkDownloadPermission(user: UserDownloadInfo, pageCount: number, format: 'pptx' | 'pdf'): {
   allowed: boolean;
   needPayment?: boolean;
   cost?: number;
@@ -188,45 +186,11 @@ export function checkDownloadPermission(user: UserDownloadInfo, pageCount: numbe
   watermarked?: boolean;
   reason?: string;
 } {
-  const plan = getPlan(user.plan_type || 'free');
-
-  // 1. 付费会员 → 无限制免费下载
-  if (user.plan_type !== 'free' && plan.pricePerPage === 0) {
-    return { allowed: true, cost: 0, isFreeDownload: true };
-  }
-
-  // 2. 免费用户 → 检查月度配额
-  const currentMonth = new Date().toISOString().substring(0, 7); // '2026-04'
-  const monthlyPptTrial = plan.monthlyPptTrial || 1;
-
-  // 检查是否需要月度重置
-  if (user.download_reset_month !== currentMonth) {
-    // 月度重置：自动获得新的免费配额
-    return {
-      allowed: true,
-      isFreeDownload: true,
-      isTrial: true,
-      watermarked: false,
-    }; // 需要在 API 层更新 download_reset_month
-  }
-
-  // 3. PPTX下载：每月1次体验
-  if (format === 'pptx' && user.ppt_trial_count_month < monthlyPptTrial) {
-    return {
-      allowed: true,
-      cost: 0,
-      isTrial: true,
-      reason: `本月体验第${user.ppt_trial_count_month + 1}/${monthlyPptTrial}次（原生PPT）`,
-    }; // 需要在 API 层更新 ppt_trial_count_month
-  }
-
-  // 4. 超出配额 → 按页数付费
-  const pricePerPage = 0.2; // ¥0.2/页
-  const cost = pageCount * pricePerPage;
   return {
     allowed: true,
-    needPayment: true,
-    cost,
-    reason: `超出免费配额，需付费 ¥${cost.toFixed(2)}（${pageCount}页 × ¥0.2）`,
-  }; // 需要在 API 层处理支付
+    cost: 0,
+    isFreeDownload: true,
+    watermarked: false,
+    reason: `${format.toUpperCase()} 下载已纳入积分结算`,
+  };
 }

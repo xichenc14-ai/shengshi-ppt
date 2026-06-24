@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ScrollingBanner from './ScrollingBanner';
 
 interface GenerationProgressProps {
@@ -26,10 +26,22 @@ const FUN_TIPS = [
   '马上就好，再等一下...',
 ];
 
-export default function GenerationProgress({ currentStep, progress, subtext }: GenerationProgressProps) {
+export default function GenerationProgress({ currentStep, progress }: GenerationProgressProps) {
   const [displayProgress, setDisplayProgress] = useState(Math.max(0, Math.min(100, progress)));
   const [tipIndex, setTipIndex] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const startedAtRef = useRef<number | null>(null);
   const currentStepData = STEPS[currentStep] || STEPS[0];
+
+  const remainingText = useMemo(() => {
+    if (displayProgress >= 97) return '即将完成';
+    if (elapsedSeconds < 3 || displayProgress < 8) return '正在估算剩余时间…';
+    const estimated = Math.round(
+      elapsedSeconds * (100 - displayProgress) / Math.max(displayProgress, 8)
+    );
+    const bounded = Math.max(3, Math.min(120, estimated));
+    return `预计还需约 ${bounded} 秒`;
+  }, [displayProgress, elapsedSeconds]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -55,6 +67,16 @@ export default function GenerationProgress({ currentStep, progress, subtext }: G
   }, [progress]);
 
   useEffect(() => {
+    startedAtRef.current = Date.now();
+    const timer = window.setInterval(() => {
+      const startedAt = startedAtRef.current;
+      if (!startedAt) return;
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     const timer = window.setInterval(() => {
       setTipIndex((prev) => (prev + 1) % FUN_TIPS.length);
     }, 8000);
@@ -62,7 +84,7 @@ export default function GenerationProgress({ currentStep, progress, subtext }: G
   }, []);
   
   return (
-    <div className="min-h-screen sx-shell flex flex-col relative overflow-hidden">
+    <div className="min-h-[calc(100svh-64px)] sx-shell flex flex-col relative overflow-hidden">
       {/* 顶部信息栏 */}
       <ScrollingBanner variant="wait" />
 
@@ -70,11 +92,9 @@ export default function GenerationProgress({ currentStep, progress, subtext }: G
       <span className="sx-crystal hidden md:block" style={{ '--size': '54px', '--rotate': '-24deg', '--opacity': '0.32', right: '13%', top: '24%' } as React.CSSProperties} />
       <div className="sx-orbit hidden lg:block w-[880px] h-[190px] left-1/2 -translate-x-1/2 top-[41%]" />
 
-      <div className="relative flex-1 max-w-7xl mx-auto px-4 md:px-8 py-4 md:py-12 w-full">
+      <div className="relative flex-1 max-w-5xl mx-auto px-4 md:px-8 py-5 md:py-10 w-full">
         <div className="text-center mb-5 md:mb-7">
           <h1 className="text-3xl md:text-5xl font-black tracking-tight sx-gradient-text">{currentStepData.label}</h1>
-          <p className="mt-2 text-base md:text-lg font-bold text-slate-800">{currentStepData.desc}</p>
-          <p className="mt-2 text-sm text-slate-500">{subtext || '流程进行中，系统会按当前阶段自动优化内容与版式'}</p>
         </div>
 
         <div className="max-w-xl mx-auto mb-5 md:mb-7">
@@ -88,10 +108,10 @@ export default function GenerationProgress({ currentStep, progress, subtext }: G
               </div>
               <span className="text-2xl font-black sx-accent-text w-20 text-left">{Math.round(displayProgress)}%</span>
           </div>
-          <p className="text-center text-xs text-slate-400 mt-3">大约还需 10 秒，页面离开后系统也会继续渲染</p>
+          <p className="text-center text-xs text-slate-400 mt-3">{remainingText}</p>
         </div>
 
-        <div className="grid lg:grid-cols-[1fr_320px] gap-5 md:gap-7 items-start">
+        <div className="grid lg:grid-cols-[1fr_340px] gap-5 md:gap-7 items-start">
           <div className="relative hidden md:block min-h-[360px] md:min-h-[430px]">
             <div className="sx-render-canvas !left-1/2 !right-auto !top-8 -translate-x-1/2 !w-[min(640px,92%)]">
               <div className="sx-render-canvas-inner">
@@ -113,7 +133,7 @@ export default function GenerationProgress({ currentStep, progress, subtext }: G
           </div>
 
           <div className="sx-glass-strong rounded-[28px] p-5 md:p-6">
-            <h3 className="text-base font-black text-slate-900 mb-4">本次正在优化</h3>
+            <h3 className="text-base font-black text-slate-900 mb-4">正在制作中…</h3>
             <div className="space-y-3">
               {[
                 ['统一风格', '智能匹配品牌色与字体', true],
@@ -137,30 +157,6 @@ export default function GenerationProgress({ currentStep, progress, subtext }: G
                 </div>
               ))}
             </div>
-          </div>
-        </div>
-
-        <div className="sx-glass max-w-4xl mx-auto mt-8 rounded-[24px] p-4 md:p-5">
-          <div className="grid grid-cols-3 gap-3">
-            {STEPS.map((step, i) => {
-              const isDone = i < currentStep;
-              const isCurrent = i === currentStep;
-              return (
-                <div key={step.id} className={`flex items-center gap-3 rounded-2xl p-3 ${isCurrent ? 'bg-indigo-50/80' : 'bg-white/54'}`}>
-                  <div className={`w-11 h-11 rounded-full flex items-center justify-center ${isDone ? 'bg-emerald-500 text-white' : isCurrent ? 'bg-gradient-to-br from-[#2f86ff] to-[#7c5cff] text-white' : 'bg-indigo-50 text-indigo-200'}`}>
-                    {isDone ? (
-                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 13l4 4L19 7" /></svg>
-                    ) : (
-                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={step.icon} /></svg>
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <p className={`text-sm font-black ${isDone ? 'text-emerald-600' : isCurrent ? 'text-indigo-700' : 'text-slate-300'}`}>{step.label}</p>
-                    <p className="text-xs text-slate-400">{isDone ? '已完成' : isCurrent ? '进行中...' : '等待中'}</p>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </div>
 
