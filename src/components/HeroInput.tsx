@@ -164,17 +164,17 @@ export default React.memo(function HeroInput({
                 <label className="text-[11px] sm:text-xs text-gray-600 mb-1 block font-medium">页数</label>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setPages(Math.max(5, pages - 1))}
+                    onClick={() => setPages(Math.max(1, pages - 1))}
                     className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:border-[#5B4FE9] hover:text-[#5B4FE9] transition-colors"
                   >
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
                   </button>
                   <input
                     type="number"
-                    min="5"
+                    min="1"
                     max="30"
                     value={pages}
-                    onChange={e => setPages(Math.min(30, Math.max(5, Number(e.target.value))))}
+                    onChange={e => setPages(Math.min(30, Math.max(1, Number(e.target.value))))}
                     className="w-16 h-8 text-center border border-gray-200 rounded-lg text-[13px] sm:text-sm font-medium text-gray-700 outline-none focus:border-[#5B4FE9]"
                   />
                   <span className="text-[11px] sm:text-xs text-gray-500">页</span>

@@ -33,12 +33,14 @@ function UserAvatar({ user, compact = false }: { user: UserInfo; compact?: boole
 
 function AccountMenu({
   user,
+  displayCredits,
   onClose,
   logout,
   includeNavigation,
   onFeaturesClick,
 }: {
   user: UserInfo;
+  displayCredits: number;
   onClose: () => void;
   logout: () => void;
   includeNavigation?: boolean;
@@ -62,8 +64,8 @@ function AccountMenu({
             <CircleDollarSign size={19} strokeWidth={2} aria-hidden="true" />
           </span>
           <div>
-            <p className="text-[10px] font-medium text-slate-500">{user.is_admin ? 'Gamma 总积分池' : '可用积分'}</p>
-            <p className="text-base font-black leading-tight text-amber-600">{user.credits}</p>
+            <p className="text-[10px] font-medium text-slate-500">{user.is_admin ? '服务额度' : '可用积分'}</p>
+            <p className="text-base font-black leading-tight text-amber-600">{displayCredits}</p>
           </div>
         </div>
         <Link href="/pricing" onClick={onClose} className="rounded-full bg-white/75 px-3 py-1.5 text-xs font-bold text-violet-600 shadow-sm transition hover:bg-white">
@@ -113,6 +115,32 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
   const { user, logout, openLogin } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = React.useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const [adminServiceCredits, setAdminServiceCredits] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    if (!user?.is_admin) {
+      setAdminServiceCredits(null);
+      return;
+    }
+    let cancelled = false;
+    fetch('/api/gamma-balance', { cache: 'no-store' })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (cancelled || !data) return;
+        const liveRemaining = Number(data?.liveBalance?.remaining);
+        const sharedRemaining = Number(data?.sharedRemaining ?? data?.totalRemaining);
+        if (Number.isFinite(liveRemaining)) setAdminServiceCredits(liveRemaining);
+        else if (Number.isFinite(sharedRemaining)) setAdminServiceCredits(sharedRemaining);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.is_admin]);
+
+  const displayCredits = user?.is_admin
+    ? (adminServiceCredits ?? user.credits)
+    : (user?.credits ?? 0);
 
   const closeMenus = () => {
     setUserMenuOpen(false);
@@ -163,7 +191,7 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
                 <UserAvatar user={user} />
                 <div className="text-left">
                   <p className="text-sm font-medium leading-tight text-gray-800">{user.nickname}</p>
-                  <p className="text-[10px] text-amber-600">🪙 {user.credits} {user.is_admin ? 'Gamma池' : '积分'}</p>
+                  <p className="text-[10px] text-amber-600">🪙 {displayCredits} {user.is_admin ? '服务额度' : '积分'}</p>
                 </div>
                 <ChevronDown size={13} strokeWidth={2.5} className={`text-gray-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
               </button>
@@ -172,7 +200,7 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
                 <>
                   <button className="fixed inset-0 z-40 cursor-default" onClick={() => setUserMenuOpen(false)} aria-label="关闭用户菜单" />
                   <div className="absolute right-0 top-full z-50 mt-2 w-72 animate-fade-in-scale">
-                    <AccountMenu user={user} logout={logout} onClose={() => setUserMenuOpen(false)} />
+                    <AccountMenu user={user} displayCredits={displayCredits} logout={logout} onClose={() => setUserMenuOpen(false)} />
                   </div>
                 </>
               )}
@@ -208,6 +236,7 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
             {user ? (
               <AccountMenu
                 user={user}
+                displayCredits={displayCredits}
                 logout={logout}
                 onClose={() => setMobileMenuOpen(false)}
                 onFeaturesClick={handleFeaturesClick}

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSession } from '@/lib/session';
 import { isAdminIdentity } from '@/lib/admin-auth';
-import { getKeyPoolStatus } from '@/lib/gamma-key-pool';
+import { getSharedKeyPoolRemaining } from '@/lib/gamma-key-pool';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -106,10 +106,10 @@ export async function GET() {
 
     const isAdmin = isAdminIdentity({ id: user.id, phone: user.phone || '' });
     const userCredits = isAdmin ? (() => {
-      try { return getKeyPoolStatus().totalRemaining; } catch { return 0; }
+      try { return getSharedKeyPoolRemaining(); } catch { return 0; }
     })() : Number(user.credits || 0);
     const gammaPoolCredits = isAdmin ? (() => {
-      try { return getKeyPoolStatus().totalRemaining; } catch { return 0; }
+      try { return getSharedKeyPoolRemaining(); } catch { return 0; }
     })() : null;
 
     return NextResponse.json({

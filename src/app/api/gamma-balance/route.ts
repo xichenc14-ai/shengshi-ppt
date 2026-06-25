@@ -72,6 +72,7 @@ export async function GET() {
 
     // 2. 获取 key pool 追踪的余额（基于历史生成响应，非实时）
     const poolStatus = getKeyPoolStatus();
+    const sharedRemaining = liveBalance?.remaining ?? poolStatus.sharedRemaining;
 
     return NextResponse.json({
       // workspace 信息
@@ -83,17 +84,18 @@ export async function GET() {
         successCount: k.successCount,
         failCount: k.failCount,
       })),
-      totalRemaining: poolStatus.totalRemaining,
+      totalRemaining: sharedRemaining,
+      sharedRemaining,
       healthyKeyCount: poolStatus.healthyCount,
       lowBalanceKeys: poolStatus.lowBalanceKeys,
       liveBalance: liveBalance ? {
         remaining: liveBalance.remaining,
         deducted: liveBalance.deducted,
         generationId: liveBalance.generationId,
-        source: 'Gamma API 实时查询（最近一次生成）',
+        source: '实时查询（最近一次生成）',
       } : { note: '暂无最近生成记录，使用 key-pool 追踪值' },
       // 重要提示
-      note: 'liveBalance 为 Gamma API 实时查询值；keyPools 为整个池的追踪值',
+      note: '多个 key 共享同一额度，展示余额按单个共享额度计算，不叠加',
       checkedAt: new Date().toISOString(),
     });
   } catch (e: unknown) {

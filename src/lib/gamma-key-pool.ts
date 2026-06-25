@@ -177,7 +177,10 @@ export function updateKeyBalance(key: string, deducted: number, remaining: numbe
   const pool = getKeyPool();
   const keyInfo = pool.find(k => k.key === key);
   if (keyInfo) {
-    keyInfo.remaining = remaining;
+    // These keys belong to the same provider account, so the returned balance is shared.
+    for (const item of pool) {
+      item.remaining = remaining;
+    }
     keyInfo.lastUsed = new Date();
     keyInfo.successCount++;
 
@@ -207,19 +210,26 @@ export function recordKeyFailure(key: string): void {
 export function getKeyPoolStatus(): {
   keys: KeyInfo[];
   totalRemaining: number;
+  sharedRemaining: number;
   healthyCount: number;
   lowBalanceKeys: string[];
 } {
   const pool = getKeyPool();
   const healthyKeys = pool.filter(k => k.remaining >= LOW_BALANCE_THRESHOLD);
   const lowKeys = pool.filter(k => k.remaining < LOW_BALANCE_THRESHOLD);
+  const sharedRemaining = pool[0]?.remaining ?? 0;
 
   return {
     keys: pool,
-    totalRemaining: pool.reduce((sum, k) => sum + k.remaining, 0),
+    totalRemaining: sharedRemaining,
+    sharedRemaining,
     healthyCount: healthyKeys.length,
     lowBalanceKeys: lowKeys.map(k => `${k.label}: ${k.remaining}`),
   };
+}
+
+export function getSharedKeyPoolRemaining(): number {
+  return getKeyPoolStatus().sharedRemaining;
 }
 
 /**

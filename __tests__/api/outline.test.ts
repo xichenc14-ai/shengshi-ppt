@@ -181,6 +181,37 @@ describe('POST /api/outline', () => {
     expect(data.imageMode).toBe('web');
   });
 
+  it('should honor an explicit 1-page request in smart mode', async () => {
+    vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
+      title: '单页声明',
+      scene: '商务汇报',
+      themeId: 'consultant',
+      tone: 'professional',
+      imageMode: 'theme-img',
+      slides: [
+        { title: '封面', content: ['仅保留一页'] },
+        { title: '多余页面', content: ['不应保留'] },
+      ],
+    }));
+
+    const res = await POST(new Request('http://localhost/api/outline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '127.0.0.38' },
+      body: JSON.stringify({
+        inputText: '请做一份1页的简短声明',
+        userInstruction: '1页',
+        auto: true,
+        slideCount: 8,
+      }),
+    }) as unknown as NextRequest);
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.slides).toHaveLength(1);
+    expect(data.meta.intent.pageCountLocked).toBe(true);
+    expect(data.meta.pageCount).toBe(1);
+  });
+
   it('should default smart mode to pexels for generic business content when user does not specify an image source', async () => {
     vi.mocked(callMiniMaxWithRetry).mockResolvedValueOnce(JSON.stringify({
       title: '季度经营汇报',

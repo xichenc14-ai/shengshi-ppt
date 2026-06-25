@@ -238,7 +238,7 @@ function extractUserIntentOverrides(inputText: string): UserIntentOverrides {
   const pageMatch = text.match(/(?:生成|做|输出|整理|控制)?\s*(\d{1,2})\s*页/);
   if (pageMatch) {
     const parsed = Number(pageMatch[1]);
-    if (Number.isFinite(parsed) && parsed >= 3 && parsed <= 40) {
+    if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 40) {
       overrides.pageCount = parsed;
       reasons.push(`识别页数=${parsed}`);
     }

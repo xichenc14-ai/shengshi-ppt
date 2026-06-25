@@ -17,7 +17,7 @@ import { issueAuthProof } from '@/lib/auth-proof';
 import { estimateGenerationCredits } from '@/lib/generation-credits';
 import { getSession } from '@/lib/session';
 import { isAdminIdentity } from '@/lib/admin-auth';
-import { getKeyPoolStatus } from '@/lib/gamma-key-pool';
+import { getSharedKeyPoolRemaining } from '@/lib/gamma-key-pool';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -682,7 +682,7 @@ export async function POST(req: NextRequest) {
    if (action === 'estimate_generation') {
       if (sb && await checkUserIsAdmin(sb, String(body?.userId || ''))) {
         const breakdown = estimateGenerationCredits({ numPages: body?.numPages || 10, imageSource: body?.imageSource || 'themeAccent', imageModel: body?.imageModel, estimatedImages: body?.estimatedImages || 0 });
-        return NextResponse.json({ success: true, estimate: true, needed: 0, balance: (() => { try { return getKeyPoolStatus().totalRemaining; } catch { return 0; } })(), sufficient: true, breakdown, note: '管理员账户直接扣除API池余额' });
+        return NextResponse.json({ success: true, estimate: true, needed: 0, balance: (() => { try { return getSharedKeyPoolRemaining(); } catch { return 0; } })(), sufficient: true, breakdown, note: '管理员账户使用共享服务额度' });
       }
       const { userId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
       if (!userId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
@@ -704,7 +704,7 @@ export async function POST(req: NextRequest) {
     if (action === 'hold_generation') {
       if (sb && await checkUserIsAdmin(sb, String(body?.userId || ''))) {
         const breakdown = estimateGenerationCredits({ numPages: body?.numPages || 10, imageSource: body?.imageSource || 'themeAccent', imageModel: body?.imageModel, estimatedImages: body?.estimatedImages || 0 });
-        return NextResponse.json({ success: true, holdAmount: 0, balance: (() => { try { return getKeyPoolStatus().totalRemaining; } catch { return 0; } })(), breakdown, note: '管理员账户不占用平台积分' });
+        return NextResponse.json({ success: true, holdAmount: 0, balance: (() => { try { return getSharedKeyPoolRemaining(); } catch { return 0; } })(), breakdown, note: '管理员账户不占用平台积分' });
       }
       const { userId, generationId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
       if (!userId || !generationId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
@@ -756,7 +756,7 @@ export async function POST(req: NextRequest) {
     if (action === 'settle_generation') {
       if (sb && await checkUserIsAdmin(sb, String(body?.userId || ''))) {
         const breakdown = estimateGenerationCredits({ numPages: body?.numPages || 10, imageSource: body?.imageSource || 'themeAccent', imageModel: body?.imageModel, estimatedImages: body?.estimatedImages || 0 });
-        return NextResponse.json({ success: true, creditsUsed: 0, balance: (() => { try { return getKeyPoolStatus().totalRemaining; } catch { return 0; } })(), compensated: false, breakdown, note: '管理员账户不占用平台积分，已从API池扣减' });
+        return NextResponse.json({ success: true, creditsUsed: 0, balance: (() => { try { return getSharedKeyPoolRemaining(); } catch { return 0; } })(), compensated: false, breakdown, note: '管理员账户不占用平台积分，使用共享服务额度' });
       }
       const { userId, generationId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
       if (!userId || !generationId) return NextResponse.json({ error: '参数错误' }, { status: 400 });

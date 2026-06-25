@@ -1068,7 +1068,7 @@ export default function Home() {
         const pageMatch = currentTopic.match(/(\d+)\s*页/);
         if (pageMatch) {
           const extractedPages = parseInt(pageMatch[1], 10);
-          if (extractedPages >= 3 && extractedPages <= 40) {
+          if (extractedPages >= 1 && extractedPages <= 40) {
             effectivePages = extractedPages;
             setPageCount(extractedPages);
             console.log('[UserInstruction] 从文本框提取页数:', extractedPages);
