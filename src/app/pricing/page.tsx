@@ -180,7 +180,7 @@ function PlanCard({
   onSelect: () => void;
   onBuy: () => void;
 }) {
-  const approxPages = Math.floor(plan.credits / CREDIT_PER_PAGE);
+  const approxPages = Math.floor(plan.credits / CREDITS_PER_PAGE);
 
   return (
     <button
