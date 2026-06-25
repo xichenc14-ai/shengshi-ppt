@@ -16,6 +16,8 @@ import { hashPasswordSecure, isLegacyHash, verifyPassword } from '@/lib/password
 import { issueAuthProof } from '@/lib/auth-proof';
 import { estimateGenerationCredits } from '@/lib/generation-credits';
 import { getSession } from '@/lib/session';
+import { isAdminIdentity } from '@/lib/admin-auth';
+import { getKeyPoolStatus } from '@/lib/gamma-key-pool';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -75,6 +77,15 @@ function buildGenerationSettlementDescription(generationId: string): string {
   return `生成结算-${generationId}`;
 }
 
+async function checkUserIsAdmin(sb: ReturnType<typeof getSupabase>, userId: string): Promise<boolean> {
+  if (!sb) return false;
+  try {
+    const { data: u } = await sb.from('users').select('phone').eq('id', userId).single();
+    if (!u) return false;
+    return isAdminIdentity({ id: userId, phone: (u as { phone?: string }).phone || '' });
+  } catch { return false; }
+}
+
 // ==================== GET: 检查手机号是否注册 ====================
 export async function GET(req: NextRequest) {
   const ip = getClientIP(req);
@@ -130,7 +141,7 @@ export async function GET(req: NextRequest) {
     const { data: existing } = await sb.from('users').select('id').eq('phone', phone).limit(1);
     if (existing && existing.length > 0) {
       // 更新现有用户
-      const updateData: Record<string, unknown> = { credits: 99999, plan_type: planType, is_active: true };
+      const updateData: Record<string, unknown> = { plan_type: planType, is_active: true };
       const { error: updateErr } = await sb.from('users').update(updateData).eq('id', existing[0].id);
       if (updateErr) {
         return NextResponse.json({ error: '更新失败: ' + updateErr.message }, { status: 500 });
@@ -143,13 +154,13 @@ export async function GET(req: NextRequest) {
       }
     } else {
       // 创建新用户
-      const insertData: Record<string, unknown> = { phone, nickname, credits: 99999, plan_type: planType, is_active: true };
+      const insertData: Record<string, unknown> = { phone, nickname, plan_type: planType, is_active: true };
       const { error: insErr } = await sb.from('users').insert(insertData);
       if (insErr) {
         return NextResponse.json({ error: '创建失败: ' + insErr.message }, { status: 500 });
       }
     }
-    return NextResponse.json({ success: true, phone, password, plan_type: planType, credits: 99999 });
+    return NextResponse.json({ success: true, phone, password, plan_type: planType });
   }
 
   // ===== 检查手机号是否已注册 =====
@@ -667,8 +678,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ user: updated });
     }
 
-    // ===== 生成预算预检 =====
-    if (action === 'estimate_generation') {
+   // ===== 生成预算预检 =====
+   if (action === 'estimate_generation') {
+      if (sb && await checkUserIsAdmin(sb, String(body?.userId || ''))) {
+        const breakdown = estimateGenerationCredits({ numPages: body?.numPages || 10, imageSource: body?.imageSource || 'themeAccent', imageModel: body?.imageModel, estimatedImages: body?.estimatedImages || 0 });
+        return NextResponse.json({ success: true, estimate: true, needed: 0, balance: (() => { try { return getKeyPoolStatus().totalRemaining; } catch { return 0; } })(), sufficient: true, breakdown, note: '管理员账户直接扣除API池余额' });
+      }
       const { userId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
       if (!userId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
@@ -685,8 +700,64 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // ===== 生成前预扣积分（v10.95.17） =====
+    if (action === 'hold_generation') {
+      if (sb && await checkUserIsAdmin(sb, String(body?.userId || ''))) {
+        const breakdown = estimateGenerationCredits({ numPages: body?.numPages || 10, imageSource: body?.imageSource || 'themeAccent', imageModel: body?.imageModel, estimatedImages: body?.estimatedImages || 0 });
+        return NextResponse.json({ success: true, holdAmount: 0, balance: (() => { try { return getKeyPoolStatus().totalRemaining; } catch { return 0; } })(), breakdown, note: '管理员账户不占用平台积分' });
+      }
+      const { userId, generationId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
+      if (!userId || !generationId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+
+      const breakdown = estimateGenerationCredits({ numPages, imageSource, imageModel, estimatedImages });
+      const holdAmount = breakdown.totalCredits;
+
+      // 查重：同一个 generationId 是否已经预扣过
+      const holdDesc = `hold-${generationId}`;
+      const { data: existingHold } = await sb
+        .from('credit_transactions')
+        .select('id, amount, balance_after')
+        .eq('user_id', userId)
+        .eq('type', 'hold')
+        .eq('description', holdDesc)
+        .maybeSingle();
+
+      if (existingHold) {
+        return NextResponse.json({
+          success: true, held: true, alreadyHeld: true,
+          holdAmount: Math.abs(Number(existingHold.amount || 0)),
+          balance: Number(existingHold.balance_after || 0),
+          breakdown,
+        });
+      }
+
+      // 检查余额
+      const { data: user } = await sb.from('users').select('credits').eq('id', userId).single();
+      const balance = Number(user?.credits || 0);
+      if (balance < holdAmount) {
+        return NextResponse.json({ error: '积分不足', needed: holdAmount, balance }, { status: 402 });
+      }
+
+      // 预扣积分
+      const newBal = balance - holdAmount;
+      await sb.from('users').update({ credits: newBal }).eq('id', userId);
+      const { error: insertErr } = await sb.from('credit_transactions').insert({
+        user_id: userId, amount: -holdAmount, balance_after: newBal,
+        type: 'hold', description: holdDesc,
+      });
+
+      return NextResponse.json({
+        success: true, holdAmount, balance: newBal,
+        breakdown, recordError: !!insertErr,
+      });
+    }
+
     // ===== 生成完成后结算（幂等） =====
     if (action === 'settle_generation') {
+      if (sb && await checkUserIsAdmin(sb, String(body?.userId || ''))) {
+        const breakdown = estimateGenerationCredits({ numPages: body?.numPages || 10, imageSource: body?.imageSource || 'themeAccent', imageModel: body?.imageModel, estimatedImages: body?.estimatedImages || 0 });
+        return NextResponse.json({ success: true, creditsUsed: 0, balance: (() => { try { return getKeyPoolStatus().totalRemaining; } catch { return 0; } })(), compensated: false, breakdown, note: '管理员账户不占用平台积分，已从API池扣减' });
+      }
       const { userId, generationId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
       if (!userId || !generationId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
@@ -714,6 +785,83 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      // v10.95.17: 补偿机制 —— 查找匹配的 hold 交易，按实际值调整
+      const holdDesc = `hold-${generationId}`;
+      const { data: holdTx } = await sb
+        .from('credit_transactions')
+        .select('id, amount, balance_after')
+        .eq('user_id', userId)
+        .eq('type', 'hold')
+        .eq('description', holdDesc)
+        .maybeSingle();
+
+      if (holdTx) {
+        const heldAmount = Math.abs(Number(holdTx.amount || 0));
+        const compensation = heldAmount - totalCredit;
+        const { data: current } = await sb.from('users').select('credits').eq('id', userId).single();
+
+        if (compensation > 0) {
+          const refundBal = Number(current?.credits || 0) + compensation;
+          await sb.from('users').update({ credits: refundBal }).eq('id', userId);
+          await sb.from('credit_transactions').insert({
+            user_id: userId, amount: compensation, balance_after: refundBal,
+            type: 'compensation', description: `补偿返还-${generationId}-多扣${compensation}积分`,
+          });
+          await sb.from('credit_transactions').update({
+            type: 'generation', description,
+          }).eq('id', holdTx.id);
+          return NextResponse.json({
+            success: true, creditsUsed: totalCredit, balance: refundBal,
+            compensated: true, compensationAmount: compensation,
+            message: `已返还${compensation}积分`,
+            breakdown,
+          });
+        }
+
+        if (compensation < 0) {
+          const additional = -compensation;
+          const currentBal = Number(current?.credits || 0);
+          if (currentBal >= additional) {
+            const extraBal = currentBal - additional;
+            await sb.from('users').update({ credits: extraBal }).eq('id', userId);
+            await sb.from('credit_transactions').insert({
+              user_id: userId, amount: -additional, balance_after: extraBal,
+              type: 'compensation', description: `补偿扣取-${generationId}-少扣${additional}积分`,
+            });
+            await sb.from('credit_transactions').update({
+              type: 'generation', description,
+            }).eq('id', holdTx.id);
+            return NextResponse.json({
+              success: true, creditsUsed: totalCredit, balance: extraBal,
+              compensated: true, compensationAmount: -additional,
+              message: `已补扣${additional}积分`,
+              breakdown,
+            });
+          }
+          // 余额不足以补扣 → 豁免超额部分
+          await sb.from('credit_transactions').update({
+            type: 'generation', description: `生成PPT-${generationId}-补偿不足已豁免`,
+          }).eq('id', holdTx.id);
+          return NextResponse.json({
+            success: true, creditsUsed: heldAmount, balance: currentBal,
+            compensated: true, compensationWaived: true,
+            compensationAmount: -additional,
+            message: '实际超出预算，已豁免差额',
+            breakdown,
+          });
+        }
+
+        // 完全相等 → 直接确认
+        await sb.from('credit_transactions').update({
+          type: 'generation', description,
+        }).eq('id', holdTx.id);
+        return NextResponse.json({
+          success: true, creditsUsed: totalCredit, balance: Number(current?.credits || 0),
+          compensated: false, breakdown,
+        });
+      }
+
+      // 无 hold → 走原有扣款流程
       let newBalance: number | null = null;
       let useFallback = false;
       try {

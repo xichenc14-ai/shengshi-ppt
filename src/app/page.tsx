@@ -718,6 +718,30 @@ export default function Home() {
     };
   }, [user]);
 
+  const holdGenerationCredits = useCallback(async (payload: {
+    generationId: string;
+    numPages: number;
+    imageSource: string;
+    imageModel?: string;
+    estimatedImages?: number;
+  }) => {
+    if (!user) throw new Error('请先登录');
+    const res = await fetch('/api/user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${user.id}` },
+      body: JSON.stringify({ action: 'hold_generation', userId: user.id, ...payload }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      if (data.error === '积分不足') {
+        openInsufficientCreditsPayment(Number(data.needed || 0), Number(data.balance || 0));
+      }
+      throw new Error(data.error || '积分预扣失败');
+    }
+    if (typeof data.balance === 'number') updateCredits(data.balance);
+    return data as { holdAmount: number; balance: number };
+  }, [user, updateCredits, openInsufficientCreditsPayment]);
+
   const settleGenerationCredits = useCallback(async (payload: {
     generationId: string;
     numPages: number;
@@ -762,7 +786,7 @@ export default function Home() {
   const planMaxPages = Math.min(40, getPlan(user?.plan_type || 'free').maxPages);
   const pickerMaxPages = 40;
   const pageOptions = useMemo(
-    () => Array.from({ length: Math.max(0, pickerMaxPages - 2) }, (_, idx) => idx + 3),
+    () => Array.from({ length: Math.max(0, pickerMaxPages) }, (_, idx) => idx + 1),
     [pickerMaxPages]
   );
   const outlineTargetPages = Math.max(1, outlineResult?.slides?.length || pageCount);
@@ -783,7 +807,7 @@ export default function Home() {
   const applyPageCountChange = useCallback((rawValue: number) => {
     if (!Number.isFinite(rawValue)) return false;
     const normalizedValue = Math.round(rawValue);
-    const boundedValue = Math.max(3, Math.min(40, normalizedValue));
+    const boundedValue = Math.max(1, Math.min(40, normalizedValue));
     const maxP = Math.min(40, getPlan(user?.plan_type || 'free').maxPages);
     if (boundedValue > maxP) {
       const requiredPlanId = boundedValue <= 20 ? 'shengxin' : 'advanced';
@@ -1353,9 +1377,22 @@ export default function Home() {
       });
       if (!creditEstimate.sufficient) {
         setLoading(false);
-        setPhase('outline');
-        openInsufficientCreditsPayment(Number(creditEstimate.needed || 0), Number(creditEstimate.balance || 0));
-        return;
+      setPhase('outline');
+      openInsufficientCreditsPayment(Number(creditEstimate.needed || 0), Number(creditEstimate.balance || 0));
+      return;
+    }
+
+      // v10.95.17: 预扣积分——后续 settle 阶段补偿差额
+      if (user) {
+        holdGenerationCredits({
+          generationId: `gen-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+          numPages: renderPageCount,
+          imageSource: finalImageSource,
+          imageModel: finalAiModel,
+        }).catch((e) => {
+          // 预扣失败不影响生成（兜底走 settle 直接扣款）
+          console.warn('[hold_generation] 预扣失败（兜底）:', e instanceof Error ? e.message : String(e));
+        });
       }
 
       // Step 1: Prepare

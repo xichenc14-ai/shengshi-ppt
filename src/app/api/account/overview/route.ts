@@ -105,7 +105,9 @@ export async function GET() {
       .reduce((sum, o) => sum + Number(o.amount || 0) / 100, 0);
 
     const isAdmin = isAdminIdentity({ id: user.id, phone: user.phone || '' });
-    const userCredits = Number(user.credits || 0);
+    const userCredits = isAdmin ? (() => {
+      try { return getKeyPoolStatus().totalRemaining; } catch { return 0; }
+    })() : Number(user.credits || 0);
     const gammaPoolCredits = isAdmin ? (() => {
       try { return getKeyPoolStatus().totalRemaining; } catch { return 0; }
     })() : null;

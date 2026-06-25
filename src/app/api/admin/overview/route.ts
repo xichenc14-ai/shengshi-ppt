@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireAdmin } from '@/lib/admin-auth';
-import { getKeyPoolStatus } from '@/lib/gamma-key-pool';
+import { getKeyPoolStatus, selectBestKey } from '@/lib/gamma-key-pool';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -215,11 +215,22 @@ export async function GET(request: NextRequest) {
       ),
       total_generation: normalizedUsers.reduce((sum, u) => sum + u.generation_count, 0),
       total_download: normalizedUsers.reduce((sum, u) => sum + u.download_count, 0),
-      admin_user_credits: Number(
-        users.find((u) => u.id === auth.userId)?.credits || 0
-      ),
+      admin_user_credits: (() => {
+        try { return getKeyPoolStatus().totalRemaining; } catch { return 0; }
+      })(),
       admin_gamma_pool_credits: (() => {
         try { return getKeyPoolStatus().totalRemaining; } catch { return 0; }
+      })(),
+      admin_gamma_live_balance: (() => {
+        try {
+          const txGen = (transactions || []).find(
+            (tx) => String(tx.type || '').toLowerCase() === 'generation' && String(tx.description || '').startsWith('生成结算-')
+          );
+          if (!txGen) return null;
+          const genId = String(txGen.description || '').replace(/^生成结算-/, '').trim();
+          if (!genId) return null;
+          return { generationId: genId };
+        } catch { return null; }
       })(),
       admin_gamma_pool_note: 'Gamma API池为最近生成响应追踪值，与管理员用户积分独立',
       feedback_total: effectiveFeedbackRows.length,

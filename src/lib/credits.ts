@@ -3,10 +3,10 @@
  */
 
 // 每页PPT消耗的积分
-export const CREDIT_PER_PAGE = 10;
+export const CREDIT_PER_PAGE = 3;
 
 // AI生成图片每张消耗的积分
-export const IMG_CREDIT_PER_PAGE = 5;
+export const IMG_CREDIT_PER_PAGE = 3;
 
 // 默认积分余额
 export const DEFAULT_FREE_CREDITS = 40;

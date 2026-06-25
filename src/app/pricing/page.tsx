@@ -39,7 +39,7 @@ type CompareRow = {
   advanced: { text: string; type: 'ok' | 'off' | 'neutral' };
 };
 
-const CREDITS_PER_PAGE = 4;
+const CREDITS_PER_PAGE = 3;
 
 const PLANS: Plan[] = [
   {
@@ -73,7 +73,7 @@ const PLANS: Plan[] = [
     audience: '高频日常场景',
     featured: true,
     features: ['每月 500 积分', '省心模式 + 专业模式', '5 个附件：PDF、PPTX、XLSX、JPG 等', '生成完成自动下载 PPTX'],
-    approxCostPerPage: '0.2',
+    approxCostPerPage: '0.15',
   },
   {
     id: 'advanced',
@@ -180,7 +180,7 @@ function PlanCard({
   onSelect: () => void;
   onBuy: () => void;
 }) {
-  const approxPages = Math.floor(plan.credits / CREDITS_PER_PAGE);
+  const approxPages = Math.floor(plan.credits / CREDIT_PER_PAGE);
 
   return (
     <button

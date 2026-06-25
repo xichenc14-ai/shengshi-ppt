@@ -711,7 +711,7 @@ export async function POST(request: NextRequest) {
       : undefined;
 
     if (userIntentOverrides.pageCount) {
-      numCards = Math.max(3, Math.min(30, userIntentOverrides.pageCount));
+      numCards = Math.max(1, Math.min(30, userIntentOverrides.pageCount));
     }
     if (userIntentOverrides.textMode) {
       finalTextMode = userIntentOverrides.textMode;

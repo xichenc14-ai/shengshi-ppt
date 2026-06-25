@@ -15,9 +15,9 @@ type GenerationCreditBreakdown = {
   imageModel: string | null;
 };
 
-const BASE_CREDITS_PER_PAGE = 4;
-const STANDARD_AI_IMAGE_CREDITS = 2 * 2;
-const PREMIUM_AI_IMAGE_CREDITS = 7 * 2;
+const BASE_CREDITS_PER_PAGE = 3;
+const STANDARD_AI_IMAGE_CREDITS = 3;
+const PREMIUM_AI_IMAGE_CREDITS = 10;
 
 const PREMIUM_AI_MODELS = new Set([
   'imagen-3-pro',
