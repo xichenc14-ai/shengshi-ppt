@@ -42,7 +42,9 @@ export async function checkVerifyAttemptsDB(phone: string): Promise<{
       .from('verify_attempts')
       .select('*')
       .eq('phone', phone)
-      .single();
+      .order('last_attempt_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     if (!record) return { allowed: true, attemptsLeft: 5 };
 
@@ -56,7 +58,11 @@ export async function checkVerifyAttemptsDB(phone: string): Promise<{
     const windowMs = 10 * 60 * 1000;
     if (new Date(record.last_attempt_at).getTime() + windowMs < Date.now()) {
       // 窗口过期，重置
-      await sb.from('verify_attempts').upsert({ phone, attempts: 0, last_attempt_at: new Date().toISOString(), blocked_until: null });
+      await sb.from('verify_attempts').update({
+        attempts: 0,
+        last_attempt_at: new Date().toISOString(),
+        blocked_until: null,
+      }).eq('id', record.id);
       return { allowed: true, attemptsLeft: 5 };
     }
 
@@ -64,7 +70,11 @@ export async function checkVerifyAttemptsDB(phone: string): Promise<{
     if (left <= 0) {
       // 封禁10分钟
       const blockedUntil = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-      await sb.from('verify_attempts').upsert({ phone, attempts: 5, blocked_until: blockedUntil, last_attempt_at: new Date().toISOString() });
+      await sb.from('verify_attempts').update({
+        attempts: 5,
+        blocked_until: blockedUntil,
+        last_attempt_at: new Date().toISOString(),
+      }).eq('id', record.id);
       return { allowed: false, attemptsLeft: 0, reason: '验证码错误次数过多，请10分钟后重试' };
     }
 
@@ -95,14 +105,20 @@ export async function recordVerifyAttempt(phone: string): Promise<void> {
   }
 
   try {
-    const { data: record } = await sb.from('verify_attempts').select('*').eq('phone', phone).single();
+    const { data: record } = await sb
+      .from('verify_attempts')
+      .select('*')
+      .eq('phone', phone)
+      .order('last_attempt_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
     if (!record) {
       await sb.from('verify_attempts').insert({ phone, attempts: 1, last_attempt_at: new Date().toISOString() });
     } else {
       await sb.from('verify_attempts').update({
         attempts: (record.attempts || 0) + 1,
         last_attempt_at: new Date().toISOString(),
-      }).eq('phone', phone);
+      }).eq('id', record.id);
     }
   } catch {}
 }

@@ -9,7 +9,7 @@ describe('resolveSmartThemeId', () => {
       tone: 'professional',
     });
 
-    expect(match?.themeId).toBe('consultant');
+    expect(match?.themeId).toBe('petrol');
     expect(match?.locked).toBe(true);
   });
 
@@ -20,7 +20,7 @@ describe('resolveSmartThemeId', () => {
       tone: 'casual',
     });
 
-    expect(match?.themeId).toBe('cornflower');
+    expect(match?.themeId).toBe('icebreaker');
     expect(match?.locked).toBe(true);
   });
 
@@ -46,12 +46,12 @@ describe('resolveSmartThemeId', () => {
     expect(match?.themeId).toBe('dune');
   });
 
-  it('uses 雅致米绿 as the no-signal default', () => {
+  it('uses the curated recommended default when no signal is supplied', () => {
     const match = resolveSmartThemeId({
       text: '帮我整理一份演示文稿',
     });
 
-    expect(match.themeId).toBe('finesse');
+    expect(match.themeId).toBe('pearl');
     expect(match.locked).toBe(false);
   });
 
@@ -71,13 +71,13 @@ describe('resolveSmartThemeId', () => {
       tone: 'bold',
     });
 
-    expect(['verdigris', 'aurora', 'blue-steel']).toContain(match.themeId);
+    expect(['verdigris', 'aurora', 'blue-steel', 'petrol']).toContain(match.themeId);
   });
 
   it.each([
     ['年度工作复盘与明年规划', ['dune', 'gold-leaf', 'blues', 'marine']],
-    ['中学课堂教学课件', ['cornflower', 'vanilla', 'pistachio', 'zephyr']],
-    ['护肤品牌新品发布方案', ['ashrose', 'coral-glow', 'creme', 'wine', 'gamma', 'atmosphere']],
+    ['中学课堂教学课件', ['icebreaker', 'vanilla', 'zephyr', 'keepsake']],
+    ['护肤品牌新品发布方案', ['twilight', 'coral-glow', 'creme', 'peach', 'gamma', 'atmosphere', 'rush']],
     ['医疗健康科普与康复指南', ['seafoam', 'sage', 'tranquil', 'vanilla']],
     ['非遗古镇传统文化介绍', ['terracotta', 'kraft', 'cornfield', 'wine']],
   ])('classifies content profile: %s', (text, expectedThemes) => {

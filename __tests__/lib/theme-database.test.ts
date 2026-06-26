@@ -64,7 +64,7 @@ describe('THEME_DATABASE', () => {
   });
 
   it('every theme should have valid category', () => {
-    const validCategories = ['blue', 'orangeBrown', 'yellowCream', 'green', 'whiteGray', 'black', 'purplePink'];
+    const validCategories = ['yellowCream', 'blue', 'green', 'purple', 'pink', 'neutral'];
     for (const theme of THEME_DATABASE) {
       expect(validCategories, `theme ${theme.id} has invalid category ${theme.category}`).toContain(theme.category);
     }
@@ -98,22 +98,21 @@ describe('COLOR_CATEGORIES', () => {
 
   it('should follow fixed category order', () => {
     expect(COLOR_CATEGORIES.map((c) => c.id)).toEqual([
-      'orangeBrown',
       'yellowCream',
-      'green',
       'blue',
-      'purplePink',
-      'whiteGray',
-      'black',
+      'green',
+      'purple',
+      'pink',
+      'neutral',
     ]);
   });
 });
 
 describe('getThemeById', () => {
   it('should return a theme for a valid id', () => {
-    const theme = getThemeById('consultant');
+    const theme = getThemeById('icebreaker');
     expect(theme).toBeDefined();
-    expect(theme!.id).toBe('consultant');
+    expect(theme!.id).toBe('icebreaker');
   });
 
   it('should return undefined for an invalid id', () => {
@@ -121,9 +120,9 @@ describe('getThemeById', () => {
   });
 
   it('should use canonical theme names that match current Gamma positioning', () => {
-    expect(getThemeById('consultant')?.nameZh).toBe('蓝湾智策');
-    expect(getThemeById('blue-steel')?.nameZh).toBe('蓝曜矩阵');
-    expect(getThemeById('gold-leaf')?.nameZh).toBe('金叶轻奢');
+    expect(getThemeById('icebreaker')?.nameZh).toBe('破冰晴蓝');
+    expect(getThemeById('blue-steel')?.nameZh).toBe('蓝钢锋面');
+    expect(getThemeById('gold-leaf')?.nameZh).toBe('金箔流白');
   });
 });
 
@@ -138,24 +137,39 @@ describe('getThemesByCategory', () => {
     expect(getThemesByCategory('nonexistent')).toEqual([]);
   });
 
-  it('should place true blue backgrounds before white-background blue accents', () => {
+  it('should follow the manually curated visible order from the spreadsheet', () => {
     expect(getThemesByCategory('blue').map((theme) => theme.id)).toEqual([
-      'marine',
-      'blue-steel',
+      'stratos',
+      'lunaria',
       'petrol',
-      'tranquil',
-      'cornflower',
+      'blues',
       'zephyr',
-      'breeze',
-      'consultant',
+      'icebreaker',
+      'blue-steel',
+      'keepsake',
     ]);
   });
 
-  it('should prioritize real background-family matches before accent-only matches', () => {
-    expect(getThemesByCategory('green')[0].id).toBe('sprout');
-    expect(getThemesByCategory('purplePink').slice(0, 2).map((theme) => theme.id)).toEqual([
-      'blueberry',
+  it('should keep exactly the six visible color families from the spreadsheet', () => {
+    expect(getThemesByCategory('green').map((theme) => theme.id)).toEqual([
+      'seafoam',
+      'lux',
+      'sage',
+      'verdigris',
+      'fluo',
+      'vanilla',
+      'alien',
+      'borealis',
+    ]);
+    expect(getThemesByCategory('purple').map((theme) => theme.id)).toEqual([
+      'spectrum',
+      'prism',
+      'gamma',
+      'lavender',
+      'atmosphere',
       'aurora',
+      'velvet-tides',
+      'daydream',
     ]);
   });
 });
@@ -163,17 +177,17 @@ describe('getThemesByCategory', () => {
 describe('getThemeCategoryByBackground', () => {
   it('should classify dark chromatic colors by hue, not by darkness', () => {
     expect(getThemeCategoryByBackground('#052E16')).toBe('green'); // 深绿
-    expect(getThemeCategoryByBackground('#451A03')).toBe('orangeBrown'); // 深棕
+    expect(getThemeCategoryByBackground('#451A03')).toBe('yellowCream'); // 深棕
     expect(getThemeCategoryByBackground('#1E3A5F')).toBe('blue'); // 深蓝
   });
 
-  it('should classify neutral backgrounds into black/white only', () => {
-    expect(getThemeCategoryByBackground('#111827')).toBe('black');
-    expect(getThemeCategoryByBackground('#E5E7EB')).toBe('whiteGray');
+  it('should classify neutral backgrounds into the merged neutral family', () => {
+    expect(getThemeCategoryByBackground('#111827')).toBe('neutral');
+    expect(getThemeCategoryByBackground('#E5E7EB')).toBe('neutral');
   });
 
   it('should keep purple-magenta backgrounds out of blue category', () => {
-    expect(getThemeCategoryByBackground('#7C3AED')).toBe('purplePink');
+    expect(getThemeCategoryByBackground('#7C3AED')).toBe('purple');
   });
 });
 
@@ -194,17 +208,17 @@ describe('recommendTheme', () => {
 describe('recommended theme metadata', () => {
   it('should keep recommended theme ids aligned to the shared theme database', () => {
     expect(RECOMMENDED_THEME_IDS).toEqual([
+      'pearl',
+      'twilight',
+      'lux',
+      'atmosphere',
       'finesse',
-      'daydream',
+      'icebreaker',
+      'marine',
       'gold-leaf',
-      'blues',
-      'gamma',
-      'breeze',
-      'wine',
-      'verdigris',
     ]);
     expect(RECOMMENDED_THEME_IDS).toHaveLength(8);
-    expect(DEFAULT_THEME_ID).toBe('finesse');
+    expect(DEFAULT_THEME_ID).toBe('pearl');
     expect(getRecommendedThemes().map((theme) => theme.id)).toEqual(Array.from(RECOMMENDED_THEME_IDS));
   });
 });

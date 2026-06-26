@@ -5,12 +5,12 @@ import { createClient } from '@supabase/supabase-js';
 import {
   checkSMSRateLimit,
   checkRegisterRateLimit,
-  checkVerifyAttempts,
   getClientIP,
   isDevCleanupAllowed,
   isIPBlocked,
   rateLimit,
 } from '@/lib/rate-limit';
+import { checkVerifyAttemptsDB, clearVerifyAttempts, recordVerifyAttempt } from '@/lib/verify-attempts';
 import type { DeductCreditsResult, TypedSupabaseClient } from '@/lib/supabase-types';
 import { hashPasswordSecure, isLegacyHash, verifyPassword } from '@/lib/password-utils';
 import { issueAuthProof } from '@/lib/auth-proof';
@@ -72,6 +72,10 @@ type VerifyCodeRow = {
   code: string;
   expires_at: string;
 };
+
+function normalizeSMSCode(value: unknown): string {
+  return String(value ?? '').replace(/\D/g, '').slice(0, 6);
+}
 
 function buildGenerationSettlementDescription(generationId: string): string {
   return `生成结算-${generationId}`;
@@ -218,28 +222,41 @@ export async function POST(req: NextRequest) {
       // 清理过期验证码
       await sb.from('verification_codes').delete().eq('phone', phone).lt('expires_at', new Date().toISOString());
 
-      // 调用短信服务
-      let finalCode = '';
+      const localCode = genCode();
+      let finalCode = localCode;
       try {
         const { sendSMS } = await import('@/lib/sms-client');
-        const result = await sendSMS(phone);
+        const result = await sendSMS(phone, localCode);
         if (!result.success) {
           if (process.env.NODE_ENV === 'production') {
             return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
           }
-          finalCode = genCode();
+          console.warn('[SMS] 发送失败，开发环境使用本地验证码:', result.error);
         } else {
-          finalCode = result.code || genCode();
+          finalCode = normalizeSMSCode(result.code) || localCode;
         }
       } catch (e) {
         console.error('[SMS] 模块异常:', e);
-        finalCode = genCode();
+        if (process.env.NODE_ENV === 'production') {
+          return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
+        }
       }
 
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-      await sb.from('verification_codes').insert({ phone, code: finalCode, expires_at: expiresAt });
+      await sb.from('verification_codes').delete().eq('phone', phone).eq('verified', false);
+      const { error: insertErr } = await sb
+        .from('verification_codes')
+        .insert({ phone, code: finalCode, expires_at: expiresAt, verified: false });
+      if (insertErr) {
+        console.error('[SMS] 验证码写入失败:', insertErr);
+        return NextResponse.json({ error: '验证码写入失败，请稍后重试' }, { status: 500 });
+      }
 
-      return NextResponse.json({ success: true, code: finalCode, message: '验证码已发送' });
+      return NextResponse.json({
+        success: true,
+        message: '验证码已发送',
+        devCode: process.env.NODE_ENV === 'production' ? undefined : finalCode,
+      });
     }
 
     // ===== 验证验证码（内部复用） =====
@@ -249,19 +266,20 @@ export async function POST(req: NextRequest) {
         .from('verification_codes')
         .select('id,code,expires_at,verified')
         .eq('phone', phone)
-        .eq('code', code)
         .gt('expires_at', new Date().toISOString())
-        .eq('verified', false)
         .order('created_at', { ascending: false })
         .limit(1);
 
       if (qErr) return { valid: false, error: '验证失败' };
       if (!records || records.length === 0) return { valid: false, error: '验证码错误或已过期' };
 
-      if (markVerified) {
-        await sb.from('verification_codes').update({ verified: true }).eq('id', records[0].id);
+      const record = records[0] as { id: string; code: string; verified?: boolean };
+      if (record.code !== code) return { valid: false, error: '验证码错误或已过期' };
+
+      if (markVerified && !record.verified) {
+        await sb.from('verification_codes').update({ verified: true }).eq('id', record.id);
       }
-      return { valid: true, recordId: records[0].id };
+      return { valid: true, recordId: record.id };
     }
 
     // ===== 注册 =====
@@ -396,18 +414,22 @@ export async function POST(req: NextRequest) {
     // ===== 验证码登录 =====
     if (action === 'verify_code') {
       const { phone, code } = body;
-      if (!phone || !code) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+      const normalizedCode = normalizeSMSCode(code);
+      if (!phone || normalizedCode.length !== 6) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
       // 🔒 验证码尝试次数限制
-      const attemptCheck = checkVerifyAttempts(phone);
+      const attemptCheck = await checkVerifyAttemptsDB(phone);
       if (!attemptCheck.allowed) {
         return NextResponse.json({ error: attemptCheck.reason, attemptsLeft: 0 }, { status: 429 });
       }
 
-      const vResult = await verifyCode(phone, code, true);
+      const vResult = await verifyCode(phone, normalizedCode, true);
       if (!vResult.valid) {
-        return NextResponse.json({ error: vResult.error, attemptsLeft: attemptCheck.attemptsLeft }, { status: 400 });
+        await recordVerifyAttempt(phone);
+        const nextAttemptCheck = await checkVerifyAttemptsDB(phone);
+        return NextResponse.json({ error: vResult.error, attemptsLeft: nextAttemptCheck.attemptsLeft }, { status: 400 });
       }
+      await clearVerifyAttempts(phone);
 
       const { data: users } = await sb.from('users').select('id,phone,nickname,credits,plan_type,is_active,password_hash').eq('phone', phone);
       if (users && users.length > 0) {

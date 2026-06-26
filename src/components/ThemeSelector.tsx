@@ -19,95 +19,83 @@ type ThemeCategoryOption = {
 const MAX_THEMES_PER_PANEL = 8;
 const CATEGORY_NECKLACE_ORDER = [
   'recommended',
-  'orangeBrown',
   'yellowCream',
-  'green',
   'blue',
-  'purplePink',
-  'whiteGray',
-  'black',
+  'green',
+  'purple',
+  'pink',
+  'neutral',
 ] as const;
-const RECOMMENDED_NECKLACE_COLORS = ['#2150FE', '#6237C8', '#3371A5', '#DA9B49'];
+const RECOMMENDED_NECKLACE_COLORS = ['#FFFFFF', '#F5B7C7', '#2C6EBC', '#D8A94A'];
 const CATEGORY_GRADIENTS: Record<string, string> = {
-  recommended: 'linear-gradient(115deg, #4F8DF7 0%, #7C5CE7 38%, #D94CB7 70%, #F18A45 100%)',
-  orangeBrown: 'linear-gradient(115deg, #F18A45 0%, #D45A20 48%, #8A351C 100%)',
-  yellowCream: 'linear-gradient(115deg, #E9B866 0%, #F6D98D 48%, #F8E9B9 100%)',
-  green: 'linear-gradient(115deg, #C8E9B1 0%, #55CF9A 48%, #16976F 100%)',
-  blue: 'linear-gradient(115deg, #56B9C5 0%, #397EDB 48%, #3157B7 100%)',
-  purplePink: 'linear-gradient(115deg, #5367C8 0%, #8061DC 46%, #CE58B3 100%)',
-  whiteGray: 'linear-gradient(115deg, #E5D9E9 0%, #E8EDF4 50%, #B6C2D1 100%)',
-  black: 'linear-gradient(115deg, #7D899A 0%, #344054 48%, #111827 100%)',
+  recommended: 'linear-gradient(115deg, #F8FAFC 0%, #9CC8FF 28%, #A78BFA 55%, #F5B7C7 78%, #D8A94A 100%)',
+  yellowCream: 'linear-gradient(115deg, #F9F6F0 0%, #E8C77B 48%, #8A5A2B 100%)',
+  blue: 'linear-gradient(115deg, #D7E8FF 0%, #3B82F6 48%, #0F2D5C 100%)',
+  green: 'linear-gradient(115deg, #DFF7EC 0%, #22C55E 48%, #0B4F3A 100%)',
+  purple: 'linear-gradient(115deg, #EDE9FE 0%, #8B5CF6 48%, #2E1065 100%)',
+  pink: 'linear-gradient(115deg, #FCE7F3 0%, #EC4899 48%, #7F1D1D 100%)',
+  neutral: 'linear-gradient(115deg, #FFFFFF 0%, #9CA3AF 50%, #111827 100%)',
 };
 const CONTINUOUS_SPECTRUM_GRADIENT = `linear-gradient(90deg,
-  #4F8DF7 0%,
-  #7C5CE7 5%,
-  #D94CB7 9%,
-  #F18A45 13%,
-  #D45A20 19%,
-  #8A351C 25%,
-  #E9B866 29%,
-  #F6D98D 34%,
-  #F8E9B9 38%,
-  #C8E9B1 41%,
-  #55CF9A 47%,
-  #16976F 51%,
-  #56B9C5 55%,
-  #397EDB 61%,
-  #3157B7 65%,
-  #5367C8 68%,
-  #8061DC 73%,
-  #CE58B3 77%,
-  #E5D9E9 81%,
-  #E8EDF4 86%,
-  #B6C2D1 89%,
-  #7D899A 92%,
-  #344054 96%,
+  #F8FAFC 0%,
+  #9CC8FF 8%,
+  #A78BFA 15%,
+  #F5B7C7 22%,
+  #D8A94A 28%,
+  #F9F6F0 34%,
+  #E8C77B 42%,
+  #0F2D5C 50%,
+  #3B82F6 58%,
+  #DFF7EC 65%,
+  #22C55E 72%,
+  #8B5CF6 80%,
+  #EC4899 88%,
+  #9CA3AF 94%,
   #111827 100%
 )`;
 const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
   recommended: '推荐',
-  orangeBrown: '橙棕',
   yellowCream: '米黄',
-  green: '绿色',
   blue: '蓝色',
-  purplePink: '紫粉',
-  whiteGray: '白灰',
-  black: '深色',
+  green: '绿色',
+  purple: '紫色',
+  pink: '粉红',
+  neutral: '黑白灰',
 };
 
 function getThemeCard(theme: ThemeData, active: boolean, onChange: (themeId: string) => void) {
-  const [bg, accent, font] = theme.colors;
-  const textColor = font || '#1F2937';
-
   return (
     <button
       key={theme.id}
       onClick={() => onChange(theme.id)}
-      className={`relative w-[calc((100%_-_16px)/3)] min-w-[calc((100%_-_16px)/3)] snap-start rounded-full border-2 p-0.5 text-left transition-all sm:w-auto sm:min-w-0 sm:p-1 ${
+      className={`relative w-[calc((100%_-_16px)/3)] min-w-[calc((100%_-_16px)/3)] snap-start rounded-xl border-2 p-0.5 text-left transition-all sm:w-auto sm:min-w-0 sm:p-1 ${
         active
           ? 'border-[#5B4FE9] bg-[#F5F3FF] shadow-sm'
           : 'border-slate-200 bg-white hover:border-indigo-200'
       }`}
+      title={`${theme.nameZh} · ${theme.style}`}
     >
       <div
-        className="relative h-[38px] overflow-hidden rounded-full border border-black/5 sm:h-[46px]"
-        style={{ backgroundColor: bg }}
+        className="relative h-[54px] overflow-hidden rounded-lg border border-black/5 bg-slate-100 sm:h-[68px]"
       >
-        <span
-          className="absolute right-1 top-0.5 h-3.5 rounded-md border border-white/40 px-1 text-[7px] font-semibold leading-[12px] shadow-sm sm:top-1 sm:text-[8px]"
-          style={{ backgroundColor: accent, color: textColor }}
-        >
-          强调
-        </span>
-        <div className="absolute bottom-1 left-2.5 right-2 sm:bottom-1.5 sm:left-3">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate text-[11px] font-medium leading-[1.15] tracking-[0.01em] sm:text-xs" style={{ color: textColor }}>{theme.nameZh}</span>
-            <div className="hidden lg:flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full border border-white/60" style={{ backgroundColor: bg }} title={`背景色 ${bg}`} />
-              <span className="w-2 h-2 rounded-full border border-white/60" style={{ backgroundColor: accent }} title={`强调色 ${accent}`} />
-              <span className="w-2 h-2 rounded-full border border-white/60" style={{ backgroundColor: textColor }} title={`字体色 ${textColor}`} />
-            </div>
-          </div>
+        {theme.previewImage ? (
+          <img
+            src={theme.previewImage}
+            alt={theme.nameZh}
+            className="h-full w-full object-cover"
+            draggable={false}
+          />
+        ) : (
+          <div
+            className="h-full w-full"
+            style={{ background: `linear-gradient(135deg, ${theme.colors[0]}, ${theme.colors[1]})` }}
+          />
+        )}
+        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-gradient-to-t from-black/72 via-black/34 to-transparent px-2 pb-1.5 pt-5">
+          <span className="min-w-0 truncate text-[11px] font-semibold leading-[1.15] text-white sm:text-xs">{theme.nameZh}</span>
+          {theme.isRecommended && (
+            <span className="shrink-0 rounded bg-white/90 px-1 text-[8px] font-bold leading-3 text-[#5B4FE9]">荐</span>
+          )}
         </div>
       </div>
     </button>
@@ -141,7 +129,7 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
       name: '推荐',
       colors: recommendedSwatch,
       count: recommendedThemeList.length,
-      themes: recommendedThemeList.slice(0, MAX_THEMES_PER_PANEL),
+      themes: recommendedThemeList,
     });
 
     for (const cat of COLOR_CATEGORIES) {
@@ -163,7 +151,7 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
   }, [recommendedSwatch, recommendedThemeList]);
 
   const themes = useMemo(() => {
-    return categoryOptions.find((item) => item.id === selectedCategory)?.themes || recommendedThemeList.slice(0, MAX_THEMES_PER_PANEL);
+    return categoryOptions.find((item) => item.id === selectedCategory)?.themes || recommendedThemeList;
   }, [categoryOptions, selectedCategory, recommendedThemeList]);
 
   const selectedMeta = useMemo(() => {
@@ -294,7 +282,7 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
             <span className="absolute inset-x-1 top-[1px] h-[35%] rounded-full bg-white/20 blur-[1px]" />
           </div>
 
-          <div className="absolute inset-x-1 top-1/2 grid h-3.5 -translate-y-1/2 grid-cols-8 gap-[3px]">
+          <div className="absolute inset-x-1 top-1/2 grid h-3.5 -translate-y-1/2 grid-cols-7 gap-[3px]">
             {categoryOptions.map((cat) => {
               const active = selectedCategory === cat.id;
               return (
@@ -329,7 +317,7 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
             onMouseUp={finishThemeDrag}
             onMouseLeave={finishThemeDrag}
             onClickCapture={suppressThemeClickAfterDrag}
-            aria-label={`当前${selectedMeta.name}色系主题，电脑端四列两排完整展示，移动端可左右滑动，共 ${MAX_THEMES_PER_PANEL} 个`}
+            aria-label={`当前${selectedMeta.name}色系主题，电脑端四列展示，移动端可左右滑动，共 ${themes.length} 个`}
           >
             {themes.map((theme) => getThemeCard(theme, value === theme.id, onChange))}
           </div>

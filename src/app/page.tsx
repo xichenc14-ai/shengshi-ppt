@@ -1923,21 +1923,6 @@ export default function Home() {
     throw new Error('PPTX 生成超时（3分钟），请稍后重试');
   }, []);
 
-  const resolveDownloadFilename = (headers: Headers, fallbackName: string) => {
-    const contentDisposition = headers.get('content-disposition') || headers.get('Content-Disposition') || '';
-    const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
-    if (utf8Match?.[1]) {
-      try {
-        return decodeURIComponent(utf8Match[1]);
-      } catch {
-        return utf8Match[1];
-      }
-    }
-    const basicMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
-    if (basicMatch?.[1]) return basicMatch[1];
-    return fallbackName;
-  };
-
   const ensurePptxGenerationId = useCallback(async () => {
     if (!result?.generationId) throw new Error('缺少 generationId');
     if (result.pptxGenerationId) return result.pptxGenerationId;
@@ -2021,45 +2006,8 @@ export default function Home() {
 
       const downloadPath =
         `/api/export-pptx?generationId=${exportGenerationId}&name=${encodeURIComponent(fallbackFilename)}`;
-      let downloadRes = await fetch(
-        downloadPath,
-        { cache: 'no-store' },
-      );
-      let contentType = (downloadRes.headers.get('Content-Type') || '').toLowerCase();
-
-      if (!downloadRes.ok || contentType.includes('application/json')) {
-        if (result.pptxSeedBody) {
-          const pptxGenerationId = await ensurePptxGenerationId();
-          downloadRes = await fetch(
-            `/api/export-pptx?generationId=${pptxGenerationId}&name=${encodeURIComponent(fallbackFilename)}`
-          );
-          contentType = (downloadRes.headers.get('Content-Type') || '').toLowerCase();
-        }
-      }
-
-      if (!downloadRes.ok || contentType.includes('application/json')) {
-        const errData = await downloadRes.json().catch(() => ({ error: '导出失败' }));
-        setError(errData.error || '导出失败，请稍后重试');
-        setAutoDownloadMessage('failed');
-        return false;
-      }
-
-      const blob = await downloadRes.blob();
-      const signature = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
-      const isZip =
-        signature[0] === 0x50
-        && signature[1] === 0x4b
-        && (
-          (signature[2] === 0x03 && signature[3] === 0x04)
-          || (signature[2] === 0x05 && signature[3] === 0x06)
-          || (signature[2] === 0x07 && signature[3] === 0x08)
-        );
-      if (!isZip || blob.size < 1024) {
-        throw new Error('下载文件不完整，请重新下载');
-      }
-      const finalFilename = resolveDownloadFilename(downloadRes.headers, fallbackFilename);
-      downloadBlob(blob, finalFilename);
-      setAutoDownloadMessage('completed');
+      triggerBrowserDownload(downloadPath);
+      setAutoDownloadMessage('started');
 
       try {
         await fetch('/api/download', {
@@ -2165,15 +2113,13 @@ export default function Home() {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, [phase]);
 
-  const downloadBlob = (blob: Blob, filename: string) => {
-    const blobUrl = URL.createObjectURL(blob);
+  const triggerBrowserDownload = (href: string) => {
     const link = document.createElement('a');
-    link.href = blobUrl;
-    link.download = filename;
+    link.href = href;
+    link.download = '';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
   };
 
   // Outline editing helpers
@@ -2502,7 +2448,8 @@ export default function Home() {
   const fmtSize = (b: number) => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
   const downloadCompleted = autoDownloadMessage === 'completed';
   const downloadFailed = autoDownloadMessage === 'failed';
-  const downloadInProgress = exporting;
+  const downloadStarted = autoDownloadMessage === 'started';
+  const downloadInProgress = exporting || downloadStarted;
 
   return (
       <div className="min-h-screen premium-shell flex flex-col overflow-x-clip">
@@ -3582,6 +3529,8 @@ export default function Home() {
                     ? '下载待重试'
                     : downloadCompleted
                       ? '下载完成'
+                      : downloadStarted
+                        ? '浏览器下载中'
                       : downloadInProgress
                         ? '正在准备文件'
                         : '下载就绪'}
@@ -3591,6 +3540,8 @@ export default function Home() {
                     ? '下载失败'
                     : downloadCompleted
                       ? 'PPTX 下载完成'
+                      : downloadStarted
+                        ? '导出完成🎉'
                       : downloadInProgress
                         ? '正在下载 PPTX'
                         : 'PPT 已生成'}
@@ -3608,7 +3559,7 @@ export default function Home() {
                 {exporting
                   ? <LoaderCircle size={17} strokeWidth={2.2} className="animate-spin" aria-hidden="true" />
                   : <Download size={17} strokeWidth={2.2} aria-hidden="true" />}
-                下载 PPTX
+                导出 PPTX
               </button>
               <div className="relative mt-4 flex items-center justify-center gap-2">
                 <button onClick={backToOutline} className="rounded-full px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-white/55 hover:text-slate-700">修改大纲</button>
@@ -3644,7 +3595,7 @@ export default function Home() {
                       {exporting ? (
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                       ) : null}
-                      下载 PPTX
+                      导出 PPTX
                     </button>
                   </div>
                 </div>

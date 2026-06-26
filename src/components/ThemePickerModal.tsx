@@ -7,6 +7,9 @@ const COLOR_THEMES = THEME_DATABASE.map((theme) => ({
   id: theme.id,
   name: theme.nameZh,
   colors: theme.colors,
+  previewImage: theme.previewImage,
+  style: theme.style,
+  recommended: theme.isRecommended,
 }));
 
 const RECOMMENDED_THEMES = getRecommendedThemes().map((theme) => ({
@@ -44,11 +47,15 @@ export default function ThemePickerModal({ open, currentThemeId, currentTone, cu
   if (!open) return null;
   const currentThemeFromDb = getThemeById(currentThemeId);
   const currentTheme = (currentThemeFromDb
-    ? { id: currentThemeFromDb.id, name: currentThemeFromDb.nameZh, colors: currentThemeFromDb.colors }
+    ? {
+        id: currentThemeFromDb.id,
+        name: currentThemeFromDb.nameZh,
+        colors: currentThemeFromDb.colors,
+        previewImage: currentThemeFromDb.previewImage,
+        style: currentThemeFromDb.style,
+        recommended: currentThemeFromDb.isRecommended,
+      }
     : COLOR_THEMES[0]);
-  const bgColor = currentTheme.colors[0];
-  const accentColor = currentTheme.colors[1];
-  const fontColor = currentTheme.colors[2];
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in" onClick={onClose}>
@@ -75,22 +82,26 @@ export default function ThemePickerModal({ open, currentThemeId, currentTone, cu
           <div className="mb-4 sm:mb-5">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5">🎨 主题色系</p>
             <div className="mb-2.5 sm:mb-3 rounded-xl border border-indigo-100 bg-indigo-50/60 p-2 sm:p-3">
-              <p className="text-xs font-semibold text-indigo-700 mb-2">当前配色预览 · {currentTheme.name}</p>
+              <p className="text-xs font-semibold text-indigo-700 mb-2">当前主题预览 · {currentTheme.name}</p>
               <div className="rounded-lg bg-white border border-indigo-100 p-2">
-                <p className="text-[11px] font-bold text-slate-600 mb-1.5">大色块预览（背景/强调/字体）</p>
-                <div className="relative h-14 sm:h-24 rounded-lg border border-slate-200 p-1.5 sm:p-3 overflow-hidden" style={{ backgroundColor: bgColor }}>
-                  <div className="absolute top-2 right-2 sm:top-2.5 sm:right-2.5 rounded-md px-2 py-0.5 sm:px-2.5 sm:py-1 border border-white/40 shadow-sm" style={{ backgroundColor: accentColor }}>
-                    <span className="text-[10px] sm:text-xs font-semibold" style={{ color: fontColor }}>强调色</span>
+                <div className="relative h-20 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 sm:h-28">
+                  {currentTheme.previewImage ? (
+                    <img
+                      src={currentTheme.previewImage}
+                      alt={currentTheme.name}
+                      className="h-full w-full object-cover"
+                      draggable={false}
+                    />
+                  ) : (
+                    <div
+                      className="h-full w-full"
+                      style={{ background: `linear-gradient(135deg, ${currentTheme.colors[0]}, ${currentTheme.colors[1]})` }}
+                    />
+                  )}
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/72 via-black/30 to-transparent px-3 pb-2 pt-8">
+                    <p className="text-sm font-black leading-none text-white sm:text-lg">{currentTheme.name}</p>
+                    <p className="mt-1 truncate text-[10px] text-white/78">{currentTheme.style}</p>
                   </div>
-                  <div className="absolute left-2 bottom-2 sm:left-3 sm:bottom-3">
-                    <p className="text-xs sm:text-xl font-black leading-none" style={{ color: fontColor }}>省心PPT</p>
-                    <p className="text-[10px] mt-1 opacity-85" style={{ color: fontColor }}>色彩展示更直观</p>
-                  </div>
-                </div>
-                <div className="mt-2 grid grid-cols-3 gap-1 text-[10px] text-slate-400">
-                  <span className="truncate">背景 {bgColor}</span>
-                  <span className="truncate">强调 {accentColor}</span>
-                  <span className="truncate">字体 {fontColor}</span>
                 </div>
               </div>
             </div>
@@ -104,13 +115,19 @@ export default function ThemePickerModal({ open, currentThemeId, currentTone, cu
                       ? 'border-[#5B4FE9] bg-[#F5F3FF] shadow-sm'
                       : 'border-gray-100 hover:border-gray-200'
                   }`}
+                  title={`${t.name} · ${t.style}`}
                 >
-                  <div className="flex gap-0.5 flex-shrink-0">
-                    {t.colors.map((c, i) => (
-                    <div key={i} className="w-2 h-2 sm:w-3.5 sm:h-3.5 rounded-full border border-gray-200/50" style={{ backgroundColor: c }} />
-                  ))}
+                  <div className="relative h-7 w-9 flex-shrink-0 overflow-hidden rounded border border-gray-200/70 sm:h-8 sm:w-12">
+                    {t.previewImage ? (
+                      <img src={t.previewImage} alt="" className="h-full w-full object-cover" draggable={false} />
+                    ) : (
+                      <div className="h-full w-full" style={{ background: `linear-gradient(135deg, ${t.colors[0]}, ${t.colors[1]})` }} />
+                    )}
                   </div>
                   <span className={`text-[7px] sm:text-xs font-medium truncate max-w-full ${currentThemeId === t.id ? 'text-[#4338CA]' : 'text-gray-600'}`}>{t.name}</span>
+                  {t.recommended && (
+                    <span className="hidden rounded bg-indigo-50 px-1 text-[9px] font-bold text-indigo-600 sm:inline">荐</span>
+                  )}
                   {currentThemeId === t.id && (
                     <svg className="hidden sm:block w-3.5 h-3.5 text-[#5B4FE9] ml-auto flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg>
                   )}

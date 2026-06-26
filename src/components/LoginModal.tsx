@@ -48,6 +48,8 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
   const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
   const codeRefs = useRef<(HTMLInputElement | null)[]>([]);
   const pageScrollYRef = useRef(0);
+  const sendingCodeRef = useRef(false);
+  const verifyingCodeRef = useRef(false);
 
   // ===== 重置 =====
   const handleClose = useCallback(() => {
@@ -112,9 +114,18 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
 
   const isValidPhone = (p: string) => /^1[3-9]\d{9}$/.test(p);
 
+  const applyRetryAfter = (value: unknown) => {
+    const seconds = Number(value);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      setCountdown(Math.max(1, Math.ceil(seconds)));
+    }
+  };
+
   // ===== 手机号：输入手机号 → 自动获取验证码 =====
   const goToVerify = useCallback(async () => {
     if (!phone || !isValidPhone(phone)) { setError('请输入正确的手机号'); return; }
+    if (sendingCodeRef.current) return;
+    sendingCodeRef.current = true;
     setLoading(true); setError(''); setAttemptsLeft(null);
 
     // 发送验证码
@@ -125,18 +136,28 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
         body: JSON.stringify({ action: 'send_code', phone }),
       });
       const data = await res.json();
-      if (data.error) { setError(data.error); setLoading(false); return; }
-      setCountdown(60);
+      if (data.error) {
+        setError(data.error);
+        applyRetryAfter(data.retryAfter);
+        setLoading(false);
+        return;
+      }
+      setCountdown(Number(data.retryAfter) > 0 ? Math.ceil(Number(data.retryAfter)) : 60);
       setPhoneStep('verify');
       // 自动聚焦第一个验证码输入框
       setTimeout(() => codeRefs.current[0]?.focus(), 150);
     } catch { setError('发送失败，请检查网络'); }
-    setLoading(false);
+    finally {
+      sendingCodeRef.current = false;
+      setLoading(false);
+    }
   }, [phone]);
 
   // ===== 重新发送验证码 =====
   const resendCode = useCallback(async () => {
     if (countdown > 0 || !phone) return;
+    if (sendingCodeRef.current) return;
+    sendingCodeRef.current = true;
     setLoading(true); setError('');
     try {
       const res = await fetch('/api/user', {
@@ -145,18 +166,28 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
         body: JSON.stringify({ action: 'send_code', phone }),
       });
       const data = await res.json();
-      if (data.error) { setError(data.error); setLoading(false); return; }
-      setCountdown(60);
+      if (data.error) {
+        setError(data.error);
+        applyRetryAfter(data.retryAfter);
+        setLoading(false);
+        return;
+      }
+      setCountdown(Number(data.retryAfter) > 0 ? Math.ceil(Number(data.retryAfter)) : 60);
       setCode(['', '', '', '', '', '']);
       setTimeout(() => codeRefs.current[0]?.focus(), 100);
     } catch { setError('发送失败'); }
-    setLoading(false);
+    finally {
+      sendingCodeRef.current = false;
+      setLoading(false);
+    }
   }, [phone, countdown]);
 
   // ===== 验证码登录/注册分流 =====
   const handleVerifyLogin = async (fullCode?: string) => {
     const fc = fullCode || code.join('');
     if (fc.length !== 6) { setError('请输入6位验证码'); return; }
+    if (verifyingCodeRef.current) return;
+    verifyingCodeRef.current = true;
     setLoading(true); setError(''); setAttemptsLeft(null);
     try {
       const res = await fetch('/api/user', {
@@ -167,7 +198,6 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
       const data = await res.json();
       if (data.error === 'NOT_REGISTERED') {
         setPhoneStep('set_profile');
-        setLoading(false);
         setTimeout(() => document.getElementById('reg-username-input')?.focus(), 150);
         return;
       }
@@ -176,14 +206,12 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
         setPhone(phone);
         setRegUsername(data.nickname || '');
         setPhoneStep('set_profile');
-        setLoading(false);
         setTimeout(() => document.getElementById('reg-username-input')?.focus(), 150);
         return;
       }
       if (data.error) {
         setError(data.error);
         if (data.attemptsLeft !== undefined) setAttemptsLeft(data.attemptsLeft);
-        setLoading(false);
         return;
       }
       if (data.user) {
@@ -192,7 +220,10 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
         handleClose();
       }
     } catch { setError('验证失败，请检查网络'); }
-    setLoading(false);
+    finally {
+      verifyingCodeRef.current = false;
+      setLoading(false);
+    }
   };
 
   // ===== 注册：提交资料 =====
