@@ -43,7 +43,7 @@ describe('resolveSmartThemeId', () => {
     });
 
     expect(['howlite', 'default-light', 'gleam']).not.toContain(match?.themeId);
-    expect(match?.themeId).toBe('dune');
+    expect(['gold-leaf', 'icebreaker', 'blues', 'pearl', 'blue-steel', 'marine']).toContain(match?.themeId);
   });
 
   it('uses the curated recommended default when no signal is supplied', () => {
@@ -75,11 +75,11 @@ describe('resolveSmartThemeId', () => {
   });
 
   it.each([
-    ['年度工作复盘与明年规划', ['dune', 'gold-leaf', 'blues', 'marine']],
-    ['中学课堂教学课件', ['icebreaker', 'vanilla', 'zephyr', 'keepsake']],
+    ['年度工作复盘与明年规划', ['gold-leaf', 'blues', 'pearl', 'icebreaker', 'marine']],
+    ['中学课堂教学课件', ['finesse', 'cornfield', 'zephyr', 'seafoam', 'pearl', 'oatmeal', 'keepsake']],
     ['护肤品牌新品发布方案', ['twilight', 'coral-glow', 'creme', 'peach', 'gamma', 'atmosphere', 'rush']],
     ['医疗健康科普与康复指南', ['seafoam', 'sage', 'tranquil', 'vanilla']],
-    ['非遗古镇传统文化介绍', ['terracotta', 'kraft', 'cornfield', 'wine']],
+    ['非遗古镇传统文化介绍', ['kraft', 'marine', 'sage', 'gleam', 'cornfield', 'finesse']],
   ])('classifies content profile: %s', (text, expectedThemes) => {
     const match = resolveSmartThemeId({ text });
     expect(expectedThemes).toContain(match.themeId);
@@ -95,5 +95,25 @@ describe('resolveSmartThemeId', () => {
 
     expect(match?.themeId).toBe('coral-glow');
     expect(['howlite', 'default-light', 'gleam']).not.toContain(match?.themeId);
+  });
+
+  it.each([
+    ['国风水墨山水与古诗词赏析', ['kraft', 'marine', 'sage', 'gleam']],
+    ['商务风格企业经营汇报', ['gold-leaf', 'icebreaker', 'blues', 'pearl', 'blue-steel', 'marine']],
+    ['精美高级作品集展示', ['lux', 'twilight', 'dune', 'finesse', 'vortex', 'gold-leaf', 'creme', 'prism']],
+    ['通用教学课件和课堂培训', ['finesse', 'cornfield', 'zephyr', 'seafoam', 'pearl', 'oatmeal', 'keepsake']],
+    ['清新可爱的儿童活动分享', ['twilight', 'lavender', 'atmosphere', 'coral-glow', 'peach', 'seafoam', 'daydream']],
+  ])('uses refreshed theme profile: %s', (text, expectedThemes) => {
+    const match = resolveSmartThemeId({ text });
+    expect(expectedThemes).toContain(match.themeId);
+  });
+
+  it('prioritizes an explicitly named current theme', () => {
+    const match = resolveSmartThemeId({
+      text: '请用深海远岚这种墨色山水感觉做一份古风介绍',
+    });
+
+    expect(match.themeId).toBe('marine');
+    expect(match.themeLabel).toBe('深海远岚');
   });
 });

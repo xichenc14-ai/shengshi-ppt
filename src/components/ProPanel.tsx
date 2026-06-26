@@ -15,13 +15,6 @@ const COLOR_THEMES = getRecommendedThemes().map((theme) => ({
   colors: theme.colors,
 }));
 
-const TONES = [
-  { id: 'professional', name: '正式', icon: '💼' },
-  { id: 'casual', name: '轻松', icon: '😊' },
-  { id: 'creative', name: '创意', icon: '💡' },
-  { id: 'traditional', name: '古风', icon: '🏯' },
-];
-
 const IMAGE_MODES = [
   { id: 'noImages', name: '极简无图', desc: '纯版式' },
   { id: 'theme-img', name: '主题套图', desc: '默认' },
@@ -37,15 +30,13 @@ interface ProPanelProps {
   setGenMode: (v: string) => void;
   theme: string;
   setTheme: (v: string) => void;
-  tone: string;
-  setTone: (v: string) => void;
   imgMode: string;
   setImgMode: (v: string) => void;
   pages: number;
   setPages: (v: number) => void;
 }
 
-export default function ProPanel({ open, onClose, genMode, setGenMode, theme, setTheme, tone, setTone, imgMode, setImgMode, pages, setPages }: ProPanelProps) {
+export default function ProPanel({ open, onClose, genMode, setGenMode, theme, setTheme, imgMode, setImgMode, pages, setPages }: ProPanelProps) {
   // ESC key to close
   React.useEffect(() => {
     if (!open) return;
@@ -116,25 +107,6 @@ export default function ProPanel({ open, onClose, genMode, setGenMode, theme, se
                     <span className="absolute right-0 top-0 w-3 h-2.5" style={{ backgroundColor: t.colors[1] }} />
                   </div>
                   <span className={`text-[11px] font-medium ${theme === t.id ? 'text-[#4338CA]' : 'text-gray-500'}`}>{t.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Tone */}
-          <div>
-            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">语气风格</div>
-            <div className="grid grid-cols-4 gap-2">
-              {TONES.map(t => (
-                <button
-                  key={t.id}
-                  onClick={() => setTone(t.id)}
-                  className={`py-2 rounded-lg border text-center transition-all cursor-pointer ${
-                    tone === t.id ? 'border-[#5B4FE9] bg-[#F5F3FF]/60' : 'border-gray-100 hover:border-gray-200'
-                  }`}
-                >
-                  <span className="text-sm">{t.icon}</span>
-                  <div className={`text-[10px] font-medium mt-0.5 ${tone === t.id ? 'text-[#4338CA]' : 'text-gray-500'}`}>{t.name}</div>
                 </button>
               ))}
             </div>

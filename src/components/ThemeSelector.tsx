@@ -258,10 +258,9 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
 
   return (
     <div>
-      <div className="mb-1.5 flex items-baseline gap-1.5">
-        <h3 className="text-[15px] font-bold tracking-tight text-slate-800">主题色系</h3>
-        <span className="text-xs font-semibold text-violet-600">· {selectedMeta.name}</span>
-        <span className="text-[11px] text-slate-400">· 拖动彩条、色块·选定主题</span>
+      <div className="mb-1.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+        <span className="text-[13px] font-semibold text-violet-600">{selectedMeta.name}</span>
+        <span className="text-[13px] text-slate-500">请左右拖动色条、主题卡，以选主题</span>
       </div>
 
       <div className="min-w-0 rounded-2xl border border-violet-100/75 bg-white/42 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.86)] backdrop-blur">

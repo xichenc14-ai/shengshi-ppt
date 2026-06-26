@@ -409,7 +409,7 @@ export default function Home() {
   // Dual-track mode
   const [mode, setMode] = useState<'direct' | 'smart'>('direct');
   const [directTheme, setDirectTheme] = useState<string>(DEFAULT_THEME_ID);
-  const [directTone, setDirectTone] = useState('professional');
+  const directTone = 'professional';
   const [directImgMode, setDirectImgMode] = useState('theme-img');
   const [directTextMode, setDirectTextMode] = useState<'generate' | 'condense' | 'preserve'>('generate');
 
@@ -425,14 +425,13 @@ export default function Home() {
   const [showPro, setShowPro] = useState(false);
   const [showPagePicker, setShowPagePicker] = useState(false);
   const [showImagePicker, setShowImagePicker] = useState(false);
-  const [showTonePicker, setShowTonePicker] = useState(false);
+  const [showTextModePicker, setShowTextModePicker] = useState(false);
 
   const [genMode, setGenMode] = useState('preserve');
   const [theme, setTheme] = useState('auto');
-  const [tone, setTone] = useState('professional');
+  const tone = 'professional';
   const [imgMode, setImgMode] = useState('theme-img');
   const [smartThemeTouched, setSmartThemeTouched] = useState(false);
-  const [smartToneTouched, setSmartToneTouched] = useState(false);
   const [smartImageTouched, setSmartImageTouched] = useState(false);
   // 🚨 D1: Renamed pages → pageCount for canonical field consistency
   const [pageCount, setPageCount] = useState(8);
@@ -461,7 +460,7 @@ export default function Home() {
   const pagePickerRef = useRef<HTMLDivElement | null>(null);
   const pagePickerListRef = useRef<HTMLDivElement | null>(null);
   const imagePickerRef = useRef<HTMLDivElement | null>(null);
-  const tonePickerRef = useRef<HTMLDivElement | null>(null);
+  const textModePickerRef = useRef<HTMLDivElement | null>(null);
   // 🚨 D3 Fix Q4: 使用 ref 同步 editedSlides，防止 confirmAndGenerate 闭包读取陈旧值
   const editedSlidesRef = useRef<SlideItem[]>(editedSlides);
   useEffect(() => { editedSlidesRef.current = editedSlides; }, [editedSlides]);
@@ -476,13 +475,13 @@ export default function Home() {
       if (showImagePicker && imagePickerRef.current && !imagePickerRef.current.contains(target)) {
         setShowImagePicker(false);
       }
-      if (showTonePicker && tonePickerRef.current && !tonePickerRef.current.contains(target)) {
-        setShowTonePicker(false);
+      if (showTextModePicker && textModePickerRef.current && !textModePickerRef.current.contains(target)) {
+        setShowTextModePicker(false);
       }
     };
     document.addEventListener('mousedown', onPointerDown);
     return () => document.removeEventListener('mousedown', onPointerDown);
-  }, [showPagePicker, showImagePicker, showTonePicker]);
+  }, [showPagePicker, showImagePicker, showTextModePicker]);
 
   useEffect(() => {
     if (!showPagePicker || !pagePickerListRef.current) return;
@@ -1091,9 +1090,9 @@ export default function Home() {
         auto,
         strictPreserve: false,
         forceRequestedMode: Boolean(options?.forceRequestedMode),
-        // 省心模式下：仅当用户主动修改选项时才透传，避免默认值覆盖用户文本需求
+        // 不从 UI 透传语气，避免默认值覆盖输入框里的语气/场景要求
         themeId: mode === 'smart' ? ((smartThemeTouched && theme !== 'auto') ? theme : '') : directTheme,
-        tone: mode === 'smart' ? (smartToneTouched ? tone : '') : directTone,
+        tone: '',
         imageMode: mode === 'smart' ? (smartImageTouched ? imgMode : '') : directImgMode,
       };
       persistOutlineResumeState(outlinePayload, mode);
@@ -1136,7 +1135,7 @@ export default function Home() {
         setImgMode(directImgMode);
         setSmartGammaPayload({
           themeId: directTheme !== 'default-light' ? directTheme : (od.themeId || DEFAULT_THEME_ID),
-          tone: directTone,
+          tone: od.tone || directTone,
           imageOptions: { source: gammaImageSource },
         });
         setPhase('outline');
@@ -1160,10 +1159,8 @@ export default function Home() {
     mode,
     genMode,
     theme,
-    tone,
     imgMode,
     smartThemeTouched,
-    smartToneTouched,
     smartImageTouched,
     directTextMode,
     directImgMode,
@@ -1297,10 +1294,8 @@ export default function Home() {
         : (smartGammaPayload?.themeId || (theme !== 'auto' ? theme : outlineResult.themeId) || DEFAULT_THEME_ID))
       : (directTheme || outlineResult.themeId || DEFAULT_THEME_ID);
     const finalTone = mode === 'smart'
-      ? (smartToneTouched
-        ? tone
-        : (smartGammaPayload?.tone || outlineResult.tone || tone || 'professional'))
-      : (directTone || 'professional');
+      ? (smartGammaPayload?.tone || outlineResult.tone || tone)
+      : (outlineResult.tone || directTone);
     const finalTextMode: 'generate' | 'condense' | 'preserve' = mode === 'smart'
       ? (outlineResult.meta?.preprocess?.effectiveMode || 'generate')
       : directTextMode;
@@ -1550,10 +1545,8 @@ export default function Home() {
     mode,
     smartGammaPayload,
     theme,
-    tone,
     imgMode,
     smartThemeTouched,
-    smartToneTouched,
     smartImageTouched,
     directImgMode,
     directTheme,
@@ -1603,7 +1596,6 @@ export default function Home() {
     setShowPro(false);
     setGenMode('preserve');
     setSmartThemeTouched(false);
-    setSmartToneTouched(false);
     setSmartImageTouched(false);
     setOutlinePreprocess(null);
     setSmartAutoGeneratePending(false);
@@ -1623,7 +1615,6 @@ export default function Home() {
     setStreamingSlides([]);
     setError('');
     setSmartThemeTouched(false);
-    setSmartToneTouched(false);
     setSmartImageTouched(false);
     setOutlinePreprocess(null);
     setSmartAutoGeneratePending(false);
@@ -1802,7 +1793,7 @@ export default function Home() {
             const gammaImageSource = toGammaImageSource(directImgMode);
             setSmartGammaPayload({
               themeId: directTheme !== 'default-light' ? directTheme : (od.themeId || DEFAULT_THEME_ID),
-              tone: directTone,
+              tone: od.tone || directTone,
               imageOptions: { source: gammaImageSource },
             });
             setPhase('outline');
@@ -2264,6 +2255,13 @@ export default function Home() {
     const r: UploadedFile[] = [];
     const parseTables = shouldProcessTables(getTopicValue());
     const attachmentPolicy = getAttachmentPolicy(user?.plan_type, mode);
+    const withAttachmentEntitlement = (message: string) => {
+      const current = attachmentPolicySummary(attachmentPolicy);
+      const member = attachmentPolicySummary(getAttachmentPolicy('shengxin', 'direct'));
+      return attachmentPolicy.key === 'free-direct'
+        ? `${message}。当前权益：${current}；会员权益：${member}`
+        : `${message}。会员权益：${current}`;
+    };
     let batchCount = files.length;
     let batchBytes = files.reduce((sum, file) => sum + file.size, 0);
     const queued = Array.from(fl).map((file, index) => ({
@@ -2294,18 +2292,19 @@ export default function Home() {
     for (const { file: f, id: taskId } of queued) {
       const metaError = validateAttachmentMeta(f, attachmentPolicy);
       if (metaError) {
-        setError(metaError);
-        updateTask(taskId, 'error', metaError);
+        const message = withAttachmentEntitlement(metaError);
+        setError(message);
+        updateTask(taskId, 'error', message);
         continue;
       }
       if (batchCount + 1 > attachmentPolicy.maxFiles) {
-        const message = `当前模式最多上传${attachmentPolicy.maxFiles}个附件`;
+        const message = withAttachmentEntitlement(`当前模式最多上传${attachmentPolicy.maxFiles}个附件`);
         setError(message);
         updateTask(taskId, 'error', message);
         continue;
       }
       if (batchBytes + f.size > attachmentPolicy.maxTotalBytes) {
-        const message = `附件总大小不能超过${Math.round(attachmentPolicy.maxTotalBytes / 1024 / 1024)}MB`;
+        const message = withAttachmentEntitlement(`附件总大小不能超过${Math.round(attachmentPolicy.maxTotalBytes / 1024 / 1024)}MB`);
         setError(message);
         updateTask(taskId, 'error', message);
         continue;
@@ -2432,7 +2431,7 @@ export default function Home() {
         }
       }
       else {
-        const message = `文件“${f.name}”格式不支持`;
+        const message = withAttachmentEntitlement(`文件“${f.name}”格式不支持`);
         setError(message);
         updateTask(taskId, 'error', message);
         continue;
@@ -2691,7 +2690,13 @@ export default function Home() {
                     const newFiles = Array.from(raw);
                     const attachmentPolicy = getAttachmentPolicy(user?.plan_type, mode);
                     if (files.length + newFiles.length > attachmentPolicy.maxFiles) {
-                      setError(`当前模式最多上传${attachmentPolicy.maxFiles}个附件`);
+                      const current = attachmentPolicySummary(attachmentPolicy);
+                      const member = attachmentPolicySummary(getAttachmentPolicy('shengxin', 'direct'));
+                      setError(
+                        attachmentPolicy.key === 'free-direct'
+                          ? `当前模式最多上传${attachmentPolicy.maxFiles}个附件。当前权益：${current}；会员权益：${member}`
+                          : `当前模式最多上传${attachmentPolicy.maxFiles}个附件。会员权益：${current}`,
+                      );
                       e.target.value = '';
                       return;
                     }
@@ -2753,12 +2758,6 @@ export default function Home() {
                     </div>
                   )}
 
-                  <div className="mt-2 text-[10px] text-slate-400 leading-relaxed">
-                    {getAttachmentPolicy(user?.plan_type, mode).key === 'member'
-                      ? '支持 PDF、DOCX、PPTX、XLSX、JPG 等；最多 5 个文件，总计 100MB'
-                      : '支持 PDF、DOCX、TXT；最多 1 个文件，总计 10MB'}
-                  </div>
-
                   <div className="border-t border-indigo-100/70 my-4" />
 
                   {/* Mode toggle - segmented control style */}
@@ -2791,7 +2790,6 @@ export default function Home() {
                         }
                         setMode('smart');
                         setSmartThemeTouched(false);
-                        setSmartToneTouched(false);
                         setSmartImageTouched(false);
                       }}
                       className={`flex-1 py-2.5 rounded-full text-center transition-all text-sm font-semibold ${
@@ -2810,55 +2808,18 @@ export default function Home() {
                   {/* Direct mode: show ThemeSelector + params */}
                   {mode === 'direct' && (
                     <div className="mt-3 pt-3 border-t border-gray-100 space-y-5 -mx-1 px-1">
-                      {/* 主题色系 */}
-                      <div>
-                        <ThemeSelector value={directTheme} onChange={setDirectTheme} />
-                      </div>
-
-                      {/* 文本处理 */}
-                      <div>
-                        <h3 className="text-[15px] font-semibold text-gray-800 mb-3">文本处理</h3>
-                        <div className="grid grid-cols-3 gap-2.5 md:gap-3">
-                          {[
-                            { value: 'generate', label: '扩充文本', desc: 'AI丰富内容' },
-                            { value: 'condense', label: '总结提炼', desc: 'AI精简核心' },
-                            { value: 'preserve', label: '保持原样', desc: '忠实呈现' },
-                          ].map(opt => (
-                            <button
-                              key={opt.value}
-                              onClick={() => {
-                                const nextMode = opt.value as 'generate' | 'condense' | 'preserve';
-                                setDirectTextMode(nextMode);
-                              }}
-                              className={`relative h-11 md:h-12 px-2 rounded-xl border-2 text-center transition-all ${
-                                directTextMode === opt.value
-                                  ? 'border-[#5B4FE9] bg-[#F5F3FF] shadow-sm'
-                                  : 'border-gray-200 bg-white hover:border-gray-300'
-                              }`}
-                            >
-                              {directTextMode === opt.value && (
-                                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#5B4FE9]" />
-                              )}
-                              <div className={`text-[13px] md:text-sm font-semibold leading-tight ${directTextMode === opt.value ? 'text-[#4338CA]' : 'text-gray-700'}`}>{opt.label}</div>
-                              <div className="hidden md:block text-[11px] text-gray-500 mt-0.5">{opt.desc}</div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
                       {/* 生成参数 */}
                       <div>
-                        <h3 className="text-[15px] font-semibold text-gray-800 mb-3">生成参数</h3>
                         <div className="grid grid-cols-3 gap-2.5 md:gap-5">
                           <div>
-                            <label className="text-[11px] md:text-xs text-gray-500 mb-1.5 block font-medium">页数</label>
                             <div className="relative" ref={pagePickerRef}>
                               <button
                                 type="button"
+                                aria-label="选择页数"
                                 onClick={() => {
                                   setShowPagePicker(v => !v);
                                   setShowImagePicker(false);
-                                  setShowTonePicker(false);
+                                  setShowTextModePicker(false);
                                 }}
                                 className="w-full h-11 md:h-12 px-3 rounded-xl border border-gray-200 bg-white flex items-center justify-between hover:border-indigo-200 transition-colors"
                               >
@@ -2910,14 +2871,14 @@ export default function Home() {
                             </div>
                           </div>
                           <div>
-                            <label className="text-[11px] md:text-xs text-gray-500 mb-1.5 block font-medium">配图风格</label>
                             <div className="relative" ref={imagePickerRef}>
                               <button
                                 type="button"
+                                aria-label="选择配图风格"
                                 onClick={() => {
                                   setShowImagePicker(v => !v);
                                   setShowPagePicker(false);
-                                  setShowTonePicker(false);
+                                  setShowTextModePicker(false);
                                 }}
                                 className="w-full h-11 md:h-12 px-2.5 rounded-xl border border-gray-200 bg-white flex items-center justify-between hover:border-indigo-200 transition-colors"
                               >
@@ -2988,46 +2949,50 @@ export default function Home() {
                             </div>
                           </div>
                           <div>
-                            <label className="text-[11px] md:text-xs text-gray-500 mb-1.5 block font-medium">语气风格</label>
-                            <div className="relative" ref={tonePickerRef}>
+                            <div className="relative" ref={textModePickerRef}>
                               <button
                                 type="button"
+                                aria-label="选择文本处理方式"
                                 onClick={() => {
-                                  setShowTonePicker(v => !v);
+                                  setShowTextModePicker(v => !v);
                                   setShowPagePicker(false);
                                   setShowImagePicker(false);
                                 }}
                                 className="w-full h-11 md:h-12 px-2.5 rounded-xl border border-gray-200 bg-white flex items-center justify-between hover:border-indigo-200 transition-colors"
                               >
-                                <span className="text-[13px] md:text-sm font-medium text-gray-800">
-                                  {{ professional: '专业', casual: '轻松', creative: '创意', bold: '大胆' }[directTone] || '专业'}
+                                <span className="truncate text-[13px] md:text-sm font-medium text-gray-800">
+                                  {{
+                                    generate: '扩充文本',
+                                    condense: '总结提炼',
+                                    preserve: '保持原样',
+                                  }[directTextMode]}
                                 </span>
-                                <span className={`ml-1 text-slate-400 transition-transform ${showTonePicker ? 'rotate-180' : ''}`}>⌄</span>
+                                <span className={`ml-1 text-slate-400 transition-transform ${showTextModePicker ? 'rotate-180' : ''}`}>⌄</span>
                               </button>
 
-                              {showTonePicker && (
+                              {showTextModePicker && (
                                 <div className="absolute z-30 right-0 top-[calc(100%+8px)] w-full min-w-[112px] rounded-2xl border border-indigo-100 bg-white/95 backdrop-blur p-2 shadow-lg shadow-indigo-100/50">
                                   <div className="rounded-xl border border-slate-100 bg-white/70 p-1">
                                     {[
-                                      { value: 'professional', label: '专业' },
-                                      { value: 'casual', label: '轻松' },
-                                      { value: 'creative', label: '创意' },
-                                      { value: 'bold', label: '大胆' },
+                                      { value: 'generate', label: '扩充文本', desc: 'AI丰富内容' },
+                                      { value: 'condense', label: '总结提炼', desc: 'AI精简核心' },
+                                      { value: 'preserve', label: '保持原样', desc: '忠实呈现' },
                                     ].map(opt => (
                                       <button
                                         key={opt.value}
                                         type="button"
                                         onClick={() => {
-                                          setDirectTone(opt.value);
-                                          setShowTonePicker(false);
+                                          setDirectTextMode(opt.value as 'generate' | 'condense' | 'preserve');
+                                          setShowTextModePicker(false);
                                         }}
-                                        className={`w-full h-9 rounded-lg px-2 text-[12px] md:text-[13px] transition-colors flex items-center ${
-                                          directTone === opt.value
+                                        className={`w-full h-9 rounded-lg px-2 text-[12px] md:text-[13px] transition-colors flex items-center justify-between ${
+                                          directTextMode === opt.value
                                             ? 'bg-[#EEF2FF] text-[#4338CA] font-semibold'
                                             : 'text-slate-600 hover:bg-slate-50'
                                         }`}
                                       >
-                                        {opt.label}
+                                        <span>{opt.label}</span>
+                                        <span className="hidden md:inline text-[10px] text-slate-400 font-normal">{opt.desc}</span>
                                       </button>
                                     ))}
                                   </div>
@@ -3037,6 +3002,11 @@ export default function Home() {
                           </div>
                         </div>
                       </div>
+
+                      {/* 主题色系 */}
+                      <div>
+                        <ThemeSelector value={directTheme} onChange={setDirectTheme} />
+                      </div>
                     </div>
                   )}
 
@@ -3044,11 +3014,6 @@ export default function Home() {
 
                   {/* Generate action row */}
                   <div className="mt-5 flex flex-col md:flex-row md:items-center gap-3 pb-[calc(env(safe-area-inset-bottom)+6px)]">
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-white/70 border border-indigo-100 px-3 py-1.5">高级设置</span>
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-white/70 border border-indigo-100 px-3 py-1.5">页数 {pageCount} 页</span>
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-white/70 border border-indigo-100 px-3 py-1.5">{mode === 'smart' ? '省心一键出稿' : '大纲可编辑'}</span>
-                    </div>
                     <button
                       onClick={() => { if (!user) { openLogin(); return; } handleGeneratePPT(); }}
                       disabled={!hasInput || isProcessingAttachments}
@@ -3259,7 +3224,6 @@ export default function Home() {
                   {mode === 'smart' && smartGammaPayload && (() => {
                     // 读取当前 smartGammaPayload 里的参数
                     const currentThemeId = smartGammaPayload.themeId || DEFAULT_THEME_ID;
-                    const currentTone = smartGammaPayload.tone || 'professional';
                     const currentImgSrc = smartGammaPayload.imageOptions?.source || 'themeAccent';
                     const currentTheme = getThemeById(currentThemeId);
 
@@ -3309,33 +3273,6 @@ export default function Home() {
                               {currentTheme?.name || currentThemeId}
                             </div>
                           </div>
-                          {/* 语气 - 分段可切换 */}
-                          <div className="bg-white/70 rounded-lg px-3 py-2">
-                            <p className="text-[10px] text-gray-400 mb-1">🎭 语气</p>
-                            <div className="flex flex-wrap gap-1">
-                              {(['professional','casual','creative','bold','traditional'] as const).map(t => (
-                                <button
-                                  key={t}
-                                  onClick={() => {
-                                    setTone(t);
-                                    setSmartToneTouched(true);
-                                    setSmartGammaPayload((prev: any) => prev ? {
-                                      ...prev,
-                                      tone: t,
-                                      gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, tone: t, textOptions: { ...prev.gammaPayload.textOptions, tone: t } } : undefined,
-                                    } : prev);
-                                  }}
-                                  className={`px-1.5 py-0.5 rounded-md text-[9px] font-medium transition-all ${
-                                    currentTone === t
-                                      ? 'bg-[#5B4FE9] text-white'
-                                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                                  }`}
-                                >
-                                  {{ professional:'专业', casual:'轻松', creative:'创意', bold:'大胆', traditional:'传统' }[t]}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
                           {/* 配图 - 分段可切换 */}
                           <div className="bg-white/70 rounded-lg px-3 py-2">
                             <p className="text-[10px] text-gray-400 mb-1">🖼️ 配图</p>
@@ -3369,7 +3306,7 @@ export default function Home() {
                             <p className="text-xs font-medium text-gray-700">{editedSlides.length} 页</p>
                           </div>
                         </div>
-                        <p className="text-[10px] text-purple-400 mt-2">✨ 点击主题/语气/配图可直接修改 · 对话修改大纲功能（预留）</p>
+                        <p className="text-[10px] text-purple-400 mt-2">✨ 点击主题/配图可直接修改 · 对话修改大纲功能（预留）</p>
                       </div>
                     );
                   })()}
@@ -3658,7 +3595,6 @@ export default function Home() {
         onClose={() => setShowPro(false)}
         genMode={genMode} setGenMode={setGenMode}
         theme={theme} setTheme={(v) => { setTheme(v); setSmartThemeTouched(true); }}
-        tone={tone} setTone={(v) => { setTone(v); setSmartToneTouched(true); }}
         imgMode={imgMode} setImgMode={(v) => { setImgMode(v); setSmartImageTouched(true); }}
         pages={pageCount} setPages={setPageCount}
       />
@@ -3668,7 +3604,6 @@ export default function Home() {
       <ThemePickerModal
         open={showThemePicker}
         currentThemeId={smartGammaPayload?.themeId || DEFAULT_THEME_ID}
-        currentTone={smartGammaPayload?.tone || 'professional'}
         currentImgSrc={smartGammaPayload?.imageOptions?.source || 'themeAccent'}
         onThemeChange={(themeId) => {
           setTheme(themeId);
@@ -3677,15 +3612,6 @@ export default function Home() {
             ...prev,
             themeId,
             gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, themeId } : undefined,
-          } : prev);
-        }}
-        onToneChange={(tone) => {
-          setTone(tone);
-          setSmartToneTouched(true);
-          setSmartGammaPayload((prev: any) => prev ? {
-            ...prev,
-            tone,
-            gammaPayload: prev.gammaPayload ? { ...prev.gammaPayload, tone, textOptions: { ...prev.gammaPayload.textOptions, tone } } : undefined,
           } : prev);
         }}
         onImgChange={(imgSrc) => {

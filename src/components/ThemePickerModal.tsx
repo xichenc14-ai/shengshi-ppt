@@ -17,14 +17,6 @@ const RECOMMENDED_THEMES = getRecommendedThemes().map((theme) => ({
   label: theme.nameZh,
 }));
 
-const TONES = [
-  { id: 'professional', name: '专业', icon: '💼' },
-  { id: 'casual', name: '轻松', icon: '😊' },
-  { id: 'creative', name: '创意', icon: '💡' },
-  { id: 'bold', name: '大胆', icon: '🔥' },
-  { id: 'traditional', name: '传统', icon: '🏯' },
-];
-
 const IMAGE_MODES = [
   { id: 'noImages', name: '极简无图', desc: '免费', color: '#64748B' },
   { id: 'themeAccent', name: '主题套图', desc: '免费', color: '#8B5CF6' },
@@ -35,15 +27,13 @@ const IMAGE_MODES = [
 interface Props {
   open: boolean;
   currentThemeId: string;
-  currentTone: string;
   currentImgSrc: string;
   onThemeChange: (themeId: string) => void;
-  onToneChange: (tone: string) => void;
   onImgChange: (imgSrc: string) => void;
   onClose: () => void;
 }
 
-export default function ThemePickerModal({ open, currentThemeId, currentTone, currentImgSrc, onThemeChange, onToneChange, onImgChange, onClose }: Props) {
+export default function ThemePickerModal({ open, currentThemeId, currentImgSrc, onThemeChange, onImgChange, onClose }: Props) {
   if (!open) return null;
   const currentThemeFromDb = getThemeById(currentThemeId);
   const currentTheme = (currentThemeFromDb
@@ -151,27 +141,6 @@ export default function ThemePickerModal({ open, currentThemeId, currentTone, cu
                   </button>
                 ))}
               </div>
-            </div>
-          </div>
-
-          {/* 语气选择 */}
-          <div className="mb-5">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5">🎭 语气风格</p>
-            <div className="flex flex-wrap gap-2">
-              {TONES.map(t => (
-                <button
-                  key={t.id}
-                  onClick={() => onToneChange(t.id)}
-                  className={`px-3 py-2 rounded-xl border-2 text-xs font-medium transition-all flex items-center gap-1.5 ${
-                    currentTone === t.id
-                      ? 'border-[#5B4FE9] bg-[#F5F3FF] text-[#4338CA]'
-                      : 'border-gray-100 hover:border-gray-200 text-gray-500'
-                  }`}
-                >
-                  <span>{t.icon}</span>
-                  <span>{t.name}</span>
-                </button>
-              ))}
             </div>
           </div>
 

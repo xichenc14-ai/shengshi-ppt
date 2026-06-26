@@ -139,12 +139,12 @@ describe('getThemesByCategory', () => {
 
   it('should follow the manually curated visible order from the spreadsheet', () => {
     expect(getThemesByCategory('blue').map((theme) => theme.id)).toEqual([
-      'stratos',
-      'lunaria',
-      'petrol',
       'blues',
       'zephyr',
       'icebreaker',
+      'stratos',
+      'lunaria',
+      'petrol',
       'blue-steel',
       'keepsake',
     ]);

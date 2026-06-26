@@ -59,7 +59,7 @@ export const MAX_THEMES_PER_CATEGORY = 8;
 
 export const CATEGORY_THEME_DISPLAY_ORDER: Record<ThemeColorFamily, string[]> = {
   yellowCream: ["creme", "dune", "chocolate", "cornfield", "gold-leaf", "linen", "finesse", "terracotta"],
-  blue: ["stratos", "lunaria", "petrol", "blues", "zephyr", "icebreaker", "blue-steel", "keepsake"],
+  blue: ["blues", "zephyr", "icebreaker", "stratos", "lunaria", "petrol", "blue-steel", "keepsake"],
   green: ["seafoam", "lux", "sage", "verdigris", "fluo", "vanilla", "alien", "borealis"],
   purple: ["spectrum", "prism", "gamma", "lavender", "atmosphere", "aurora", "velvet-tides", "daydream"],
   pink: ["twilight", "coral-glow", "peach", "atacama", "malibu", "rush", "leimoon", "canaveral"],

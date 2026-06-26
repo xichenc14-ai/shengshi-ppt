@@ -29,11 +29,11 @@ type IntentRule = {
 };
 
 const COLOR_RULES: Array<{ family: ThemeColorFamily; label: string; re: RegExp }> = [
-  { family: 'blue', label: '蓝色系', re: /商务蓝|蓝色主题|蓝色系|科技蓝|企业蓝|深蓝|海军蓝|宝石蓝|藏蓝|天蓝|淡蓝/ },
+  { family: 'blue', label: '蓝色系', re: /商务蓝|蓝色主题|蓝色系|科技蓝|企业蓝|深蓝|海军蓝|宝石蓝|藏蓝|天蓝|淡蓝|云蓝|晴蓝/ },
   { family: 'pink', label: '粉红系', re: /粉红|粉色|玫红|玫瑰红|少女粉|豆沙粉|樱花粉|珊瑚红|珊瑚粉|橙色|橙棕|红色主题|红色系|中国红|国旗红|喜庆红|大红|正红|朱红|酒红|红金|节庆红/ },
-  { family: 'yellowCream', label: '米黄色系', re: /米黄|米色|米绿|优雅米绿|奶油|杏色|金色|暖黄|黄色系|金沙/ },
-  { family: 'green', label: '绿色系', re: /绿色|绿色系|自然绿|清新绿|薄荷绿|生态绿|环保绿/ },
-  { family: 'neutral', label: '黑白灰系', re: /白色|白色系|灰色|灰白|极简白|简约白|冷银|银灰|黑色|黑金|深色|暗色|夜间|暗夜|高对比/ },
+  { family: 'yellowCream', label: '米黄色系', re: /米黄|米色|米绿|优雅米绿|奶油|杏色|金色|暖黄|黄色系|金沙|浅砂|浅沙|牛皮|素纸/ },
+  { family: 'green', label: '绿色系', re: /绿色|绿色系|自然绿|清新绿|薄荷绿|生态绿|环保绿|青绿|鼠尾|青岚/ },
+  { family: 'neutral', label: '黑白灰系', re: /白色|白色系|灰色|灰白|极简白|简约白|冷银|银灰|黑色|黑金|深色|暗色|夜间|暗夜|高对比|墨色|烟灰|珍珠白|柔白/ },
   { family: 'purple', label: '紫色系', re: /紫色|紫粉|科技紫|蓝紫|薰衣草|极光紫/ },
 ];
 
@@ -50,19 +50,29 @@ const STYLE_RULES: Array<{ tag: string; re: RegExp }> = [
   { tag: '传统', re: /传统|国风|古风|中式|文化|非遗|党政|历史/ },
   { tag: '活泼', re: /活泼|年轻|轻松|趣味|校园|儿童/ },
   { tag: '理性', re: /数据|研究|分析|指标|图表|学术|论文|金融/ },
+  { tag: '精美', re: /精美|高级|大气|审美|视觉|艺术|设计感|作品集/ },
+  { tag: '可爱', re: /可爱|萌|少女|亲子|儿童|卡通|治愈|甜美/ },
 ];
+
+const CURATED_THEME_PROFILES = {
+  traditional: ['kraft', 'marine', 'sage', 'gleam', 'cornfield', 'finesse'],
+  business: ['gold-leaf', 'icebreaker', 'blues', 'pearl', 'blue-steel', 'marine'],
+  elegant: ['lux', 'twilight', 'dune', 'finesse', 'vortex', 'gold-leaf', 'creme', 'prism'],
+  education: ['finesse', 'cornfield', 'zephyr', 'seafoam', 'pearl', 'oatmeal', 'keepsake'],
+  freshCute: ['twilight', 'lavender', 'atmosphere', 'coral-glow', 'peach', 'seafoam', 'daydream'],
+} as const;
 
 /**
  * 内容意图画像：把行业/场景、内容元素和表达气质映射到已策展主题。
  * themes 按优先级排列，避免只靠“专业”语气机械落到商务蓝。
  */
 const INTENT_RULES: IntentRule[] = [
-  { signal: '年度总结', re: /年终|年度|年报|复盘|述职|季度总结|工作总结/, scenes: ['年度总结', '商务汇报'], tags: ['商务', '稳重'], themes: ['dune', 'gold-leaf', 'blues', 'marine'] },
-  { signal: '商务汇报', re: /工作汇报|项目汇报|经营汇报|商业计划|企业介绍|公司介绍|管理汇报/, scenes: ['商务汇报'], tags: ['商务', '稳重'], themes: ['dune', 'gold-leaf', 'petrol', 'blue-steel'] },
-  { signal: '金融路演', re: /融资|路演|投资|金融|证券|基金|财务|资本|商业模式/, scenes: ['金融路演', '商务汇报'], tags: ['商务', '理性', '高端'], themes: ['marine', 'blues', 'dune', 'chocolate'] },
-  { signal: '数据研究', re: /数据分析|研究报告|调研|指标|图表|实验|论文|学术|可视化/, scenes: ['数据分析', '研究报告'], tags: ['理性', '专业'], themes: ['verdigris', 'petrol', 'gleam', 'blue-steel'] },
+  { signal: '年度总结', re: /年终|年度|年报|复盘|述职|季度总结|工作总结/, scenes: ['年度总结', '商务汇报'], tags: ['商务', '稳重'], themes: ['gold-leaf', 'blues', 'pearl', 'icebreaker', 'marine'] },
+  { signal: '商务汇报', re: /工作汇报|项目汇报|经营汇报|商业计划|企业介绍|公司介绍|管理汇报|商业提案|招商方案/, scenes: ['商务汇报'], tags: ['商务', '稳重'], themes: [...CURATED_THEME_PROFILES.business] },
+  { signal: '金融路演', re: /融资|路演|投资|金融|证券|基金|财务|资本|商业模式/, scenes: ['金融路演', '商务汇报'], tags: ['商务', '理性', '高端'], themes: ['blues', 'gold-leaf', 'marine', 'pearl', 'blue-steel'] },
+  { signal: '数据研究', re: /数据分析|研究报告|调研|指标|图表|实验|论文|学术|可视化/, scenes: ['数据分析', '研究报告'], tags: ['理性', '专业'], themes: ['blue-steel', 'pearl', 'verdigris', 'icebreaker', 'gleam'] },
   { signal: '科技产品', re: /人工智能|AI|大模型|科技|数字化|软件|互联网|机器人|芯片|算法|产品发布/, scenes: ['科技AI', '产品发布'], tags: ['科技', '未来'], themes: ['verdigris', 'aurora', 'blue-steel', 'borealis'] },
-  { signal: '教育培训', re: /课程|课件|教学|培训|学校|校园|中学|大学|公开课|答辩/, scenes: ['教育培训', '培训课件'], tags: ['教育', '清新'], themes: ['icebreaker', 'vanilla', 'zephyr', 'keepsake'] },
+  { signal: '教育培训', re: /课程|课件|教学|培训|学校|校园|中学|大学|公开课|答辩|通用课件/, scenes: ['教育培训', '培训课件'], tags: ['教育', '清新'], themes: [...CURATED_THEME_PROFILES.education] },
   { signal: '旅游文旅', re: /旅行|旅游|攻略|行程|景点|城市介绍|文旅|酒店|民宿|度假|游学/, scenes: ['旅游出行', '文旅介绍'], tags: ['自然', '生活'], themes: ['finesse', 'cornfield', 'terracotta', 'leimoon'] },
   { signal: '餐饮咖啡', re: /咖啡|餐饮|美食|菜品|烘焙|甜品|饮品|奶茶|餐厅|茶饮/, scenes: ['餐饮美食', '生活方式'], tags: ['温暖', '生活'], themes: ['finesse', 'leimoon', 'chocolate', 'creme'] },
   { signal: '品牌营销', re: /品牌|营销|推广|广告|新品|发布会|活动策划|传播|社交媒体/, scenes: ['营销提案', '品牌介绍'], tags: ['创意', '品牌'], themes: ['gamma', 'atmosphere', 'rush', 'gold-leaf'] },
@@ -70,8 +80,11 @@ const INTENT_RULES: IntentRule[] = [
   { signal: '婚礼情感', re: /婚礼|婚庆|求婚|爱情|恋爱|纪念日|周年|浪漫|相守/, scenes: ['婚礼庆典', '情感分享'], tags: ['情感', '浪漫'], themes: ['coral-glow', 'twilight', 'peach', 'malibu'] },
   { signal: '医疗健康', re: /医疗|健康|医院|护理|药品|医学|康复|心理|营养/, scenes: ['医疗健康'], tags: ['清新', '可靠'], themes: ['seafoam', 'sage', 'vanilla', 'icebreaker'] },
   { signal: '自然环保', re: /环保|生态|可持续|绿色发展|植物|农业|乡村振兴|碳中和/, scenes: ['环保公益', '乡村文旅'], tags: ['自然', '清新'], themes: ['lux', 'vanilla', 'sage', 'cornfield'] },
-  { signal: '传统文化', re: /国风|古风|中式|传统文化|非遗|历史|博物馆|古镇|古村|文化遗产/, scenes: ['文化教育', '品牌故事'], tags: ['传统', '人文'], themes: ['terracotta', 'kraft', 'cornfield', 'linen'] },
-  { signal: '高端品牌', re: /高端|轻奢|奢华|精品|豪华|尊贵|典藏/, scenes: ['高端品牌'], tags: ['高端', '质感'], themes: ['gold-leaf', 'dune', 'chocolate', 'marine'] },
+  { signal: '传统文化', re: /国风|古风|中式|传统文化|非遗|历史|博物馆|古镇|古村|文化遗产|诗词|书法|茶道|水墨|山水|禅意|汉服|东方美学/, scenes: ['文化教育', '品牌故事'], tags: ['传统', '人文'], themes: [...CURATED_THEME_PROFILES.traditional] },
+  { signal: '高端品牌', re: /高端|轻奢|奢华|精品|豪华|尊贵|典藏/, scenes: ['高端品牌'], tags: ['高端', '质感'], themes: ['gold-leaf', 'dune', 'lux', 'vortex', 'marine'] },
+  { signal: '精美视觉', re: /精美|高级|大气|审美|视觉|艺术|设计感|作品集|画册|图册|质感|精致/, scenes: ['视觉提案', '高端品牌'], tags: ['精美', '质感'], themes: [...CURATED_THEME_PROFILES.elegant] },
+  { signal: '清新可爱', re: /清新可爱|可爱|萌|少女|亲子|儿童|幼儿|卡通|治愈|甜美|轻松活泼/, scenes: ['轻松分享', '校园活动'], tags: ['可爱', '活泼', '清新'], themes: [...CURATED_THEME_PROFILES.freshCute] },
+  { signal: '通用演示', re: /通用|常规|简洁|简约|快速生成|普通演示|基础汇报/, scenes: ['通用'], tags: ['简约', '清新'], themes: ['pearl', 'finesse', 'zephyr', 'seafoam', 'cornfield'] },
   { signal: '生活方式', re: /生活方式|家居|日常|社区|成长|个人分享|兴趣/, scenes: ['生活方式'], tags: ['生活', '温暖'], themes: ['finesse', 'creme', 'vanilla', 'zephyr'] },
 ];
 
@@ -87,6 +100,11 @@ export function detectThemeIntent(text: string, scene?: string, tone?: Tone): Th
     rule.re.test(source)
     || (Boolean(scene) && (scene!.includes(rule.scenes[0]) || rule.scenes[0].includes(scene!)))
   ));
+  const namedThemes = THEME_DATABASE.filter(theme => (
+    source.includes(theme.nameZh)
+    || (theme.originalNameZh ? source.includes(theme.originalNameZh) : false)
+    || source.toLowerCase().includes(theme.id)
+  ));
   const toneTags: string[] = [];
 
   if (tone === 'professional') toneTags.push('稳重', '专业');
@@ -95,10 +113,28 @@ export function detectThemeIntent(text: string, scene?: string, tone?: Tone): Th
   if (tone === 'bold') toneTags.push('科技', '未来', '高对比');
   if (tone === 'traditional') toneTags.push('传统', '文化', '人文');
 
-  const preferredThemeIds = matchedRules.flatMap(rule => rule.themes);
-  let explicitColorLabel = colorMatches[0]?.label;
+  const preferredThemeIds = [
+    ...namedThemes.map(theme => theme.id),
+    ...matchedRules.flatMap(rule => rule.themes),
+  ];
+  let explicitColorLabel = namedThemes[0]?.nameZh || colorMatches[0]?.label;
 
   if (/白色简约|白色极简|纯白简约|简约白|极简白|白色风格/.test(source)) preferredThemeIds.unshift('pearl');
+  if (/国风|古风|中式|传统文化|非遗|历史|博物馆|古镇|古村|文化遗产|诗词|书法|茶道|水墨|山水|禅意|汉服|东方美学/.test(source)) {
+    preferredThemeIds.unshift(...CURATED_THEME_PROFILES.traditional);
+  }
+  if (/商务风格|工作汇报|项目汇报|经营汇报|商业计划|企业介绍|公司介绍|管理汇报|商业提案|招商方案/.test(source)) {
+    preferredThemeIds.unshift(...CURATED_THEME_PROFILES.business);
+  }
+  if (/精美|高级|大气|审美|视觉|艺术|设计感|作品集|画册|图册|质感|精致/.test(source)) {
+    preferredThemeIds.unshift(...CURATED_THEME_PROFILES.elegant);
+  }
+  if (/通用|常规|简洁|简约|课程|课件|教学|培训|学校|校园|中学|大学|公开课|答辩|通用课件/.test(source)) {
+    preferredThemeIds.unshift(...CURATED_THEME_PROFILES.education);
+  }
+  if (/清新可爱|可爱|萌|少女|亲子|儿童|幼儿|卡通|治愈|甜美|轻松活泼/.test(source)) {
+    preferredThemeIds.unshift(...CURATED_THEME_PROFILES.freshCute);
+  }
   if (/红色主题|红色系|中国红|国旗红|喜庆红|大红|正红|朱红|酒红|红金|节庆红/.test(source)) {
     preferredThemeIds.unshift('rush', 'canaveral');
     explicitColorLabel = '红色系';
@@ -122,6 +158,7 @@ export function detectThemeIntent(text: string, scene?: string, tone?: Tone): Th
     else if (/科技|AI|人工智能|数字化|软件|互联网/.test(source)) preferredThemeIds.unshift('blue-steel');
     else if (!/深蓝|海军蓝|藏蓝/.test(source)) preferredThemeIds.unshift('petrol');
   }
+  if (namedThemes.length > 0) preferredThemeIds.unshift(...namedThemes.map(theme => theme.id));
 
   return {
     colorFamilies: unique(colorMatches.map(rule => rule.family)),
@@ -134,8 +171,8 @@ export function detectThemeIntent(text: string, scene?: string, tone?: Tone): Th
     preferredThemeIds: unique(preferredThemeIds),
     explicitColorLabel,
     hasExplicitColor: colorMatches.length > 0,
-    hasExplicitStyle: styleTags.length > 0 || matchedRules.length > 0,
-    matchedSignals: matchedRules.map(rule => rule.signal),
+    hasExplicitStyle: styleTags.length > 0 || matchedRules.length > 0 || namedThemes.length > 0,
+    matchedSignals: unique([...namedThemes.map(theme => `主题名:${theme.nameZh}`), ...matchedRules.map(rule => rule.signal)]),
   };
 }
 
