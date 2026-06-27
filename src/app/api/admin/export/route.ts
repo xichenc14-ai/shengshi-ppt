@@ -40,6 +40,25 @@ function csvEscape(v: unknown): string {
   return s;
 }
 
+async function fetchPaged(
+  buildQuery: () => {
+    range: (from: number, to: number) => Promise<{ data: unknown[] | null; error: unknown }>;
+  },
+  maxRows: number,
+  pageSize = 1000
+): Promise<{ data: unknown[]; error: unknown | null }> {
+  const rows: unknown[] = [];
+  for (let from = 0; from < maxRows; from += pageSize) {
+    const to = Math.min(from + pageSize - 1, maxRows - 1);
+    const res = await buildQuery().range(from, to);
+    if (res.error) return { data: rows, error: res.error };
+    const batch = Array.isArray(res.data) ? res.data : [];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+  return { data: rows, error: null };
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireAdmin(request);
   if (!auth.ok) {
@@ -54,29 +73,26 @@ export async function GET(request: NextRequest) {
   const planFilter = (searchParams.get('plan') || 'all').trim().toLowerCase();
 
   try {
-    const usersRes = await sb
+    const usersRes = await fetchPaged(() => sb
       .from('users')
       .select('id,phone,nickname,credits,plan_type,total_credits_used,last_login_at,created_at')
-      .order('created_at', { ascending: false })
-      .limit(1000);
-    const ordersRes = await sb
+      .order('created_at', { ascending: false }) as never, 10000);
+    const ordersRes = await fetchPaged(() => sb
       .from('orders')
       .select('user_id,amount,status,product_type,metadata,paid_at,created_at')
-      .order('created_at', { ascending: false })
-      .limit(2000);
-    const txRes = await sb
+      .order('created_at', { ascending: false }) as never, 20000);
+    const txRes = await fetchPaged(() => sb
       .from('credit_transactions')
       .select('user_id,type,description')
-      .order('created_at', { ascending: false })
-      .limit(4000);
+      .order('created_at', { ascending: false }) as never, 20000);
 
     if (usersRes.error) throw usersRes.error;
     if (ordersRes.error) throw ordersRes.error;
     if (txRes.error) throw txRes.error;
 
-    const users = usersRes.data || [];
-    const orders = ordersRes.data || [];
-    const txs = txRes.data || [];
+    const users = (usersRes.data || []) as Array<Record<string, any>>;
+    const orders = (ordersRes.data || []) as Array<Record<string, any>>;
+    const txs = (txRes.data || []) as Array<Record<string, any>>;
 
     const paidAmountMap = new Map<string, number>();
     const planExpireMap = new Map<string, string>();

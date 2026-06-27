@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import Navbar from '@/components/Navbar';
+import PaymentModal from '@/components/PaymentModal';
 import { APP_VERSION } from '@/lib/version';
 import {
   ArrowRight,
@@ -14,7 +15,6 @@ import {
   IdentificationCard,
   LockKey,
   PresentationChart,
-  Receipt,
   SignOut,
   DeviceMobile,
   Sparkle,
@@ -33,6 +33,7 @@ interface AccountOverview {
     plan_expires_at?: string | null;
     total_credits_used?: number;
     credits?: number;
+    plan_type?: string | null;
   };
   metrics?: {
     generation_count?: number;
@@ -55,6 +56,11 @@ const PLAN_NAMES: Record<string, { label: string; emoji: string; badgeClass: str
   vip: { label: '尊享会员', emoji: '👑', badgeClass: 'bg-violet-100 text-violet-700' },
   supreme: { label: '尊享会员', emoji: '👑', badgeClass: 'bg-violet-100 text-violet-700' },
 };
+
+const PLAN_PURCHASES = {
+  shengxin: { id: 'shengxin', name: '省心会员（月付）', price: '¥19.9', billing: 'monthly' },
+  advanced: { id: 'advanced', name: '尊享会员（月付）', price: '¥49.9', billing: 'monthly' },
+} as const;
 
 const AVATAR_CHOICES = ['✨', '📘', '🎯', '💡', '🚀', '🌟', '🧠', '🪄'];
 
@@ -98,6 +104,14 @@ export default function AccountPage() {
   const [recentHistory, setRecentHistory] = useState<HistoryItem[]>([]);
   const [overview, setOverview] = useState<AccountOverview | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>('membership');
+  const [paymentPlan, setPaymentPlan] = useState<{
+    id: string;
+    name: string;
+    price: string;
+    billing?: string;
+    purchaseMode?: 'upgrade' | 'renew';
+  } | null>(null);
+  const [paymentOpen, setPaymentOpen] = useState(false);
 
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -163,11 +177,27 @@ export default function AccountPage() {
   }, [user, updateUser]);
 
   const plan = useMemo(() => PLAN_NAMES[user?.plan_type || 'free'] || PLAN_NAMES.free, [user?.plan_type]);
+  const normalizedPlan = useMemo(() => {
+    const raw = String(overview?.user?.plan_type || user?.plan_type || 'free');
+    if (['advanced', 'standard', 'pro', 'vip', 'supreme'].includes(raw)) return 'advanced';
+    if (['shengxin', 'basic'].includes(raw)) return 'shengxin';
+    return 'free';
+  }, [overview?.user?.plan_type, user?.plan_type]);
   const planExpiresAt = overview?.user?.plan_expires_at || user?.plan_expires_at || null;
   const totalCreditsUsed = overview?.user?.total_credits_used || 0;
   const generationCount = overview?.metrics?.generation_count || 0;
-  const downloadCount = overview?.metrics?.download_count || 0;
-  const paidAmount = overview?.metrics?.paid_amount_yuan || 0;
+  const currentCredits = Number(overview?.user?.credits ?? user?.credits ?? 0);
+
+  const openPayment = (kind: 'renew' | 'upgrade') => {
+    const target = kind === 'renew' && normalizedPlan !== 'free' ? normalizedPlan : 'advanced';
+    const base = target === 'advanced' ? PLAN_PURCHASES.advanced : PLAN_PURCHASES.shengxin;
+    setPaymentPlan({
+      ...base,
+      purchaseMode: kind,
+      name: `${kind === 'renew' ? '续费' : '升级'}${base.name.replace(/（月付）$/, '')}（月付）`,
+    });
+    setPaymentOpen(true);
+  };
 
   const saveProfile = async () => {
     if (!user) return;
@@ -366,10 +396,10 @@ export default function AccountPage() {
 
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
           {[
-            { label: '可用积分', value: user.credits, icon: Coins, color: 'from-amber-400 to-orange-500' },
+            { label: '可用积分', value: currentCredits, icon: Coins, color: 'from-amber-400 to-orange-500' },
             { label: '生成次数', value: generationCount, icon: PresentationChart, color: 'from-blue-500 to-indigo-500' },
-            { label: '下载次数', value: downloadCount, icon: DownloadSimple, color: 'from-cyan-500 to-blue-500' },
-            { label: '累计支付', value: `¥${paidAmount.toFixed(2)}`, icon: Receipt, color: 'from-violet-500 to-fuchsia-500' },
+            { label: '累计消耗', value: totalCreditsUsed, icon: DownloadSimple, color: 'from-cyan-500 to-blue-500' },
+            { label: '会员等级', value: plan.label, icon: Sparkle, color: 'from-violet-500 to-fuchsia-500' },
           ].map(({ label, value, icon: Icon, color }) => (
             <div key={label} className="rounded-[20px] border border-white/80 bg-white/72 p-4 shadow-[0_8px_24px_rgba(88,74,174,0.08)] backdrop-blur-xl">
               <div className={`flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br ${color} text-white shadow-sm`}>
@@ -423,19 +453,42 @@ export default function AccountPage() {
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   <div className="rounded-2xl border border-indigo-100 bg-indigo-50/55 p-4">
+                    <p className="text-[11px] text-slate-400">会员级别</p>
+                    <p className="mt-1 text-base font-black text-slate-900">{plan.label}</p>
+                  </div>
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50/55 p-4">
                     <p className="text-[11px] text-slate-400">套餐有效期</p>
                     <p className="mt-1 text-base font-black text-slate-900">{planExpiresAt ? fmtDate(planExpiresAt) : '当前有效'}</p>
                   </div>
                   <div className="rounded-2xl border border-indigo-100 bg-indigo-50/55 p-4">
-                    <p className="text-[11px] text-slate-400">累计积分消耗</p>
+                    <p className="text-[11px] text-slate-400">可用积分</p>
+                    <p className="mt-1 text-base font-black text-slate-900">{currentCredits}</p>
+                  </div>
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50/55 p-4">
+                    <p className="text-[11px] text-slate-400">累计消耗</p>
                     <p className="mt-1 text-base font-black text-slate-900">{totalCreditsUsed}</p>
                   </div>
                 </div>
-                <div className="mt-4">
-                  <Link href="/pricing" className="flex items-center justify-center gap-1.5 rounded-xl sx-primary-btn px-4 py-3 text-sm font-bold text-white">
-                    查看套餐 <ArrowRight size={14} weight="bold" />
-                  </Link>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => openPayment(normalizedPlan === 'free' ? 'upgrade' : 'renew')}
+                    className="flex items-center justify-center gap-1.5 rounded-xl sx-primary-btn px-4 py-3 text-sm font-bold text-white"
+                  >
+                    {normalizedPlan === 'free' ? '开通会员' : '续费当前套餐'} <ArrowRight size={14} weight="bold" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={normalizedPlan === 'advanced'}
+                    onClick={() => openPayment('upgrade')}
+                    className="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm font-bold text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    升级尊享会员 <ArrowRight size={14} weight="bold" />
+                  </button>
                 </div>
+                <Link href="/pricing" className="mt-3 inline-flex text-xs font-semibold text-indigo-600 hover:text-indigo-700">
+                  查看完整套餐权益
+                </Link>
               </div>
             )}
 
@@ -607,6 +660,11 @@ export default function AccountPage() {
 
         <div className="pb-3 pt-1 text-center text-[11px] text-gray-400">版本 {APP_VERSION}</div>
       </main>
+      <PaymentModal
+        open={paymentOpen}
+        onClose={() => setPaymentOpen(false)}
+        plan={paymentPlan}
+      />
     </div>
   );
 }

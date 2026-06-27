@@ -71,10 +71,19 @@ function AccountMenu({
             <p className="text-base font-black leading-tight text-amber-600">{displayCredits}</p>
           </div>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-white/75 px-3 py-1.5 text-xs font-bold text-violet-600 shadow-sm">
-          <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
-          {refreshing ? '刷新中' : '实时'}
-        </span>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            window.dispatchEvent(new CustomEvent('sx-refresh-account'));
+          }}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/75 text-violet-600 shadow-sm transition hover:bg-violet-50"
+          aria-label="刷新账户状态"
+          title="刷新账户状态"
+        >
+          <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
+        </button>
       </div>
 
       <div className="space-y-1 px-3 py-3">
@@ -165,6 +174,14 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
       setUserRefreshing(false);
     }
   }, [refreshUser, user]);
+
+  React.useEffect(() => {
+    const handler = () => {
+      void refreshAccountState();
+    };
+    window.addEventListener('sx-refresh-account', handler);
+    return () => window.removeEventListener('sx-refresh-account', handler);
+  }, [refreshAccountState]);
 
   const closeMenus = () => {
     setUserMenuOpen(false);

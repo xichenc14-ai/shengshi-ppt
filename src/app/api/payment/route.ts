@@ -6,7 +6,7 @@ import { verifyAlipayCallback, normalizeAlipayPublicKey } from '@/lib/payment/al
 import { createProviderOrderIntent } from '@/lib/payment/provider-adapter';
 import { getClientIP, rateLimit } from '@/lib/rate-limit';
 import { isPaymentFeatureEnabledServer } from '@/lib/payment-feature';
-import { canPurchasePlan, fulfillPaidOrder, PLAN_PRICES, reconcileUserEntitlements } from '@/lib/payment/subscription';
+import { canCreatePlanOrder, fulfillPaidOrder, PLAN_PRICES, reconcileUserEntitlements } from '@/lib/payment/subscription';
 import { insertOrderCompat, updateOrderCompat } from '@/lib/payment/order-storage';
 import { isXunhuPaidResult, queryXunhuOrder, xunhuStatusToOrderStatus } from '@/lib/payment/xunhu';
 
@@ -90,6 +90,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '支付通道申请中，暂不可下单' }, { status: 503 });
       }
       const { planId, payMethod, userId, billing = 'monthly' } = body;
+      const purchaseMode = String(body.purchaseMode || 'upgrade') === 'renew' ? 'renew' : 'upgrade';
       const createOrderLimit = rateLimit(`payment:create_order:${clientIP}:${userId || 'anon'}`, { windowMs: 60 * 1000, maxRequests: 6 });
       if (!createOrderLimit.allowed) {
         return NextResponse.json(
@@ -121,7 +122,7 @@ export async function POST(req: NextRequest) {
           .select('id,plan_type')
           .eq('id', targetUserId)
           .single();
-        const purchaseCheck = canPurchasePlan(String(currentUser?.plan_type || 'free'), planId);
+        const purchaseCheck = canCreatePlanOrder(String(currentUser?.plan_type || 'free'), planId, purchaseMode);
         if (!purchaseCheck.allowed) {
           return NextResponse.json({ error: purchaseCheck.reason || '当前套餐不可重复购买' }, { status: 409 });
         }
@@ -140,7 +141,8 @@ export async function POST(req: NextRequest) {
               const expiresAt = item.expires_at ? new Date(String(item.expires_at)).getTime() : Date.now() + 1;
               return expiresAt > Date.now()
                 && String(metadata.planId || planId) === planId
-                && String(metadata.billing || billing) === String(billing);
+                && String(metadata.billing || billing) === String(billing)
+                && String(metadata.purchaseMode || 'upgrade') === purchaseMode;
             })
           : null;
         if (reusableOrder) {
@@ -179,7 +181,7 @@ export async function POST(req: NextRequest) {
           amount: Math.round(amount * 100), // 分为单位
           status: 'pending',
           pay_method: payMethod || 'wechat',
-          metadata: { planId, payMethod, billing },
+          metadata: { planId, payMethod, billing, purchaseMode },
           expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
         });
 
@@ -192,7 +194,7 @@ export async function POST(req: NextRequest) {
         });
         return NextResponse.json({ error: '创建订单失败' }, { status: 500 });
       }
-      console.log(`[Payment][CreateOrder] created order=${orderNo} ip=${clientIP} user=${userId || 'anon'} plan=${planId} billing=${billing}`);
+      console.log(`[Payment][CreateOrder] created order=${orderNo} ip=${clientIP} user=${userId || 'anon'} plan=${planId} billing=${billing} mode=${purchaseMode}`);
 
       const notifyUrl = process.env.PAYMENT_NOTIFY_URL || '';
       if (process.env.NODE_ENV === 'production' && !/^https:\/\//i.test(notifyUrl)) {
@@ -224,6 +226,7 @@ export async function POST(req: NextRequest) {
           planId,
           payMethod,
           billing,
+          purchaseMode,
           provider: intent.provider,
           providerOrderId: intent.providerOrderId,
           providerRaw: intent.raw || null,

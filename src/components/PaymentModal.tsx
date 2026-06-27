@@ -41,7 +41,16 @@ function getQRCode(planId: string, billing: 'monthly' | 'annual'): string | null
 interface PaymentModalProps {
   open: boolean;
   onClose: () => void;
-  plan: { id: string; name: string; price: string; billing?: string; reason?: string; neededCredits?: number; currentCredits?: number } | null;
+  plan: {
+    id: string;
+    name: string;
+    price: string;
+    billing?: string;
+    reason?: string;
+    neededCredits?: number;
+    currentCredits?: number;
+    purchaseMode?: 'upgrade' | 'renew';
+  } | null;
 }
 
 type Step = 'select' | 'confirm' | 'success';
@@ -101,6 +110,7 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
           payMethod,
           userId: user.id,
           billing: plan.billing || 'monthly',
+          purchaseMode: plan.purchaseMode || 'upgrade',
         }),
       });
       const data = await res.json();
@@ -330,7 +340,7 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
           <div className="p-4 sm:p-6 animate-fade-in">
             {/* Header */}
             <div className="flex items-center justify-between mb-4 sm:mb-5">
-              <h3 className="text-base sm:text-lg font-bold text-gray-900">开通套餐</h3>
+              <h3 className="text-base sm:text-lg font-bold text-gray-900">{plan.purchaseMode === 'renew' ? '续费套餐' : '开通套餐'}</h3>
               <button
                 onClick={handleClose}
                 className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-all active:scale-90"
@@ -358,7 +368,9 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-bold text-gray-900">{plan.name}</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">支付成功后立即生效 · 会员权益按周期开通</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">
+                    {plan.purchaseMode === 'renew' ? '支付成功后有效期自动顺延' : '支付成功后立即生效 · 会员权益按周期开通'}
+                  </p>
                 </div>
                 <div className="text-xl sm:text-2xl font-extrabold text-[#5B4FE9]">{plan.price}</div>
               </div>

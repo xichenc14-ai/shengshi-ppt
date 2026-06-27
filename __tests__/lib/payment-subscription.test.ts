@@ -73,6 +73,24 @@ describe('payment subscription service', () => {
     expect(transactions.at(-1)?.amount).toBe(1500);
   });
 
+  it('extends the current expiry when renewing the same plan', async () => {
+    const currentExpire = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+    const { sb, user, transactions } = createMockSupabase({
+      id: 'user-renew',
+      credits: 80,
+      plan_type: 'basic',
+      plan_expires_at: currentExpire.toISOString(),
+    });
+
+    const result = await activateSubscription(sb, 'user-renew', 'shengxin', 'monthly', 500, 'ORD_RENEW', 'renew');
+
+    expect(result.success).toBe(true);
+    expect(user.credits).toBe(580);
+    expect(user.plan_type).toBe('basic');
+    expect(new Date(String(user.plan_expires_at)).getTime()).toBeGreaterThan(currentExpire.getTime());
+    expect(transactions.at(-1)?.description).toContain('续费省心会员');
+  });
+
   it('resets free monthly credits once a free cycle has elapsed', async () => {
     const old = new Date();
     old.setMonth(old.getMonth() - 2);

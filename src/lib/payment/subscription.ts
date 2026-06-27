@@ -49,7 +49,7 @@ async function runWithMissingColumnRetry(
   payload: Record<string, unknown>,
   run: (nextPayload: Record<string, unknown>) => Promise<{ error: SupabaseError | null; data?: unknown }>
 ): Promise<{ error: SupabaseError | null; payload: Record<string, unknown>; stripped: string[]; data?: unknown }> {
-  let nextPayload = { ...payload };
+  const nextPayload = { ...payload };
   const stripped: string[] = [];
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -127,6 +127,26 @@ export function canPurchasePlan(currentPlanType: string | null | undefined, targ
   if (currentRank >= 2) return { allowed: false, reason: '您已是尊享会员，当前为最高档套餐' };
   if (currentRank >= targetRank) return { allowed: false, reason: '您当前已是该套餐会员' };
   return { allowed: true };
+}
+
+export function canCreatePlanOrder(
+  currentPlanType: string | null | undefined,
+  targetPlanId: string,
+  purchaseMode: string = 'upgrade'
+): { allowed: boolean; reason?: string } {
+  const currentRank = getPlanRank(currentPlanType);
+  const targetRank = getPlanRank(targetPlanId);
+  if (targetRank <= 0) return { allowed: false, reason: '请选择有效会员套餐' };
+
+  if (purchaseMode === 'renew') {
+    if (currentRank <= 0) return { allowed: false, reason: '当前没有可续费的会员套餐，请先开通会员' };
+    if (normalizePlanId(currentPlanType) !== normalizePlanId(targetPlanId)) {
+      return { allowed: false, reason: '续费只能用于当前会员套餐，升级请使用升级入口' };
+    }
+    return { allowed: true };
+  }
+
+  return canPurchasePlan(currentPlanType, targetPlanId);
 }
 
 async function readUserFlexible(sb: PaymentSupabase, userId: string): Promise<UserEntitlementRow | null> {
@@ -288,7 +308,8 @@ export async function activateSubscription(
   planId: string,
   billing: string,
   credits: number,
-  sourceOrderNo?: string | null
+  sourceOrderNo?: string | null,
+  purchaseMode: string = 'upgrade'
 ): Promise<{ success: boolean; error?: string; user?: UserEntitlementRow; planName?: string; expiresAt?: string }> {
   const normalizedPlanId = normalizePlanId(planId);
   const plan = PLAN_PRICES[normalizedPlanId];
@@ -301,9 +322,9 @@ export async function activateSubscription(
   if (!currentUser) return { success: false, error: '用户不存在' };
 
   const alreadyCredited = await hasPurchaseTransactionForOrder(sb, sourceOrderNo);
-  const purchaseCheck = canPurchasePlan(currentUser.plan_type, normalizedPlanId);
-  if (!purchaseCheck.allowed && normalizePlanId(currentUser.plan_type) === normalizedPlanId) {
-    if (!alreadyCredited) return { success: false, error: purchaseCheck.reason || '不可重复购买当前套餐' };
+  const purchaseCheck = canCreatePlanOrder(currentUser.plan_type, normalizedPlanId, purchaseMode);
+  if (!purchaseCheck.allowed) {
+    if (!alreadyCredited) return { success: false, error: purchaseCheck.reason || '当前套餐不可购买' };
   }
 
   const currentCredits = Number((currentUser as UserRow).credits ?? 0);
@@ -311,7 +332,14 @@ export async function activateSubscription(
   const newCredits = currentCredits + creditsToAdd;
   const now = new Date();
   const planStartISO = now.toISOString();
-  const planExpireISO = addBillingPeriod(now, billing).toISOString();
+  const currentExpire = currentUser.plan_expires_at ? new Date(currentUser.plan_expires_at) : null;
+  const shouldExtendFromCurrentExpiry = purchaseMode === 'renew'
+    && normalizePlanId(currentUser.plan_type) === normalizedPlanId
+    && currentExpire
+    && !Number.isNaN(currentExpire.getTime())
+    && currentExpire > now;
+  const expiryBase = shouldExtendFromCurrentExpiry ? currentExpire : now;
+  const planExpireISO = addBillingPeriod(expiryBase, billing).toISOString();
   const planType = storagePlanType(normalizedPlanId);
 
   const updatePayload = {
@@ -331,7 +359,7 @@ export async function activateSubscription(
       amount: credits,
       balance_after: newCredits,
       type: 'purchase',
-      description: `购买${plan.name}（${billing === 'annual' ? '年付' : '月付'}）- 订单${sourceOrderNo || 'unknown'} - 获得${credits}积分`,
+      description: `${purchaseMode === 'renew' ? '续费' : '购买'}${plan.name}（${billing === 'annual' ? '年付' : '月付'}）- 订单${sourceOrderNo || 'unknown'} - 获得${credits}积分`,
     } as CreditTransactionInsert);
   }
 
@@ -421,7 +449,15 @@ export async function fulfillPaidOrder(
     return { order: { ...order, status: 'completed', paid_at: paidAt, trade_no: tradeNo, metadata }, message: '支付成功，订单需人工关联账户' };
   }
 
-  const activateResult = await activateSubscription(sb, targetUserId, targetPlanId, targetBilling, plan.credits, orderNo);
+  const activateResult = await activateSubscription(
+    sb,
+    targetUserId,
+    targetPlanId,
+    targetBilling,
+    plan.credits,
+    orderNo,
+    String(baseMetadata.purchaseMode || 'upgrade')
+  );
   if (!activateResult.success) {
     const metadata = {
       ...baseMetadata,

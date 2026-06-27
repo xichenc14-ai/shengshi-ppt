@@ -43,6 +43,25 @@ function isMissingTableError(error: unknown, tableName: string): boolean {
   );
 }
 
+async function fetchPaged(
+  buildQuery: () => {
+    range: (from: number, to: number) => Promise<{ data: unknown[] | null; error: unknown }>;
+  },
+  maxRows: number,
+  pageSize = 1000
+): Promise<{ data: unknown[]; error: unknown | null }> {
+  const rows: unknown[] = [];
+  for (let from = 0; from < maxRows; from += pageSize) {
+    const to = Math.min(from + pageSize - 1, maxRows - 1);
+    const res = await buildQuery().range(from, to);
+    if (res.error) return { data: rows, error: res.error };
+    const batch = Array.isArray(res.data) ? res.data : [];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+  return { data: rows, error: null };
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireAdmin(request);
   if (!auth.ok) {
@@ -58,42 +77,36 @@ export async function GET(request: NextRequest) {
   const planFilter = (searchParams.get('plan') || 'all').trim().toLowerCase();
 
   try {
-    let usersRes = await sb
+    let usersRes = await fetchPaged(() => sb
       .from('users')
       .select('id,phone,nickname,credits,plan_type,total_credits_used,last_login_at,created_at,updated_at,plan_expires_at')
-      .order('created_at', { ascending: false })
-      .limit(userLimit);
+      .order('created_at', { ascending: false }) as never, 6000);
     if (usersRes.error) {
-      usersRes = (await sb
+      usersRes = await fetchPaged(() => sb
         .from('users')
         .select('id,phone,nickname,credits,plan_type,total_credits_used,last_login_at,created_at,updated_at')
-        .order('created_at', { ascending: false })
-        .limit(userLimit)) as typeof usersRes;
+        .order('created_at', { ascending: false }) as never, 6000);
     }
     if (usersRes.error) {
-      usersRes = (await sb
+      usersRes = await fetchPaged(() => sb
         .from('users')
         .select('id,phone,nickname,credits,plan_type,last_login_at,created_at,updated_at')
-        .order('created_at', { ascending: false })
-        .limit(userLimit)) as typeof usersRes;
+        .order('created_at', { ascending: false }) as never, 6000);
     }
 
     const [ordersRes, txRes, feedbackRes] = await Promise.all([
-      sb
+      fetchPaged(() => sb
         .from('orders')
         .select('id,user_id,order_no,product_type,product_name,amount,status,pay_method,metadata,paid_at,created_at')
-        .order('created_at', { ascending: false })
-        .limit(500),
-      sb
+        .order('created_at', { ascending: false }) as never, 12000),
+      fetchPaged(() => sb
         .from('credit_transactions')
         .select('id,user_id,amount,type,description,created_at')
-        .order('created_at', { ascending: false })
-        .limit(800),
-      sb
+        .order('created_at', { ascending: false }) as never, 12000),
+      fetchPaged(() => sb
         .from('ppt_feedback')
         .select('id,user_id,generation_id,vote,rating,comment,topic,ppt_title,page_count,image_mode,created_at')
-        .order('created_at', { ascending: false })
-        .limit(300),
+        .order('created_at', { ascending: false }) as never, 3000),
     ]);
 
     if (usersRes.error) throw usersRes.error;
@@ -103,10 +116,10 @@ export async function GET(request: NextRequest) {
       throw feedbackRes.error;
     }
 
-    const users = usersRes.data || [];
-    const orders = ordersRes.data || [];
-    const transactions = txRes.data || [];
-    const feedbackRows = feedbackRes.error ? [] : (feedbackRes.data || []);
+    const users = (usersRes.data || []) as Array<Record<string, any>>;
+    const orders = (ordersRes.data || []) as Array<Record<string, any>>;
+    const transactions = (txRes.data || []) as Array<Record<string, any>>;
+    const feedbackRows = feedbackRes.error ? [] : ((feedbackRes.data || []) as Array<Record<string, any>>);
     const fallbackFeedbackRows = feedbackRes.error
       ? transactions
           .filter((tx) => String(tx.type || '').toLowerCase() === 'feedback')
@@ -203,6 +216,7 @@ export async function GET(request: NextRequest) {
     }
 
     const nowTs = Date.now();
+    const allNormalizedUsers = normalizedUsers;
     const summary = {
       total_users: normalizedUsers.length,
       paid_users: normalizedUsers.filter((u) => u.plan_type !== 'free').length,
@@ -245,7 +259,9 @@ export async function GET(request: NextRequest) {
       })(),
     };
 
-    const userById = new Map(normalizedUsers.map((u) => [u.id, u]));
+    normalizedUsers = normalizedUsers.slice(0, userLimit);
+
+    const userById = new Map(allNormalizedUsers.map((u) => [u.id, u]));
     const recentPayments = orders
       .filter((o) => isPaidOrder(o.status))
       .slice(0, 40)
