@@ -2758,10 +2758,8 @@ export default function Home() {
                     </div>
                   )}
 
-                  <div className="border-t border-indigo-100/70 my-4" />
-
                   {/* Mode toggle - segmented control style */}
-                  <div className="flex max-w-xl mx-auto bg-indigo-50/80 rounded-full p-1 mt-4 border border-white/80 shadow-inner">
+                  <div className="flex max-w-xl mx-auto bg-indigo-50/80 rounded-full p-1 mt-2 border border-white/80 shadow-inner">
                     <button
                       onClick={() => {
                         setMode('direct');

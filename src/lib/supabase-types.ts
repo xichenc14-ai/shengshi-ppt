@@ -25,6 +25,11 @@ export interface Database {
           nickname: string | null;
           credits: number | null;
           plan_type: string | null;
+          plan_started_at: string | null;
+          plan_expires_at: string | null;
+          free_cycle_anchor: string | null;
+          free_credits_reset_at: string | null;
+          last_entitlement_sync_at: string | null;
           is_active: boolean | null;
           password_hash: string | null;
           last_login_at: string | null;
@@ -36,6 +41,11 @@ export interface Database {
           nickname?: string | null;
           credits?: number | null;
           plan_type?: string | null;
+          plan_started_at?: string | null;
+          plan_expires_at?: string | null;
+          free_cycle_anchor?: string | null;
+          free_credits_reset_at?: string | null;
+          last_entitlement_sync_at?: string | null;
           is_active?: boolean | null;
           password_hash?: string | null;
           last_login_at?: string | null;
@@ -46,6 +56,11 @@ export interface Database {
           nickname?: string | null;
           credits?: number | null;
           plan_type?: string | null;
+          plan_started_at?: string | null;
+          plan_expires_at?: string | null;
+          free_cycle_anchor?: string | null;
+          free_credits_reset_at?: string | null;
+          last_entitlement_sync_at?: string | null;
           is_active?: boolean | null;
           password_hash?: string | null;
           last_login_at?: string | null;

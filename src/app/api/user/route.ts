@@ -38,6 +38,8 @@ type UserLite = {
   plan_type: string | null;
   is_active?: boolean | null;
   password_hash?: string | null;
+  created_at?: string | null;
+  last_login_at?: string | null;
 };
 
 type LoginUser = {
@@ -72,6 +74,23 @@ type VerifyCodeRow = {
   code: string;
   expires_at: string;
 };
+
+function planRank(planType: string | null | undefined): number {
+  if (['advanced', 'standard', 'pro', 'vip', 'supreme'].includes(String(planType || ''))) return 2;
+  if (['shengxin', 'basic'].includes(String(planType || ''))) return 1;
+  return 0;
+}
+
+function pickCanonicalUser(users: UserLite[]): UserLite | null {
+  if (!users.length) return null;
+  return [...users].sort((a, b) => {
+    const rankDiff = planRank(b.plan_type) - planRank(a.plan_type);
+    if (rankDiff !== 0) return rankDiff;
+    const bLogin = new Date(b.last_login_at || b.created_at || 0).getTime();
+    const aLogin = new Date(a.last_login_at || a.created_at || 0).getTime();
+    return bLogin - aLogin;
+  })[0];
+}
 
 function normalizeSMSCode(value: unknown): string {
   return String(value ?? '').replace(/\D/g, '').slice(0, 6);
@@ -228,6 +247,7 @@ export async function POST(req: NextRequest) {
         const { sendSMS } = await import('@/lib/sms-client');
         const result = await sendSMS(phone, localCode);
         if (!result.success) {
+          console.error('[SMS] 发送失败:', result.error || 'unknown');
           if (process.env.NODE_ENV === 'production') {
             return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
           }
@@ -325,9 +345,9 @@ export async function POST(req: NextRequest) {
       }
 
       // 检查手机号是否已注册
-      const { data: existing } = await sb.from('users').select('id,phone,nickname,credits,plan_type,password_hash').eq('phone', phone).limit(1);
+      const { data: existing } = await sb.from('users').select('id,phone,nickname,credits,plan_type,password_hash,created_at,last_login_at').eq('phone', phone).limit(20);
       if (existing && existing.length > 0) {
-        const existingUser = existing[0] as Partial<UserLite>;
+        const existingUser = pickCanonicalUser(existing as UserLite[]) as Partial<UserLite>;
         if (existingUser.password_hash) {
           return NextResponse.json({ error: '该手机号已注册，请直接登录' }, { status: 409 });
         }
@@ -431,9 +451,9 @@ export async function POST(req: NextRequest) {
       }
       await clearVerifyAttempts(phone);
 
-      const { data: users } = await sb.from('users').select('id,phone,nickname,credits,plan_type,is_active,password_hash').eq('phone', phone);
+      const { data: users } = await sb.from('users').select('id,phone,nickname,credits,plan_type,is_active,password_hash,created_at,last_login_at').eq('phone', phone);
       if (users && users.length > 0) {
-        const u = users[0] as UserLite;
+        const u = pickCanonicalUser(users as UserLite[]) as UserLite;
         if (!u.password_hash) {
           return NextResponse.json({
             error: 'NEED_SET_PASSWORD',
@@ -459,10 +479,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'NOT_REGISTERED', needRegister: true, codeValid: true }, { status: 404 });
     }
 
-    // ===== 账号密码登录 =====
+    // ===== 手机号密码登录 =====
     if (action === 'password_login') {
       const { account, password } = body;
-      if (!account || !password) return NextResponse.json({ error: '请输入账号和密码' }, { status: 400 });
+      if (!account || !password) return NextResponse.json({ error: '请输入手机号和密码' }, { status: 400 });
+      if (!/^1[3-9]\d{9}$/.test(String(account))) {
+        return NextResponse.json({ error: '请使用手机号登录，用户名/昵称仅用于展示' }, { status: 400 });
+      }
       if (password.length < 8) return NextResponse.json({ error: '密码格式不正确' }, { status: 400 });
 
       // 🔒 密码登录频率限制（每IP每分钟最多5次）
@@ -471,26 +494,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '登录尝试过于频繁，请稍后再试' }, { status: 429 });
       }
 
-      const isPhone = /^1[3-9]\d{9}$/.test(account);
       // 先查询基本用户信息（password_hash列可能不存在，单独查询）
-      let users: UserLite[];
-      let qErr: { message?: string } | null;
-      if (isPhone) {
-        const r = await sb.from('users').select('id,phone,nickname,credits,plan_type,is_active').eq('phone', account).limit(1);
-        users = r.data || []; qErr = r.error;
-      } else {
-        const r = await sb.from('users').select('id,phone,nickname,credits,plan_type,is_active').ilike('nickname', account).limit(1);
-        users = r.data || []; qErr = r.error;
-      }
+      const r = await sb.from('users').select('id,phone,nickname,credits,plan_type,is_active,created_at,last_login_at').eq('phone', account).limit(20);
+      const users = r.data || [];
+      const qErr = r.error;
       if (qErr) {
         console.error('[Login] DB query error:', qErr);
-        return NextResponse.json({ error: '账号不存在' }, { status: 404 });
+        return NextResponse.json({ error: '手机号不存在' }, { status: 404 });
       }
       if (!users || users.length === 0) {
-        return NextResponse.json({ error: '账号不存在' }, { status: 404 });
+        return NextResponse.json({ error: '手机号不存在' }, { status: 404 });
       }
 
-      const u = users[0];
+      const u = pickCanonicalUser(users as UserLite[]) as UserLite;
 
       // 单独查询password_hash（可能不存在）
       let pwdHashFromDB: string | null = null;

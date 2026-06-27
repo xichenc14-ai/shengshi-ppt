@@ -1,9 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import Image from 'next/image';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, type UserInfo } from '@/lib/auth-context';
 import { isPaymentFeatureEnabledClient } from '@/lib/payment-feature';
 
 // 收款码图片映射
@@ -45,44 +44,53 @@ interface PaymentModalProps {
   plan: { id: string; name: string; price: string; billing?: string; reason?: string; neededCredits?: number; currentCredits?: number } | null;
 }
 
-type Step = 'select' | 'confirm';
+type Step = 'select' | 'confirm' | 'success';
 type CreatedOrder = {
   orderNo: string;
   providerOrderId?: string;
   payUrl?: string;
   qrCodeUrl?: string;
   providerMock?: boolean;
+  productName?: string;
 };
 
+function getSupportedPaymentMethods(): Array<'wechat' | 'alipay'> {
+  const raw = process.env.NEXT_PUBLIC_PAYMENT_SUPPORTED_METHODS || 'wechat';
+  const methods = raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item): item is 'wechat' | 'alipay' => item === 'wechat' || item === 'alipay');
+  return methods.length > 0 ? methods : ['wechat'];
+}
+
 export default function PaymentModal({ open, onClose, plan }: PaymentModalProps) {
-  const { user } = useAuth();
+  const { user, refreshUser, syncUserSnapshot } = useAuth();
   const [payMethod, setPayMethod] = useState<'wechat' | 'alipay'>('wechat');
   const [step, setStep] = useState<Step>('select');
   const [submitting, setSubmitting] = useState(false);
   const [order, setOrder] = useState<CreatedOrder | null>(null);
   const [orderError, setOrderError] = useState('');
   const [statusHint, setStatusHint] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [remainingSeconds, setRemainingSeconds] = useState(120);
+  const [qrExpired, setQrExpired] = useState(false);
+  const [qrLoadFailed, setQrLoadFailed] = useState(false);
+  const [qrLoaded, setQrLoaded] = useState(false);
+  const pollingRef = useRef(false);
+  const creatingRef = useRef(false);
   const isProd = process.env.NODE_ENV === 'production';
   const paymentEnabled = isPaymentFeatureEnabledClient();
+  const supportedMethods = useMemo(() => getSupportedPaymentMethods(), []);
+  const supportsWechat = supportedMethods.includes('wechat');
+  const supportsAlipay = supportedMethods.includes('alipay');
 
-  // 重置状态当Modal打开时（延后到下一帧，避免 effect 内同步 setState）
-  useEffect(() => {
-    if (!open) return;
-    const frameId = requestAnimationFrame(() => {
-      setStep('select');
-      setPayMethod('wechat');
-      setSubmitting(false);
-      setOrder(null);
-      setOrderError('');
-      setStatusHint('');
-    });
-    return () => cancelAnimationFrame(frameId);
-  }, [open]);
-
-  const handleNext = useCallback(async () => {
-    if (!plan || !user) return;
+  const createOrder = useCallback(async (surface: 'select' | 'confirm') => {
+    if (!plan || !user) return false;
+    if (creatingRef.current) return false;
+    creatingRef.current = true;
     setSubmitting(true);
     setOrderError('');
+    setStatusHint('');
     try {
       const res = await fetch('/api/payment', {
         method: 'POST',
@@ -97,8 +105,10 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
       });
       const data = await res.json();
       if (!res.ok) {
-        setOrderError(data?.error || '创建订单失败，请稍后重试');
-        return;
+        const message = data?.error || '创建订单失败，请稍后重试';
+        if (surface === 'confirm') setStatusHint(message);
+        else setOrderError(message);
+        return false;
       }
       setOrder({
         orderNo: String(data.order_no || ''),
@@ -106,57 +116,158 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
         payUrl: typeof data.pay_url === 'string' ? data.pay_url : undefined,
         qrCodeUrl: typeof data.qr_code_url === 'string' ? data.qr_code_url : undefined,
         providerMock: Boolean(data.provider_mock),
+        productName: typeof data.product_name === 'string' ? data.product_name : undefined,
       });
+      setRemainingSeconds(120);
+      setQrExpired(false);
+      setQrLoadFailed(false);
+      setQrLoaded(false);
       setStep('confirm');
+      if (surface === 'confirm') setStatusHint('二维码已刷新，请使用新二维码支付');
+      return true;
     } catch {
-      setOrderError('创建订单失败，请检查网络后重试');
+      const message = '创建订单失败，请检查网络后重试';
+      if (surface === 'confirm') setStatusHint(message);
+      else setOrderError(message);
+      return false;
     } finally {
+      creatingRef.current = false;
       setSubmitting(false);
     }
   }, [plan, payMethod, user]);
+
+  // 重置状态当Modal打开时（延后到下一帧，避免 effect 内同步 setState）
+  useEffect(() => {
+    if (!open) return;
+    const frameId = requestAnimationFrame(() => {
+      setStep('select');
+      setPayMethod(supportsWechat ? 'wechat' : supportedMethods[0] || 'wechat');
+      setSubmitting(false);
+      setOrder(null);
+      setOrderError('');
+      setStatusHint('');
+      setSuccessMessage('');
+      setRemainingSeconds(120);
+      setQrExpired(false);
+      setQrLoadFailed(false);
+      setQrLoaded(false);
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [open, supportsWechat, supportedMethods]);
+
+  const handleNext = useCallback(async () => {
+    await createOrder('select');
+  }, [createOrder]);
+
+  const handleRefreshOrder = useCallback(async () => {
+    await createOrder('confirm');
+  }, [createOrder]);
 
   const handleClose = useCallback(() => {
     setStep('select');
     setOrder(null);
     setOrderError('');
     setStatusHint('');
+    setSuccessMessage('');
+    setRemainingSeconds(120);
+    setQrExpired(false);
+    setQrLoadFailed(false);
+    setQrLoaded(false);
     onClose();
   }, [onClose]);
 
-  const handlePaymentConfirm = useCallback(async () => {
+  const finishPayment = useCallback(async (message?: string, paidUser?: Partial<UserInfo>) => {
+    let freshUser = paidUser ? await syncUserSnapshot(paidUser) : null;
+    if (!freshUser) freshUser = await refreshUser({ force: true });
+    if (!freshUser) {
+      await new Promise((resolve) => window.setTimeout(resolve, 600));
+      freshUser = await refreshUser({ force: true });
+    }
+    const planName = String(
+      message?.match(/成为(.+?)！/)?.[1]
+      || (freshUser?.plan_type === 'pro' || freshUser?.plan_type === 'advanced' ? '尊享会员' : '')
+      || (freshUser?.plan_type === 'basic' || freshUser?.plan_type === 'shengxin' ? '省心会员' : '')
+      || plan?.name
+      || order?.productName
+      || '会员'
+    ).replace(/[（）(].*$/, '');
+    setSuccessMessage(message || `付款成功，恭喜您成为${planName}！`);
+    setStep('success');
+    setSubmitting(false);
+  }, [order?.productName, plan?.name, refreshUser, syncUserSnapshot]);
+
+  const checkPaymentStatus = useCallback(async (manual = false) => {
     if (!plan || !user || !order?.orderNo) {
       handleClose();
-      return;
+      return false;
     }
-    setSubmitting(true);
-    setStatusHint('');
+    if (pollingRef.current) return false;
+    pollingRef.current = true;
+    if (manual) {
+      setSubmitting(true);
+      setStatusHint('');
+    }
     try {
-      const statusRes = await fetch(`/api/payment?order_no=${encodeURIComponent(order.orderNo)}`);
+      const statusRes = await fetch(`/api/payment?order_no=${encodeURIComponent(order.orderNo)}`, { cache: 'no-store' });
       const data = await statusRes.json();
       if (!statusRes.ok) {
-        setStatusHint(data?.error || '查询订单状态失败，请稍后重试');
-        return;
+        if (manual) setStatusHint(data?.error || '查询订单状态失败，请稍后重试');
+        return false;
       }
       const orderStatus = String(data?.order?.status || '');
       if (orderStatus === 'completed') {
-        handleClose();
-        return;
+        setStatusHint('支付成功，正在刷新会员状态...');
+        await finishPayment(
+          typeof data?.message === 'string' ? data.message : undefined,
+          data?.user && typeof data.user === 'object' ? data.user : undefined
+        );
+        return true;
       }
       if (orderStatus === 'pending') {
-        setStatusHint('订单尚未完成支付，请完成付款后再点击检查状态');
-        return;
+        if (manual) setStatusHint('订单还在等待付款，系统会继续自动检查');
+        return false;
       }
       if (orderStatus === 'expired') {
-        setStatusHint('订单已过期，请返回上一步重新创建订单');
-        return;
+        setQrExpired(true);
+        setRemainingSeconds(0);
+        setStatusHint('二维码已超时，请刷新后重新支付');
+        return false;
       }
-      setStatusHint(`当前订单状态：${orderStatus || '未知'}，请稍后再试`);
+      if (manual) setStatusHint(`当前订单状态：${orderStatus || '未知'}，请稍后再试`);
+      return false;
     } catch {
-      setStatusHint('状态检查失败，请检查网络后重试');
+      if (manual) setStatusHint('状态检查失败，请检查网络后重试');
+      return false;
     } finally {
-      setSubmitting(false);
+      pollingRef.current = false;
+      if (manual) setSubmitting(false);
     }
-  }, [plan, user, order?.orderNo, handleClose]);
+  }, [plan, user, order?.orderNo, handleClose, finishPayment]);
+
+  useEffect(() => {
+    if (!open || step !== 'confirm' || !order?.orderNo || qrExpired) return;
+
+    const timer = window.setInterval(() => {
+      setRemainingSeconds((current) => {
+        if (current <= 1) {
+          setQrExpired(true);
+          setStatusHint('二维码已超时，请刷新后重新支付');
+          return 0;
+        }
+        return current - 1;
+      });
+      void checkPaymentStatus(false);
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [open, step, order?.orderNo, qrExpired, checkPaymentStatus]);
+
+  useEffect(() => {
+    if (!open || step !== 'confirm') return;
+    if (qrExpired || qrLoadFailed || qrLoaded || !order?.qrCodeUrl) return;
+    const timeout = window.setTimeout(() => setQrLoadFailed(true), 10000);
+    return () => window.clearTimeout(timeout);
+  }, [open, step, order?.qrCodeUrl, qrExpired, qrLoadFailed, qrLoaded]);
 
   // ESC key
   React.useEffect(() => {
@@ -200,7 +311,12 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
 
   const isWechat = payMethod === 'wechat';
   const fallbackQr = getQRCode(plan.id, (plan.billing as 'monthly' | 'annual') || 'monthly');
-  const finalQr = order?.qrCodeUrl || (!isProd ? fallbackQr : null);
+  const isMobileDevice = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  const mobilePayQr = isMobileDevice && order?.payUrl
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=12&data=${encodeURIComponent(order.payUrl)}`
+    : null;
+  const finalQr = mobilePayQr || order?.qrCodeUrl || (!isProd ? fallbackQr : null);
+  const showQr = Boolean(finalQr && !qrExpired && !qrLoadFailed);
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in" onClick={handleClose}>
@@ -242,7 +358,7 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-bold text-gray-900">{plan.name}</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">立即生效 · 按月自动续费 · 随时取消</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">支付成功后立即生效 · 会员权益按周期开通</p>
                 </div>
                 <div className="text-xl sm:text-2xl font-extrabold text-[#5B4FE9]">{plan.price}</div>
               </div>
@@ -251,45 +367,49 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
             {/* 支付方式选择 */}
             <p className="text-xs font-medium text-gray-500 mb-2.5">选择支付方式</p>
             <div className="space-y-2 mb-4 sm:mb-5">
-              <button
-                onClick={() => setPayMethod('wechat')}
-                className={`w-full flex items-center gap-2.5 sm:gap-3.5 p-3 sm:p-3.5 rounded-2xl border-2 transition-all duration-200 ${
-                  isWechat ? 'border-[#07C160] bg-green-50/60 shadow-sm shadow-green-100/50' : 'border-gray-100 hover:border-gray-200'
-                }`}
-              >
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#07C160] flex items-center justify-center text-white text-sm font-bold shadow-sm">
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05a6.293 6.293 0 0 1-.261-1.82c0-3.572 3.193-6.468 7.13-6.468.239 0 .473.016.706.034C16.879 4.707 13.163 2.188 8.691 2.188zm5.396 16.496c-.254 0-.507-.018-.758-.04l.042-.002c-.093.007-.187.013-.282.013a7.942 7.942 0 0 1-2.395-.37.644.644 0 0 0-.537.073l-1.428.838a.246.246 0 0 1-.125.04.22.22 0 0 1-.218-.221c0-.054.022-.108.036-.16l.293-1.114a.444.444 0 0 0-.16-.5C6.883 16.14 5.86 14.485 5.86 12.626c0-3.393 3.086-6.14 6.9-6.14 3.815 0 6.9 2.747 6.9 6.14 0 3.393-3.085 6.058-6.573 6.058z"/></svg>
-                </div>
-                <div className="flex-1 text-left">
-                  <p className="text-xs sm:text-sm font-semibold text-gray-800">微信支付</p>
-                  <p className="text-[10px] text-gray-400">推荐 · 即时到账</p>
-                </div>
-                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                  isWechat ? 'border-[#07C160] bg-[#07C160]' : 'border-gray-200'
-                }`}>
-                  {isWechat && <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg>}
-                </div>
-              </button>
+              {supportsWechat && (
+                <button
+                  onClick={() => setPayMethod('wechat')}
+                  className={`w-full flex items-center gap-2.5 sm:gap-3.5 p-3 sm:p-3.5 rounded-2xl border-2 transition-all duration-200 ${
+                    isWechat ? 'border-[#07C160] bg-green-50/60 shadow-sm shadow-green-100/50' : 'border-gray-100 hover:border-gray-200'
+                  }`}
+                >
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#07C160] flex items-center justify-center text-white text-sm font-bold shadow-sm">
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05a6.293 6.293 0 0 1-.261-1.82c0-3.572 3.193-6.468 7.13-6.468.239 0 .473.016.706.034C16.879 4.707 13.163 2.188 8.691 2.188zm5.396 16.496c-.254 0-.507-.018-.758-.04l.042-.002c-.093.007-.187.013-.282.013a7.942 7.942 0 0 1-2.395-.37.644.644 0 0 0-.537.073l-1.428.838a.246.246 0 0 1-.125.04.22.22 0 0 1-.218-.221c0-.054.022-.108.036-.16l.293-1.114a.444.444 0 0 0-.16-.5C6.883 16.14 5.86 14.485 5.86 12.626c0-3.393 3.086-6.14 6.9-6.14 3.815 0 6.9 2.747 6.9 6.14 0 3.393-3.085 6.058-6.573 6.058z"/></svg>
+                  </div>
+                  <div className="flex-1 text-left">
+                    <p className="text-xs sm:text-sm font-semibold text-gray-800">微信支付</p>
+                    <p className="text-[10px] text-gray-400">推荐 · 即时到账</p>
+                  </div>
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                    isWechat ? 'border-[#07C160] bg-[#07C160]' : 'border-gray-200'
+                  }`}>
+                    {isWechat && <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg>}
+                  </div>
+                </button>
+              )}
 
-              <button
-                onClick={() => setPayMethod('alipay')}
-                className={`w-full flex items-center gap-2.5 sm:gap-3.5 p-3 sm:p-3.5 rounded-2xl border-2 transition-all duration-200 ${
-                  !isWechat ? 'border-[#1677FF] bg-blue-50/60 shadow-sm shadow-blue-100/50' : 'border-gray-100 hover:border-gray-200'
-                }`}
-              >
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#1677FF] flex items-center justify-center text-white text-sm font-bold shadow-sm">
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M21.422 13.477C21.422 13.477 19.948 12.507 18.765 11.813C19.37 10.576 19.668 9.132 19.668 7.552C19.668 3.5 16.842 0.5 13.334 0.5C9.826 0.5 7 3.5 7 7.552C7 11.603 9.826 14.603 13.334 14.603C14.556 14.603 15.698 14.2 16.67 13.5C17.6 14.04 19.08 14.93 19.08 14.93C19.38 15.1 19.76 15 19.9 14.7L21.4 13.477C21.54 13.177 21.542 12.677 21.422 13.477ZM13.334 12.603C11.034 12.603 9.166 10.403 9.166 7.652C9.166 4.901 11.034 2.701 13.334 2.701C15.634 2.701 17.502 4.901 17.502 7.652C17.502 10.403 15.634 12.603 13.334 12.603Z"/></svg>
-                </div>
-                <div className="flex-1 text-left">
-                  <p className="text-xs sm:text-sm font-semibold text-gray-800">支付宝</p>
-                  <p className="text-[10px] text-gray-400">支持花呗分期</p>
-                </div>
-                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                  !isWechat ? 'border-[#1677FF] bg-[#1677FF]' : 'border-gray-200'
-                }`}>
-                  {!isWechat && <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg>}
-                </div>
-              </button>
+              {supportsAlipay && (
+                <button
+                  onClick={() => setPayMethod('alipay')}
+                  className={`w-full flex items-center gap-2.5 sm:gap-3.5 p-3 sm:p-3.5 rounded-2xl border-2 transition-all duration-200 ${
+                    !isWechat ? 'border-[#1677FF] bg-blue-50/60 shadow-sm shadow-blue-100/50' : 'border-gray-100 hover:border-gray-200'
+                  }`}
+                >
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#1677FF] flex items-center justify-center text-white text-sm font-bold shadow-sm">
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M21.422 13.477C21.422 13.477 19.948 12.507 18.765 11.813C19.37 10.576 19.668 9.132 19.668 7.552C19.668 3.5 16.842 0.5 13.334 0.5C9.826 0.5 7 3.5 7 7.552C7 11.603 9.826 14.603 13.334 14.603C14.556 14.603 15.698 14.2 16.67 13.5C17.6 14.04 19.08 14.93 19.08 14.93C19.38 15.1 19.76 15 19.9 14.7L21.4 13.477C21.54 13.177 21.542 12.677 21.422 13.477ZM13.334 12.603C11.034 12.603 9.166 10.403 9.166 7.652C9.166 4.901 11.034 2.701 13.334 2.701C15.634 2.701 17.502 4.901 17.502 7.652C17.502 10.403 15.634 12.603 13.334 12.603Z"/></svg>
+                  </div>
+                  <div className="flex-1 text-left">
+                    <p className="text-xs sm:text-sm font-semibold text-gray-800">支付宝</p>
+                    <p className="text-[10px] text-gray-400">支持花呗分期</p>
+                  </div>
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                    !isWechat ? 'border-[#1677FF] bg-[#1677FF]' : 'border-gray-200'
+                  }`}>
+                    {!isWechat && <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg>}
+                  </div>
+                </button>
+              )}
             </div>
 
             {/* 确认支付按钮 */}
@@ -358,58 +478,82 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
 
             {/* 二维码区域 */}
             <div className="bg-gray-50 rounded-2xl p-4 sm:p-6 mb-4 sm:mb-5 text-center">
-              {finalQr ? (
+              {showQr ? (
                 <>
-                  <Image
-                    src={finalQr}
+                  <img
+                    src={finalQr || ''}
                     alt="收款码"
-                    width={256}
-                    height={256}
+                    onLoad={(event) => {
+                      const image = event.currentTarget;
+                      if (image.naturalWidth < 64 || image.naturalHeight < 64) {
+                        setQrLoadFailed(true);
+                        setQrLoaded(false);
+                        return;
+                      }
+                      setQrLoaded(true);
+                      setQrLoadFailed(false);
+                    }}
+                    onError={() => {
+                      setQrLoaded(false);
+                      setQrLoadFailed(true);
+                    }}
                     className="w-52 h-52 sm:w-64 sm:h-64 mx-auto bg-white rounded-2xl shadow-md mb-3 object-contain"
                   />
+                  <div className="inline-flex items-center justify-center rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-gray-500 shadow-sm mb-2">
+                    二维码有效期 {remainingSeconds}s
+                  </div>
                   <p className="text-xs text-gray-500 font-medium">
                     请使用{isWechat ? '微信' : '支付宝'}扫描上方二维码支付
                   </p>
+                  {isMobileDevice && (
+                    <p className="text-[11px] text-amber-600 mt-1">
+                      手机端可截图后在微信内识别二维码支付
+                    </p>
+                  )}
                   <p className="text-[10px] text-gray-400 mt-1">
                     金额：{plan.price} · 收款方：省心PPT
                   </p>
                 </>
               ) : (
-                <div className="w-44 h-44 sm:w-52 sm:h-52 mx-auto bg-white border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center mb-3">
+                <div className="w-52 h-52 sm:w-64 sm:h-64 mx-auto bg-white border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center mb-3 shadow-sm">
                   <div className="text-center">
-                    <div className="text-5xl mb-2">{isWechat ? '💚' : '🔵'}</div>
-                    <p className="text-sm text-gray-500 font-medium">{isWechat ? '微信扫码' : '支付宝扫码'}</p>
-                    <p className="text-[10px] text-gray-400 mt-1">{isProd ? '支付通道未返回二维码，请联系管理员' : '暂无收款码'}</p>
+                    <p className="text-sm text-gray-600 font-semibold">
+                      {qrExpired ? '二维码已超时' : '二维码加载失败'}
+                    </p>
+                    <p className="text-[11px] text-gray-400 mt-1 mb-4">
+                      请刷新后使用新的二维码支付
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleRefreshOrder}
+                      disabled={submitting}
+                      className="px-5 py-2.5 rounded-xl bg-[#5B4FE9] text-white text-xs font-bold hover:bg-[#4338CA] transition-colors disabled:opacity-40"
+                    >
+                      {submitting ? '刷新中...' : '刷新二维码'}
+                    </button>
                   </div>
                 </div>
               )}
+              {statusHint && (
+                <p className="text-center text-xs text-amber-600 mt-3">{statusHint}</p>
+              )}
             </div>
-            {order?.payUrl && (
-              <a
-                href={order.payUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="block w-full py-3 text-center bg-white border border-purple-200 text-purple-700 rounded-xl text-xs font-semibold mb-3 hover:bg-purple-50 transition-colors"
-              >
-                无法扫码？打开支付链接
-              </a>
-            )}
+          </div>
+        )}
 
-            {/* 已完成支付按钮 */}
+        {step === 'success' && (
+          <div className="p-6 animate-fade-in text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-50 text-3xl">
+              ✓
+            </div>
+            <h3 className="mt-4 text-lg font-black text-gray-900">{successMessage || '付款成功，会员已开通！'}</h3>
+            <p className="mt-2 text-xs leading-5 text-gray-500">积分和会员状态已同步，可在右上角用户菜单查看最新余额。</p>
             <button
-              onClick={handlePaymentConfirm}
-              disabled={submitting}
-              className="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-2xl text-sm font-bold hover:shadow-lg hover:shadow-green-200/40 transition-all active:scale-[0.98] disabled:opacity-40"
+              onClick={handleClose}
+              className="mt-6 w-full rounded-2xl bg-slate-900 py-3.5 text-sm font-bold text-white transition hover:bg-slate-800"
             >
-              {submitting ? '检查中...' : '我已完成支付，检查状态 ✅'}
+              我知道了
             </button>
-            {statusHint && (
-              <p className="text-center text-xs text-amber-600 mt-2">{statusHint}</p>
-            )}
-
-            <p className="text-center text-[10px] text-gray-300 mt-3">
-              支付成功后页面将自动刷新 · 如有问题请联系客服
-            </p>
           </div>
         )}
       </div>

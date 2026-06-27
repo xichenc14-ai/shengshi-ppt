@@ -80,13 +80,14 @@ export async function GET(request: NextRequest) {
 
     const paidAmountMap = new Map<string, number>();
     const planExpireMap = new Map<string, string>();
+    const isPaidOrder = (status: string | null | undefined) => status === 'completed' || status === 'paid';
     for (const order of orders) {
       const uid = order.user_id || '';
       if (!uid) continue;
-      if (order.status === 'completed') {
+      if (isPaidOrder(order.status)) {
         paidAmountMap.set(uid, (paidAmountMap.get(uid) || 0) + Number(order.amount || 0) / 100);
       }
-      if (order.status === 'completed' && order.product_type === 'subscription') {
+      if (isPaidOrder(order.status) && order.product_type === 'subscription') {
         const start = order.paid_at || order.created_at;
         if (!start) continue;
         const expire = expiryFromMetadata(order.metadata, start);

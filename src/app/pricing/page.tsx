@@ -22,16 +22,6 @@ type Plan = {
   approxCostPerPage: string;
 };
 
-type CreditPackage = {
-  id: string;
-  name: string;
-  credits: number;
-  price: number; // 分
-  price_yuan?: number;
-  rate_text?: string;
-  price_tier?: 'member' | 'free';
-};
-
 type CompareRow = {
   label: string;
   free: { text: string; type: 'ok' | 'off' | 'strike' | 'neutral' };
@@ -55,7 +45,7 @@ const PLANS: Plan[] = [
       { name: 'AI尊享图', available: false },
     ],
     audience: '轻量体验',
-    features: ['每月赠送 40 积分', '专业模式', '1 个附件：文档10MB以内', '普通用户也可充值积分'],
+    features: ['每月赠送 40 积分', '专业模式', '1 个附件：文档10MB以内'],
     approxCostPerPage: '0.3',
   },
   {
@@ -169,16 +159,32 @@ function planMarker(planId: Plan['id']): string {
   return '';
 }
 
+function normalizeUserPlan(planType?: string | null): 'free' | 'shengxin' | 'advanced' {
+  if (planType === 'shengxin' || planType === 'basic') return 'shengxin';
+  if (planType === 'advanced' || planType === 'standard' || planType === 'pro' || planType === 'vip' || planType === 'supreme') return 'advanced';
+  return 'free';
+}
+
+function planRank(planId: Plan['id']): number {
+  if (planId === 'advanced') return 2;
+  if (planId === 'shengxin') return 1;
+  return 0;
+}
+
 function PlanCard({
   plan,
   selected,
   onSelect,
   onBuy,
+  actionText,
+  disabled,
 }: {
   plan: Plan;
   selected: boolean;
   onSelect: () => void;
   onBuy: () => void;
+  actionText: string;
+  disabled?: boolean;
 }) {
   const approxPages = Math.floor(plan.credits / CREDITS_PER_PAGE);
 
@@ -260,14 +266,17 @@ function PlanCard({
         <div className="mt-5">
           <div
             className={`w-full text-center py-3 rounded-xl text-sm font-black transition-all ${
-              selected ? 'sx-primary-btn text-white' : 'bg-white border border-indigo-200 text-indigo-700'
+              disabled
+                ? 'cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200'
+                : selected ? 'sx-primary-btn text-white' : 'bg-white border border-indigo-200 text-indigo-700'
             }`}
             onClick={(event) => {
               event.stopPropagation();
+              if (disabled) return;
               onBuy();
             }}
           >
-            立即开通
+            {actionText}
           </div>
         </div>
       ) : (
@@ -280,40 +289,36 @@ function PlanCard({
 }
 
 export default function PricingPage() {
-  const { user, openPayment, openLogin, showPayment, closePayment, paymentPlan, showLogin, closeLogin } = useAuth();
+  const { user, openPayment, openLogin, showPayment, closePayment, paymentPlan, showLogin, closeLogin, refreshUser } = useAuth();
   const paymentEnabled = isPaymentFeatureEnabledClient();
   const [selectedPlan, setSelectedPlan] = React.useState<'shengxin' | 'advanced'>('shengxin');
-  const [creditPackages, setCreditPackages] = React.useState<CreditPackage[]>([]);
-  const [creditTier, setCreditTier] = React.useState<'member' | 'free'>('free');
-  const [creditLoading, setCreditLoading] = React.useState(false);
   const [creditMessage, setCreditMessage] = React.useState('');
 
   React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setCreditLoading(true);
-      try {
-        const headers: Record<string, string> = {};
-        if (user?.id) headers.Authorization = `Bearer ${user.id}`;
-        const res = await fetch('/api/credits', { headers });
-        const data = await res.json();
-        if (!cancelled && Array.isArray(data?.packages)) {
-          setCreditPackages(data.packages);
-          setCreditTier(data?.priceTier === 'member' ? 'member' : 'free');
-        }
-      } catch {
-      } finally {
-        if (!cancelled) setCreditLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id]);
+    if (user?.id) void refreshUser({ force: true });
+  }, [refreshUser, user?.id]);
+
+  const currentPlan = normalizeUserPlan(user?.plan_type);
+
+  const getPlanAction = (plan: Plan): { text: string; disabled: boolean } => {
+    if (plan.id === 'free') return { text: '当前默认方案', disabled: true };
+    if (!user) return { text: '登录后开通', disabled: false };
+    const currentRank = planRank(currentPlan);
+    const targetRank = planRank(plan.id);
+    if (currentRank >= 2) return { text: currentPlan === plan.id ? '当前套餐' : '已是最高会员', disabled: true };
+    if (currentRank === targetRank) return { text: '当前套餐', disabled: true };
+    if (currentRank === 1 && targetRank === 2) return { text: '升级尊享会员', disabled: false };
+    return { text: '立即开通', disabled: false };
+  };
 
   const buyPlan = (plan: Plan) => {
     if (!user) {
       openLogin();
+      return;
+    }
+    const action = getPlanAction(plan);
+    if (action.disabled) {
+      setCreditMessage(action.text);
       return;
     }
     if (!paymentEnabled) {
@@ -326,36 +331,6 @@ export default function PricingPage() {
       price: `¥${plan.price}/月`,
       billing: 'monthly',
     });
-  };
-
-  const createCreditOrder = async (pkg: CreditPackage) => {
-    if (!user) {
-      openLogin();
-      return;
-    }
-    if (!paymentEnabled) {
-      setCreditMessage('支付通道申请中，积分充值暂不可用。');
-      return;
-    }
-    setCreditMessage('');
-    try {
-      const res = await fetch('/api/credits', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(user?.id ? { Authorization: `Bearer ${user.id}` } : {}),
-        },
-        body: JSON.stringify({ packageId: pkg.id }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        setCreditMessage(data.error || '创建充值订单失败');
-        return;
-      }
-      setCreditMessage(`已创建订单 ${data.order_no}，支付回调接入后将自动到账。`);
-    } catch {
-      setCreditMessage('创建充值订单失败');
-    }
   };
 
   return (
@@ -384,15 +359,22 @@ export default function PricingPage() {
 
           <section className="grid min-w-0 gap-5 lg:grid-cols-3">
             {PLANS.map((plan) => (
-              <PlanCard
-                key={plan.id}
-                plan={plan}
-                selected={selectedPlan === plan.id}
-                onSelect={() => {
-                  if (plan.id !== 'free') setSelectedPlan(plan.id);
-                }}
-                onBuy={() => buyPlan(plan)}
-              />
+              (() => {
+                const action = getPlanAction(plan);
+                return (
+                  <PlanCard
+                    key={plan.id}
+                    plan={plan}
+                    selected={selectedPlan === plan.id}
+                    actionText={action.text}
+                    disabled={action.disabled}
+                    onSelect={() => {
+                      if (plan.id !== 'free') setSelectedPlan(plan.id);
+                    }}
+                    onBuy={() => buyPlan(plan)}
+                  />
+                );
+              })()
             ))}
           </section>
 
@@ -419,39 +401,6 @@ export default function PricingPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
-          </section>
-
-          <section id="credit-topup" className="mt-7 sx-glass rounded-[24px] p-5 md:p-6">
-            <h2 className="text-lg font-black text-slate-900">积分单独充值</h2>
-            <p className="text-sm text-slate-500 mt-1">
-              {creditTier === 'member'
-                ? '会员可按固定包价补充积分，不影响当前会员等级。'
-                : '免费用户也可按固定包价补充积分，生成与下载统一按积分结算。'}
-            </p>
-            {creditMessage && <p className="mt-3 text-sm text-indigo-600 font-semibold">{creditMessage}</p>}
-            <div className="grid md:grid-cols-3 gap-3 mt-4">
-              {(creditPackages.length > 0 ? creditPackages : [
-                { id: 'topup-100', name: '体验包', credits: 100, price: 1000, price_yuan: 10, rate_text: '固定包价：¥10 / 100积分', price_tier: 'free' as const },
-                { id: 'topup-500', name: '基础包', credits: 500, price: 2000, price_yuan: 20, rate_text: '固定包价：¥20 / 500积分', price_tier: 'free' as const },
-                { id: 'topup-3000', name: '超值包', credits: 3000, price: 10000, price_yuan: 100, rate_text: '固定包价：¥100 / 3000积分', price_tier: 'free' as const },
-              ]).map((pkg) => (
-                <div key={pkg.id} className="flex items-center gap-3 rounded-2xl border border-indigo-100 bg-white/80 p-4 md:block">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold text-slate-800">{pkg.name}</p>
-                    <p className="mt-1.5 whitespace-nowrap text-2xl font-black sx-accent-text md:mt-2">{pkg.credits} 积分</p>
-                    <p className="mt-1 text-sm text-slate-500">¥{(Number(pkg.price_yuan ?? Number(pkg.price) / 100)).toFixed(2)}</p>
-                    <p className="mt-1 truncate text-[11px] text-slate-400">{pkg.rate_text || '固定包价'}</p>
-                  </div>
-                  <button
-                    onClick={() => createCreditOrder(pkg)}
-                    disabled={creditLoading || !paymentEnabled}
-                    className="w-[112px] shrink-0 rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-bold leading-5 text-indigo-700 hover:bg-indigo-50 md:mt-4 md:w-full"
-                  >
-                    {paymentEnabled ? '创建充值订单' : '支付通道申请中'}
-                  </button>
-                </div>
-              ))}
             </div>
           </section>
 

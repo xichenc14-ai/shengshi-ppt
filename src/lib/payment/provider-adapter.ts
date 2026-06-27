@@ -1,3 +1,5 @@
+import { createXunhuOrder, getXunhuConfig } from '@/lib/payment/xunhu';
+
 export type PaymentProvider = 'wechat' | 'alipay';
 
 export interface CreateOrderInput {
@@ -47,13 +49,33 @@ function getProviderTemplate(provider: PaymentProvider): {
 export interface ProviderReadiness {
   provider: PaymentProvider;
   ready: boolean;
-  mode: 'template' | 'sdk-env' | 'missing';
+  mode: 'template' | 'xunhu' | 'sdk-env' | 'missing' | 'unsupported';
   missing: string[];
   hasPayUrlTemplate: boolean;
   hasQrCodeTemplate: boolean;
 }
 
+export function getSupportedPaymentMethods(): PaymentProvider[] {
+  const raw = process.env.PAYMENT_SUPPORTED_METHODS || process.env.NEXT_PUBLIC_PAYMENT_SUPPORTED_METHODS || 'wechat';
+  const methods = raw
+    .split(',')
+    .map((v) => v.trim())
+    .filter((v): v is PaymentProvider => v === 'wechat' || v === 'alipay');
+  return methods.length > 0 ? methods : ['wechat'];
+}
+
 export function inspectProviderReadiness(provider: PaymentProvider): ProviderReadiness {
+  if (!getSupportedPaymentMethods().includes(provider)) {
+    return {
+      provider,
+      ready: true,
+      mode: 'unsupported',
+      missing: [],
+      hasPayUrlTemplate: false,
+      hasQrCodeTemplate: false,
+    };
+  }
+
   const { payUrlTemplate, qrCodeTemplate } = getProviderTemplate(provider);
   if (payUrlTemplate || qrCodeTemplate) {
     return {
@@ -63,6 +85,18 @@ export function inspectProviderReadiness(provider: PaymentProvider): ProviderRea
       missing: [],
       hasPayUrlTemplate: Boolean(payUrlTemplate),
       hasQrCodeTemplate: Boolean(qrCodeTemplate),
+    };
+  }
+
+  if (provider === 'wechat') {
+    const missing = ['XUNHU_PAY_APPID', 'XUNHU_PAY_SECRET'].filter(k => !process.env[k]);
+    return {
+      provider,
+      ready: missing.length === 0,
+      mode: missing.length === 0 ? 'xunhu' : 'missing',
+      missing,
+      hasPayUrlTemplate: false,
+      hasQrCodeTemplate: false,
     };
   }
 
@@ -91,10 +125,7 @@ function missingEnvFor(provider: PaymentProvider): string[] {
   const { payUrlTemplate, qrCodeTemplate } = getProviderTemplate(provider);
   if (payUrlTemplate || qrCodeTemplate) return [];
 
-  if (provider === 'wechat') {
-    const required = ['WECHAT_PAY_MCH_ID', 'WECHAT_PAY_APP_ID', 'WECHAT_PAY_API_V3_KEY'];
-    return required.filter(k => !process.env[k]);
-  }
+  if (provider === 'wechat') return ['XUNHU_PAY_APPID', 'XUNHU_PAY_SECRET'].filter(k => !process.env[k]);
   const required = ['ALIPAY_APP_ID', 'ALIPAY_PRIVATE_KEY', 'ALIPAY_PUBLIC_KEY'];
   return required.filter(k => !process.env[k]);
 }
@@ -105,6 +136,15 @@ function missingEnvFor(provider: PaymentProvider): string[] {
  * - 未配置时自动回落 mock，避免阻塞联调
  */
 export async function createProviderOrderIntent(input: CreateOrderInput): Promise<ProviderOrderIntent> {
+  if (!getSupportedPaymentMethods().includes(input.provider)) {
+    return {
+      provider: input.provider,
+      providerOrderId: `unsupported_${input.orderNo}`,
+      mock: true,
+      raw: { reason: 'payment_method_unsupported' },
+    };
+  }
+
   const { payUrlTemplate, qrCodeTemplate } = getProviderTemplate(input.provider);
   if (payUrlTemplate || qrCodeTemplate) {
     const vars = {
@@ -143,14 +183,36 @@ export async function createProviderOrderIntent(input: CreateOrderInput): Promis
     };
   }
 
-  // TODO: 接入真实 SDK / 官方网关请求
-  // 这里保留标准化返回结构，避免上层业务逻辑未来重写
+  if (input.provider === 'wechat' && getXunhuConfig()) {
+    const xunhu = await createXunhuOrder({
+      orderNo: input.orderNo,
+      amountFen: input.amountFen,
+      title: input.subject,
+      notifyUrl: input.notifyUrl,
+      returnUrl: process.env.PAYMENT_RETURN_URL,
+      callbackUrl: process.env.PAYMENT_CALLBACK_URL,
+      attach: JSON.stringify({ userId: input.userId, provider: input.provider }),
+    });
+    return {
+      provider: input.provider,
+      providerOrderId: xunhu.openOrderId,
+      payUrl: xunhu.payUrl,
+      qrCodeUrl: xunhu.qrCodeUrl,
+      mock: false,
+      raw: {
+        mode: 'xunhu',
+        openOrderId: xunhu.openOrderId,
+        response: xunhu.raw,
+      },
+    };
+  }
+
   return {
     provider: input.provider,
-    providerOrderId: `todo_${input.orderNo}`,
+    providerOrderId: `unsupported_${input.orderNo}`,
     payUrl: undefined,
     qrCodeUrl: undefined,
     mock: true,
-    raw: { reason: 'provider_not_implemented_yet' },
+    raw: { reason: 'provider_not_configured' },
   };
 }

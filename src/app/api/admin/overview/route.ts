@@ -136,15 +136,16 @@ export async function GET(request: NextRequest) {
 
     const paidAmountMap = new Map<string, number>();
     const planExpireMap = new Map<string, string>();
+    const isPaidOrder = (status: string | null | undefined) => status === 'completed' || status === 'paid';
 
     for (const order of orders) {
       const uid = order.user_id || '';
       if (!uid) continue;
-      if (order.status === 'completed') {
+      if (isPaidOrder(order.status)) {
         const amountYuan = Number(order.amount || 0) / 100;
         paidAmountMap.set(uid, (paidAmountMap.get(uid) || 0) + amountYuan);
       }
-      if (order.status === 'completed' && order.product_type === 'subscription') {
+      if (isPaidOrder(order.status) && order.product_type === 'subscription') {
         const paidAt = order.paid_at || order.created_at;
         if (!paidAt) continue;
         const expiresAt = expiryFromMetadata(order.metadata, paidAt);
@@ -246,7 +247,7 @@ export async function GET(request: NextRequest) {
 
     const userById = new Map(normalizedUsers.map((u) => [u.id, u]));
     const recentPayments = orders
-      .filter((o) => o.status === 'completed')
+      .filter((o) => isPaidOrder(o.status))
       .slice(0, 40)
       .map((o) => ({
         order_no: o.order_no,

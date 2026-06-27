@@ -19,7 +19,14 @@ type OpenApiModule = {
 };
 
 type DypnsModule = {
-  default: new (config: unknown) => {
+  default?: {
+    default?: new (config: unknown) => {
+      sendSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
+    };
+  } | (new (config: unknown) => {
+    sendSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
+  });
+  Client?: new (config: unknown) => {
     sendSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
   };
   SendSmsVerifyCodeRequest: new (payload: Record<string, unknown>) => unknown;
@@ -44,6 +51,17 @@ function getProvider(): SMSProvider {
   return (process.env.SMS_PROVIDER as SMSProvider) || 'aliyun_auth';
 }
 
+function resolveDypnsClient(Dypnsapi: DypnsModule) {
+  if (typeof Dypnsapi.default === 'function') return Dypnsapi.default;
+  if (Dypnsapi.default && typeof Dypnsapi.default.default === 'function') return Dypnsapi.default.default;
+  if (typeof Dypnsapi.Client === 'function') return Dypnsapi.Client;
+  throw new Error('Dypnsapi Client constructor not found');
+}
+
+function maskPhone(phone: string): string {
+  return phone.replace(/^(\d{3})\d{4}(\d{4})$/, '$1****$2');
+}
+
 // ===== 阿里云短信认证（dypnsapi）=====
 // 个人开发者友好：100次免费套餐包
 // 使用系统赠送签名+模板，API自动生成验证码
@@ -60,7 +78,7 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
   if (!signName || !templateCode) {
     console.warn('[SMS] ALIYUN_SMS_SIGN_NAME 或 ALIYUN_SMS_TEMPLATE_CODE 未配置，降级为控制台打印');
     const fallbackCode = String(Math.floor(100000 + Math.random() * 900000));
-    console.log(`[SMS-DEV] 验证码: ${fallbackCode}，手机号: ${phone}`);
+    console.log(`[SMS-DEV] 验证码: ${fallbackCode}，手机号: ${maskPhone(phone)}`);
     return { success: true, code: fallbackCode, messageId: 'dev-mode' };
   }
 
@@ -74,7 +92,8 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
       endpoint: 'dypnsapi.aliyuncs.com',
     });
 
-    const client = new Dypnsapi.default(config);
+    const DypnsClient = resolveDypnsClient(Dypnsapi);
+    const client = new DypnsClient(config);
     const sendRes = await client.sendSmsVerifyCode(new Dypnsapi.SendSmsVerifyCodeRequest({
       phoneNumber: phone,
       signName,
@@ -129,7 +148,7 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
     if (msg.includes('Cannot find module') || msg.includes('MODULE_NOT_FOUND')) {
       console.warn('[SMS] dypnsapi SDK 未安装，降级为控制台打印');
       const fallbackCode = String(Math.floor(100000 + Math.random() * 900000));
-      console.log(`[SMS-DEV] 验证码: ${fallbackCode}，手机号: ${phone}`);
+      console.log(`[SMS-DEV] 验证码: ${fallbackCode}，手机号: ${maskPhone(phone)}`);
       return { success: true, code: fallbackCode, messageId: 'dev-mode' };
     }
     return { success: false, error: `阿里云短信异常: ${msg}` };

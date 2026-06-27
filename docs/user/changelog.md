@@ -1,7 +1,39 @@
 # 省心PPT 更新日志
 
-> **版本**: v10.50
-> **最后更新**: 2026-05-12
+> **版本**: v10.95.24
+> **最后更新**: 2026-06-27
+
+---
+
+## v10.95.24 (2026-06-27)
+
+### ✅ 商业化上线准备
+
+- **完成生产数据库商业化迁移**
+  - 补齐会员周期字段：`plan_started_at`、`plan_expires_at`、`last_entitlement_sync_at`
+  - 补齐订单追踪字段：`metadata`、`pay_method`、`trade_no`、`paid_at`、`expires_at`
+  - 建立订阅、订单、支付统计相关索引
+
+- **完善会员/订阅/积分同步**
+  - 会员开通后同步套餐、到期时间和积分到账
+  - 免费用户月度积分重置链路通过回归
+  - 支付回调、虎皮椒通知、单次下载订单完成态通过回归
+
+### 🧪 验证
+
+- 生产库验收结果：`users_missing_sync = 0`、`paid_subscriptions_missing_expiry = 0`、`orders_missing_metadata = 0`
+- 商业化索引验收：`commercial_indexes = 6`
+- 相关测试：会员订阅、支付回调、虎皮椒通知、积分费率全部通过
+
+---
+
+## v10.95.23 (2026-06-26)
+
+### 🐛 修复
+
+- **修复 `www.xinppt.cn` 页面样式失效**
+  - 将 `www.xinppt.cn` 统一 308 跳转到 `xinppt.cn`
+  - 避免页面在 `www` 域名下加载 apex 静态资源时被 CSP 拦截，导致 CSS/JS 不生效
 
 ---
 

@@ -3,10 +3,12 @@ import { createClient } from '@supabase/supabase-js';
 import { isCallbackIPAllowed } from '@/lib/payment';
 import { verifyWechatPayCallback } from '@/lib/payment/wechat-verify';
 import { verifyAlipayCallback, normalizeAlipayPublicKey } from '@/lib/payment/alipay-verify';
-import type { CreditTransactionInsert, UserRow } from '@/lib/supabase-types';
 import { createProviderOrderIntent } from '@/lib/payment/provider-adapter';
 import { getClientIP, rateLimit } from '@/lib/rate-limit';
 import { isPaymentFeatureEnabledServer } from '@/lib/payment-feature';
+import { canPurchasePlan, fulfillPaidOrder, PLAN_PRICES, reconcileUserEntitlements } from '@/lib/payment/subscription';
+import { insertOrderCompat, updateOrderCompat } from '@/lib/payment/order-storage';
+import { isXunhuPaidResult, queryXunhuOrder, xunhuStatusToOrderStatus } from '@/lib/payment/xunhu';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -15,89 +17,61 @@ function getSupabase() {
   return createClient(url, key);
 }
 
-// ── 套餐配置 ──
-const PLAN_PRICES: Record<string, { name: string; monthly: number; annual: number; credits: number }> = {
-  shengxin: { name: '省心会员', monthly: 19.9, annual: 199, credits: 500 },
-  advanced: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500 },
-  // 兼容旧计划ID
-  basic: { name: '省心会员', monthly: 19.9, annual: 199, credits: 500 },
-  standard: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500 },
-  pro: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500 },
-  vip: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500 },
-  supreme: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500 },
-};
+function amountYuanToFen(value: string | undefined): number | null {
+  if (!value) return null;
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return Math.round(amount * 100);
+}
+
+function readProviderUrl(rawInput: unknown, key: 'url' | 'url_qrcode'): string | null {
+  if (!rawInput || typeof rawInput !== 'object') return null;
+  const raw = rawInput as Record<string, unknown>;
+  if (typeof raw[key] === 'string' && raw[key]) return raw[key];
+  const response = raw.response;
+  if (response && typeof response === 'object') {
+    const nested = (response as Record<string, unknown>)[key];
+    if (typeof nested === 'string' && nested) return nested;
+  }
+  return null;
+}
+
+async function readPaymentUser(sb: NonNullable<ReturnType<typeof getSupabase>>, userId: unknown) {
+  const id = typeof userId === 'string' ? userId : '';
+  if (!id || id === '00000000-0000-0000-000000000000') return null;
+  await reconcileUserEntitlements(sb, id);
+  const selections = [
+    'id,phone,nickname,avatar,credits,plan_type,plan_expires_at,is_active',
+    'id,phone,nickname,credits,plan_type,plan_expires_at,is_active',
+    'id,phone,nickname,avatar,credits,plan_type,is_active',
+    'id,phone,nickname,credits,plan_type,is_active',
+    'id,phone,nickname,credits,plan_type',
+  ];
+  let userRes: { data: unknown; error: unknown } | null = null;
+  for (const select of selections) {
+    const res = await sb.from('users').select(select).eq('id', id).single();
+    if (!res.error && res.data) {
+      userRes = res;
+      break;
+    }
+  }
+  if (!userRes?.data) return null;
+  const user = userRes.data as Record<string, unknown>;
+  return {
+    id: String(user.id || id),
+    phone: String(user.phone || ''),
+    nickname: String(user.nickname || '用户'),
+    ...(typeof user.avatar === 'string' ? { avatar: user.avatar } : {}),
+    credits: Number(user.credits || 0),
+    plan_type: String(user.plan_type || 'free'),
+    ...(typeof user.plan_expires_at === 'string' || user.plan_expires_at === null
+      ? { plan_expires_at: user.plan_expires_at as string | null }
+      : {}),
+    is_active: user.is_active !== false,
+  };
+}
 
 // ── IP 检查已在 @/lib/payment 中统一处理 ──
-
-/**
- * 开通会员 + 增加积分（原子化事务）
- */
-async function activateSubscription(
-  sb: NonNullable<ReturnType<typeof getSupabase>>,
-  userId: string,
-  planId: string,
-  billing: string,
-  credits: number
-): Promise<{ success: boolean; error?: string }> {
-  const plan = PLAN_PRICES[planId];
-  if (!plan) return { success: false, error: '套餐不存在' };
-
-  const isAnnual = billing === 'annual';
-  const planType = planId; // plan_type 直接用 planId
-
-  // 更新用户会员类型 + 积分
-  // 🚨 P2 Fix: cast to any to bypass Supabase v2 typed-client Database schema type mismatch
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const typedSb: any = sb;
-  const { data: currentUser, error: qErr } = await typedSb.from('users').select('credits').eq('id', userId).single();
-  if (qErr || !currentUser) return { success: false, error: '用户不存在' };
-
-  const currentCredits = Number((currentUser as UserRow).credits ?? 0);
-  const newCredits = currentCredits + credits;
-  const newPlanType = planType; // 直接升级
-  const now = new Date();
-  const nextExpire = new Date(now);
-  if (isAnnual) {
-    nextExpire.setFullYear(nextExpire.getFullYear() + 1);
-  } else {
-    nextExpire.setMonth(nextExpire.getMonth() + 1);
-  }
-  const planStartISO = now.toISOString();
-  const planExpireISO = nextExpire.toISOString();
-
-  let { error: updErr } = await typedSb.from('users').update({
-    plan_type: newPlanType,
-    credits: newCredits,
-    plan_started_at: planStartISO,
-    plan_expires_at: planExpireISO,
-  }).eq('id', userId);
-
-  // 兼容未升级的库：无到期字段时降级为仅更新套餐和积分
-  if (updErr && String(updErr.message || '').includes('plan_started_at')) {
-    ({ error: updErr } = await typedSb.from('users').update({
-      plan_type: newPlanType,
-      credits: newCredits,
-    }).eq('id', userId));
-  }
-
-  if (updErr) return { success: false, error: '开通会员失败: ' + updErr.message };
-
-  // 记录积分变动
-  try {
-    const txInsert: CreditTransactionInsert = {
-      user_id: userId,
-      amount: credits,
-      balance_after: newCredits,
-      type: 'purchase',
-      description: `购买${plan.name}（${isAnnual ? '年付' : '月付'}）- 获得${credits}积分`,
-    };
-    await typedSb.from('credit_transactions').insert(txInsert);
-  } catch (e) {
-    console.warn('[Payment] 积分记录失败:', e);
-  }
-
-  return { success: true };
-}
 
 // POST: 创建订单 / 支付回调
 export async function POST(req: NextRequest) {
@@ -137,13 +111,68 @@ export async function POST(req: NextRequest) {
       const isAnnual = billing === 'annual';
       const amount = isAnnual ? plan.annual : plan.monthly;
       const billingLabel = isAnnual ? '年付' : '月付';
+      const targetUserId = userId || '00000000-0000-0000-000000000000';
+
+      if (targetUserId && targetUserId !== '00000000-0000-0000-000000000000') {
+        await reconcileUserEntitlements(sb, targetUserId);
+
+        const { data: currentUser } = await sb
+          .from('users')
+          .select('id,plan_type')
+          .eq('id', targetUserId)
+          .single();
+        const purchaseCheck = canPurchasePlan(String(currentUser?.plan_type || 'free'), planId);
+        if (!purchaseCheck.allowed) {
+          return NextResponse.json({ error: purchaseCheck.reason || '当前套餐不可重复购买' }, { status: 409 });
+        }
+
+        const { data: pendingOrders } = await sb
+          .from('orders')
+          .select('*')
+          .eq('user_id', targetUserId)
+          .eq('status', 'pending')
+          .eq('amount', Math.round(amount * 100))
+          .order('created_at', { ascending: false })
+          .limit(5);
+        const reusableOrder = Array.isArray(pendingOrders)
+          ? pendingOrders.find((item) => {
+              const metadata = (item.metadata || {}) as Record<string, unknown>;
+              const expiresAt = item.expires_at ? new Date(String(item.expires_at)).getTime() : Date.now() + 1;
+              return expiresAt > Date.now()
+                && String(metadata.planId || planId) === planId
+                && String(metadata.billing || billing) === String(billing);
+            })
+          : null;
+        if (reusableOrder) {
+          const metadata = (reusableOrder.metadata || {}) as Record<string, unknown>;
+          const raw = (metadata.providerRaw || {}) as Record<string, unknown>;
+          const payUrl = readProviderUrl(raw, 'url');
+          const qrCodeUrl = readProviderUrl(raw, 'url_qrcode');
+          if (!payUrl && !qrCodeUrl) {
+            await sb.from('orders').update({ status: 'expired' }).eq('order_no', reusableOrder.order_no);
+          } else {
+            return NextResponse.json({
+              order_no: reusableOrder.order_no,
+              amount,
+              product_name: `${plan.name}（${billingLabel}）`,
+              billing,
+              status: 'pending',
+              provider: metadata.provider || 'xunhu',
+              provider_order_id: metadata.providerOrderId || null,
+              pay_url: payUrl,
+              qr_code_url: qrCodeUrl,
+              provider_mock: false,
+              provider_raw: raw,
+              reused: true,
+            });
+          }
+        }
+      }
 
       const orderNo = Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
 
-      const { error } = await sb
-        .from('orders')
-        .insert({
-          user_id: userId || '00000000-0000-0000-000000000000',
+      const { error } = await insertOrderCompat(sb, {
+          user_id: targetUserId,
           order_no: orderNo,
           product_type: 'subscription',
           product_name: `${plan.name}（${billingLabel}）`,
@@ -154,7 +183,15 @@ export async function POST(req: NextRequest) {
           expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
         });
 
-      if (error) return NextResponse.json({ error: '创建订单失败' }, { status: 500 });
+      if (error) {
+        console.error('[Payment][CreateOrder] insert failed:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
+        return NextResponse.json({ error: '创建订单失败' }, { status: 500 });
+      }
       console.log(`[Payment][CreateOrder] created order=${orderNo} ip=${clientIP} user=${userId || 'anon'} plan=${planId} billing=${billing}`);
 
       const notifyUrl = process.env.PAYMENT_NOTIFY_URL || '';
@@ -181,6 +218,17 @@ export async function POST(req: NextRequest) {
           reason,
         }, { status: 503 });
       }
+
+      await updateOrderCompat(sb, {
+        metadata: {
+          planId,
+          payMethod,
+          billing,
+          provider: intent.provider,
+          providerOrderId: intent.providerOrderId,
+          providerRaw: intent.raw || null,
+        },
+      }, orderNo);
 
       return NextResponse.json({
         order_no: orderNo,
@@ -247,7 +295,7 @@ export async function POST(req: NextRequest) {
       }
 
       // 2. 检查订单是否已处理（幂等性）
-      if (order.status === 'completed') {
+      if (order.status === 'completed' || order.status === 'paid') {
         return NextResponse.json({ success: true, message: '订单已处理' });
       }
       if (order.status === 'failed') {
@@ -332,68 +380,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, message: '未知状态' });
       }
 
-      // 6. 支付成功 → 按订单类型处理
-      const productType = String(order.product_type || 'subscription');
-      if (productType === 'download_once') {
-        await sb.from('orders').update({
-          status: 'completed',
-          paid_at: new Date().toISOString(),
-          trade_no: trade_no || null,
-          metadata: {
-            ...(order.metadata || {}),
-            fulfilled: false,
-            fulfilledAt: null,
-          },
-        }).eq('order_no', order_no);
-
-        console.log(`[Payment] ✅ 单次下载订单支付完成: order=${order_no}, user=${order.user_id}`);
-        return NextResponse.json({ success: true, message: '支付成功，单次下载订单已生效' });
-      }
-
-      // 订阅订单：开通会员 + 增加积分
-      const targetUserId = user_id || order.user_id;
-      const targetPlanId = plan_id || order.metadata?.planId;
-      const targetBilling = billing || order.metadata?.billing || 'monthly';
-      const plan = PLAN_PRICES[targetPlanId || 'shengxin'];
-
-      if (!targetUserId || targetUserId === '00000000-0000-0000-000000000000') {
-        console.error(`[Payment] 支付成功但userId无效: order=${order_no}, user_id=${targetUserId}`);
-        // 订单标记为需要人工处理
-        await sb.from('orders').update({ status: 'completed', paid_at: new Date().toISOString(), trade_no: trade_no || null, metadata: { ...order.metadata, needsManualProcessing: true } }).eq('order_no', order_no);
-        return NextResponse.json({ success: true, message: '订单已处理（需人工关联账户）' });
-      }
-
-      if (!targetPlanId || !plan) {
-        console.error(`[Payment] 支付成功但套餐无效: order=${order_no}, planId=${targetPlanId}`);
-        await sb.from('orders').update({ status: 'completed', paid_at: new Date().toISOString(), trade_no: trade_no || null }).eq('order_no', order_no);
-        return NextResponse.json({ success: true, message: '订单已处理（套餐信息缺失）' });
-      }
-
-      // 原子化开通
-      const activateResult = await activateSubscription(sb, targetUserId, targetPlanId, targetBilling, plan.credits);
-
-      if (!activateResult.success) {
-        console.error(`[Payment] 开通会员失败: order=${order_no}, error=${activateResult.error}`);
-        // 订单标记为部分成功，需要人工介入
-        await sb.from('orders').update({
-          status: 'completed',
-          paid_at: new Date().toISOString(),
-          trade_no: trade_no || null,
-          metadata: { ...order.metadata, needsManualProcessing: true, activateError: activateResult.error },
-        }).eq('order_no', order_no);
-        return NextResponse.json({ success: true, message: '订单已处理（开通失败，请联系客服）' });
-      }
-
-      // 7. 更新订单状态为已完成
-      await sb.from('orders').update({
-        status: 'completed',
-        paid_at: new Date().toISOString(),
-        trade_no: trade_no || null,
-      }).eq('order_no', order_no);
-
-      console.log(`[Payment] ✅ 订单完成: order=${order_no}, user=${targetUserId}, plan=${targetPlanId}, credits=${plan.credits}`);
-
-      return NextResponse.json({ success: true, message: '支付成功，会员已开通' });
+      const providerMetadata = {
+        ...(order.metadata || {}),
+        provider: pay_method || 'legacy',
+        providerStatus: callbackStatus || null,
+        transactionId: trade_no || null,
+        lastNotifyAt: new Date().toISOString(),
+        lastNotifyPayload: body,
+        ...(plan_id ? { planId: plan_id } : {}),
+        ...(billing ? { billing } : {}),
+        ...(user_id ? { callbackUserId: user_id } : {}),
+      };
+      const fulfilled = await fulfillPaidOrder(sb, order as Record<string, unknown>, providerMetadata, trade_no || null);
+      return NextResponse.json({ success: true, message: fulfilled.message, order: fulfilled.order });
     }
 
     return NextResponse.json({ error: '未知操作' }, { status: 400 });
@@ -423,6 +422,75 @@ export async function GET(req: NextRequest) {
       .single();
 
     if (!order) return NextResponse.json({ error: '订单不存在' }, { status: 404 });
+
+    const existingMetadata = (order.metadata || {}) as Record<string, unknown>;
+    if (order.status === 'paid') {
+      const freshUser = await readPaymentUser(sb, order.user_id);
+      return NextResponse.json({
+        order: { ...order, status: 'completed' },
+        message: existingMetadata.activatedPlanName ? `付款成功，恭喜您成为${existingMetadata.activatedPlanName}！` : '支付成功，会员已开通',
+        user: freshUser,
+      });
+    }
+
+    if (order.status === 'completed' && existingMetadata.activateError) {
+      const fulfilled = await fulfillPaidOrder(
+        sb,
+        order as Record<string, unknown>,
+        {
+          ...existingMetadata,
+          recoveryStatusQueryAt: new Date().toISOString(),
+        },
+        typeof order.trade_no === 'string' ? order.trade_no : null
+      );
+      const freshUser = await readPaymentUser(sb, (fulfilled.order as Record<string, unknown>)?.user_id || order.user_id);
+      return NextResponse.json({ ...fulfilled, user: freshUser || fulfilled.user || null });
+    }
+
+    if (order.status === 'pending') {
+      try {
+        const queryResult = await queryXunhuOrder(orderNo);
+        const mappedStatus = xunhuStatusToOrderStatus(queryResult.status);
+        const providerMetadata = {
+          ...((order.metadata || {}) as Record<string, unknown>),
+          provider: 'xunhu',
+          providerStatus: queryResult.status || null,
+          providerOrderId: queryResult.openOrderId || null,
+          transactionId: queryResult.transactionId || null,
+          lastStatusQueryAt: new Date().toISOString(),
+          lastStatusQueryPayload: queryResult.raw,
+        };
+
+        const queryAmountFen = amountYuanToFen(queryResult.totalFee);
+        if (queryAmountFen !== null && queryAmountFen !== Number(order.amount || 0)) {
+          console.warn(`[Payment][StatusQuery] amount mismatch: order=${orderNo}, orderAmount=${order.amount}, query=${queryResult.totalFee}`);
+          return NextResponse.json({ order, message: '订单金额校验失败，请联系 602473182@qq.com' });
+        }
+
+        if (mappedStatus === 'completed' || isXunhuPaidResult(queryResult)) {
+          const fulfilled = await fulfillPaidOrder(
+            sb,
+            order as Record<string, unknown>,
+            providerMetadata,
+            queryResult.transactionId || queryResult.openOrderId || null
+          );
+          const freshUser = await readPaymentUser(sb, (fulfilled.order as Record<string, unknown>)?.user_id || order.user_id);
+          return NextResponse.json({ ...fulfilled, user: freshUser || fulfilled.user || null });
+        }
+
+        if (mappedStatus !== 'pending') {
+          await updateOrderCompat(sb, {
+            status: mappedStatus,
+            trade_no: queryResult.transactionId || queryResult.openOrderId || null,
+            metadata: providerMetadata,
+          }, orderNo);
+          return NextResponse.json({ order: { ...order, status: mappedStatus }, message: `当前订单状态：${mappedStatus}` });
+        }
+      } catch (queryError) {
+        const msg = queryError instanceof Error ? queryError.message : 'unknown';
+        console.warn(`[Payment][StatusQuery] provider query failed: order=${orderNo}, error=${msg}`);
+      }
+    }
 
     // 自动标记超时订单
     if (order.status === 'pending' && order.expires_at && new Date(order.expires_at) < new Date()) {

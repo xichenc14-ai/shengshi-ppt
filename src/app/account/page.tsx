@@ -121,8 +121,8 @@ export default function AccountPage() {
       setHistoryLoading(true);
       try {
         const [historyRes, overviewRes] = await Promise.all([
-          fetch('/api/history?limit=8'),
-          fetch('/api/account/overview'),
+          fetch('/api/history?limit=8', { cache: 'no-store' }),
+          fetch('/api/account/overview', { cache: 'no-store' }),
         ]);
 
         const historyData = await historyRes.json();
@@ -135,9 +135,13 @@ export default function AccountPage() {
             setOverview(overviewData);
             const nextExpire = overviewData?.user?.plan_expires_at || null;
             const nextCredits = Number(overviewData?.user?.credits || user.credits || 0);
-            const needSync = nextExpire !== (user.plan_expires_at || null) || nextCredits !== Number(user.credits || 0);
+            const nextPlanType = overviewData?.user?.plan_type || user.plan_type || 'free';
+            const needSync = nextExpire !== (user.plan_expires_at || null)
+              || nextCredits !== Number(user.credits || 0)
+              || nextPlanType !== user.plan_type;
             if (needSync) {
               updateUser({
+                plan_type: nextPlanType,
                 plan_expires_at: nextExpire,
                 credits: nextCredits,
               });
@@ -427,12 +431,9 @@ export default function AccountPage() {
                     <p className="mt-1 text-base font-black text-slate-900">{totalCreditsUsed}</p>
                   </div>
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-2.5">
+                <div className="mt-4">
                   <Link href="/pricing" className="flex items-center justify-center gap-1.5 rounded-xl sx-primary-btn px-4 py-3 text-sm font-bold text-white">
                     查看套餐 <ArrowRight size={14} weight="bold" />
-                  </Link>
-                  <Link href="/pricing#credit-topup" className="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm font-bold text-indigo-700">
-                    充值积分 <ArrowRight size={14} weight="bold" />
                   </Link>
                 </div>
               </div>

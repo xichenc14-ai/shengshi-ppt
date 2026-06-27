@@ -35,6 +35,31 @@ function derivePlanExpireFromOrder(order: { paid_at?: string | null; created_at?
   return expire || null;
 }
 
+async function readRecentOrders(sb: NonNullable<ReturnType<typeof getSupabase>>, userId: string) {
+  const selections = [
+    'id,order_no,product_type,product_name,amount,status,pay_method,metadata,paid_at,created_at',
+    'id,order_no,product_type,product_name,amount,status,payment_provider,paid_at,created_at',
+    'id,order_no,product_type,product_name,amount,status,paid_at,created_at',
+  ];
+
+  for (const select of selections) {
+    const res = await sb
+      .from('orders')
+      .select(select)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (!res.error) return res;
+  }
+
+  return await sb
+    .from('orders')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(100);
+}
+
 export async function GET() {
   const session = await getSession();
   if (!session?.isLoggedIn || !session.user?.id) {
@@ -61,12 +86,7 @@ export async function GET() {
       : userWithExpireRes;
 
     const [orderRes, txRes] = await Promise.all([
-      sb
-        .from('orders')
-        .select('id,order_no,product_type,product_name,amount,status,pay_method,metadata,paid_at,created_at')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(100),
+      readRecentOrders(sb, userId),
       sb
         .from('credit_transactions')
         .select('id,amount,type,description,created_at')
@@ -85,7 +105,8 @@ export async function GET() {
     const orders = orderRes.data || [];
     const transactions = txRes.data || [];
 
-    const completedSubOrders = orders.filter((o) => o.status === 'completed' && o.product_type === 'subscription');
+    const isPaidOrder = (status: string | null | undefined) => status === 'completed' || status === 'paid';
+    const completedSubOrders = orders.filter((o) => isPaidOrder(o.status) && o.product_type === 'subscription');
     const lastSubOrder = completedSubOrders[0];
     const derivedExpire = lastSubOrder ? derivePlanExpireFromOrder(lastSubOrder) : null;
     const planExpiresAt = (user as { plan_expires_at?: string | null }).plan_expires_at || derivedExpire;
@@ -101,7 +122,7 @@ export async function GET() {
     }).length;
 
     const paidAmountYuan = orders
-      .filter((o) => o.status === 'completed')
+      .filter((o) => isPaidOrder(o.status))
       .reduce((sum, o) => sum + Number(o.amount || 0) / 100, 0);
 
     const isAdmin = isAdminIdentity({ id: user.id, phone: user.phone || '' });

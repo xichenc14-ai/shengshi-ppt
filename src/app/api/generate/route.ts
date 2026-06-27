@@ -284,7 +284,7 @@ PPT结构规范：
           presentation,
           creditsUsed: 0,
           balance: null,
-          warning: '积分扣除失败，请联系客服',
+          warning: '积分扣除失败，请联系 602473182@qq.com',
         });
       }
     }

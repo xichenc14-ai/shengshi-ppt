@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin-auth';
-import { inspectProviderReadiness } from '@/lib/payment/provider-adapter';
+import { getSupportedPaymentMethods, inspectProviderReadiness } from '@/lib/payment/provider-adapter';
 
 function boolEnv(name: string): boolean {
   return Boolean(process.env[name]);
@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
 
   const wechat = inspectProviderReadiness('wechat');
   const alipay = inspectProviderReadiness('alipay');
+  const supportedMethods = getSupportedPaymentMethods();
 
   const notifyUrl = process.env.PAYMENT_NOTIFY_URL || '';
   const notifyUrlValid = /^https:\/\//i.test(notifyUrl);
@@ -32,20 +33,19 @@ export async function GET(request: NextRequest) {
   const ready = core.supabaseUrl
     && core.supabaseServiceRole
     && core.paymentNotifyUrl
-    && core.paymentNotifySecret
-    && wechat.ready
-    && alipay.ready;
+    && (!supportedMethods.includes('wechat') || wechat.ready)
+    && (!supportedMethods.includes('alipay') || alipay.ready);
 
   return NextResponse.json({
     status: ready ? 'ready' : 'not_ready',
     timestamp: new Date().toISOString(),
     core,
+    supportedMethods,
     providers: { wechat, alipay },
     recommendations: [
       !core.paymentNotifyUrl ? 'PAYMENT_NOTIFY_URL 必须是 https 回调地址' : null,
-      !core.paymentNotifySecret ? 'PAYMENT_NOTIFY_SECRET 必须配置（支付通知鉴权）' : null,
-      !wechat.ready ? `微信支付配置缺失: ${wechat.missing.join(', ')}` : null,
-      !alipay.ready ? `支付宝配置缺失: ${alipay.missing.join(', ')}` : null,
+      supportedMethods.includes('wechat') && !wechat.ready ? `微信支付配置缺失: ${wechat.missing.join(', ')}` : null,
+      supportedMethods.includes('alipay') && !alipay.ready ? `支付宝配置缺失: ${alipay.missing.join(', ')}` : null,
     ].filter(Boolean),
   }, {
     headers: {

@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 
-// 现代登录方式：手机号验证码 | 账号密码
+// 现代登录方式：手机号验证码 | 手机号密码
 type TabType = 'phone' | 'account';
 
 const TABS: { key: TabType; label: string; icon: string }[] = [
@@ -37,7 +37,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
   const [regConfirmPwd, setRegConfirmPwd] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // 账号密码登录
+  // 手机号密码登录
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
   const [showPwdLogin, setShowPwdLogin] = useState(false);
@@ -252,16 +252,18 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
     setLoading(false);
   }, [phone, regUsername, regPassword, regConfirmPwd, login, handleClose]);
 
-  // ===== 账号密码登录 =====
+  // ===== 手机号密码登录 =====
   const handleAccountLogin = useCallback(async () => {
-    if (!account.trim()) { setError('请输入用户名或手机号'); return; }
+    const loginPhone = formatPhone(account);
+    if (!loginPhone) { setError('请输入手机号'); return; }
+    if (!isValidPhone(loginPhone)) { setError('请输入正确的手机号'); return; }
     if (!password) { setError('请输入密码'); return; }
     setLoading(true); setError('');
     try {
       const res = await fetch('/api/user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'password_login', account: account.trim(), password }),
+        body: JSON.stringify({ action: 'password_login', account: loginPhone, password }),
       });
       const data = await res.json();
       if (data.error) { setError(data.error); setLoading(false); return; }
@@ -527,15 +529,17 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
             </>
           )}
 
-          {/* ==================== 账号密码登录 ==================== */}
+          {/* ==================== 手机号密码登录 ==================== */}
           {tab === 'account' && (
             <div className="animate-fade-in">
-              <label className="text-xs font-medium text-gray-500 mb-1.5 block">用户名或手机号</label>
+              <label className="text-xs font-medium text-gray-500 mb-1.5 block">手机号</label>
               <input
-                type="text"
+                type="tel"
+                inputMode="numeric"
                 value={account}
-                onChange={e => { setAccount(e.target.value); setError(''); }}
-                placeholder="请输入用户名或手机号"
+                onChange={e => { setAccount(formatPhone(e.target.value)); setError(''); }}
+                placeholder="请输入手机号"
+                maxLength={11}
                 className="w-full px-4 py-3.5 rounded-2xl bg-[#FAFBFE] border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none text-base sm:text-sm transition-all mb-3"
               />
 
@@ -556,7 +560,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
 
               <button
                 onClick={handleAccountLogin}
-                disabled={!account.trim() || !password || loading}
+                disabled={!isValidPhone(account) || !password || loading}
                 className="w-full py-3.5 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-2xl text-sm font-bold hover:shadow-lg hover:shadow-purple-300/40 active:scale-[0.98] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 {loading ? (
@@ -569,7 +573,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
 
               <div className="flex items-center justify-between mt-3">
                 <button onClick={() => setTab('phone')} className="text-xs text-[#5B4FE9] hover:underline font-medium">没有账号？验证码注册</button>
-                <button onClick={() => setError('请联系客服重置密码')} className="text-xs text-gray-400 hover:text-gray-600">忘记密码？</button>
+                <button onClick={() => setError('请联系 602473182@qq.com 重置密码')} className="text-xs text-gray-400 hover:text-gray-600">忘记密码？</button>
               </div>
 
               {error && <p className="text-center text-xs text-red-500 mt-3 flex items-center justify-center gap-1"><span>⚠️</span>{error}</p>}

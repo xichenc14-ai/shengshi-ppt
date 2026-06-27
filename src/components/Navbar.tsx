@@ -9,6 +9,7 @@ import {
   Layers3,
   LogOut,
   Menu,
+  RefreshCw,
   UserRound,
   X,
 } from 'lucide-react';
@@ -38,6 +39,7 @@ function AccountMenu({
   logout,
   includeNavigation,
   onFeaturesClick,
+  refreshing,
 }: {
   user: UserInfo;
   displayCredits: number;
@@ -45,6 +47,7 @@ function AccountMenu({
   logout: () => void;
   includeNavigation?: boolean;
   onFeaturesClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  refreshing?: boolean;
 }) {
   const menuClass = 'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-600 transition hover:bg-purple-50/70 hover:text-purple-600';
 
@@ -68,9 +71,10 @@ function AccountMenu({
             <p className="text-base font-black leading-tight text-amber-600">{displayCredits}</p>
           </div>
         </div>
-        <Link href="/pricing" onClick={onClose} className="rounded-full bg-white/75 px-3 py-1.5 text-xs font-bold text-violet-600 shadow-sm transition hover:bg-white">
-          充值
-        </Link>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-white/75 px-3 py-1.5 text-xs font-bold text-violet-600 shadow-sm">
+          <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+          {refreshing ? '刷新中' : '实时'}
+        </span>
       </div>
 
       <div className="space-y-1 px-3 py-3">
@@ -112,10 +116,11 @@ function AccountMenu({
 }
 
 export default function Navbar({ onLogoClick }: NavbarProps) {
-  const { user, logout, openLogin } = useAuth();
+  const { user, logout, openLogin, refreshUser } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = React.useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [adminServiceCredits, setAdminServiceCredits] = React.useState<number | null>(null);
+  const [userRefreshing, setUserRefreshing] = React.useState(false);
 
   React.useEffect(() => {
     if (!user?.is_admin) {
@@ -142,6 +147,25 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
     ? (adminServiceCredits ?? user.credits)
     : (user?.credits ?? 0);
 
+  const refreshAccountState = React.useCallback(async () => {
+    if (!user) return;
+    setUserRefreshing(true);
+    try {
+      await refreshUser({ force: true });
+      if (user.is_admin) {
+        const res = await fetch('/api/gamma-balance', { cache: 'no-store' });
+        const data = res.ok ? await res.json() : null;
+        const liveRemaining = Number(data?.liveBalance?.remaining);
+        const sharedRemaining = Number(data?.sharedRemaining ?? data?.totalRemaining);
+        if (Number.isFinite(liveRemaining)) setAdminServiceCredits(liveRemaining);
+        else if (Number.isFinite(sharedRemaining)) setAdminServiceCredits(sharedRemaining);
+      }
+    } catch {
+    } finally {
+      setUserRefreshing(false);
+    }
+  }, [refreshUser, user]);
+
   const closeMenus = () => {
     setUserMenuOpen(false);
     setMobileMenuOpen(false);
@@ -167,6 +191,14 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
     window.scrollTo({ top: Math.max(0, top), left: 0, behavior: 'smooth' });
   };
 
+  const toggleUserMenu = () => {
+    setUserMenuOpen((open) => {
+      const nextOpen = !open;
+      if (nextOpen) void refreshAccountState();
+      return nextOpen;
+    });
+  };
+
   return (
     <>
       <nav className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-slate-200/70 bg-white/82 px-4 backdrop-blur-2xl md:h-[72px] md:px-8">
@@ -184,14 +216,17 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
           {user ? (
             <div className="relative hidden md:block">
               <button
-                onClick={() => setUserMenuOpen(open => !open)}
+                onClick={toggleUserMenu}
                 className="flex items-center gap-2 rounded-2xl border border-transparent p-1 transition-all hover:border-purple-100 hover:bg-purple-50/50 md:px-2"
                 aria-expanded={userMenuOpen}
               >
                 <UserAvatar user={user} />
                 <div className="text-left">
                   <p className="text-sm font-medium leading-tight text-gray-800">{user.nickname}</p>
-                  <p className="text-[10px] text-amber-600">🪙 {displayCredits} {user.is_admin ? '服务额度' : '积分'}</p>
+                  <p className="flex items-center gap-1 text-[10px] text-amber-600">
+                    <span>🪙 {displayCredits} {user.is_admin ? '服务额度' : '积分'}</span>
+                    {userRefreshing && <RefreshCw size={10} className="animate-spin" />}
+                  </p>
                 </div>
                 <ChevronDown size={13} strokeWidth={2.5} className={`text-gray-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
               </button>
@@ -200,7 +235,7 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
                 <>
                   <button className="fixed inset-0 z-40 cursor-default" onClick={() => setUserMenuOpen(false)} aria-label="关闭用户菜单" />
                   <div className="absolute right-0 top-full z-50 mt-2 w-72 animate-fade-in-scale">
-                    <AccountMenu user={user} displayCredits={displayCredits} logout={logout} onClose={() => setUserMenuOpen(false)} />
+                    <AccountMenu user={user} displayCredits={displayCredits} logout={logout} onClose={() => setUserMenuOpen(false)} refreshing={userRefreshing} />
                   </div>
                 </>
               )}
@@ -220,7 +255,13 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
 
           <button
             className="flex h-10 w-10 items-center justify-center rounded-[14px] border border-transparent text-slate-500 transition hover:border-purple-100 hover:bg-purple-50/60 md:hidden"
-            onClick={() => setMobileMenuOpen(open => !open)}
+            onClick={() => {
+              setMobileMenuOpen(open => {
+                const nextOpen = !open;
+                if (nextOpen && user) void refreshAccountState();
+                return nextOpen;
+              });
+            }}
             aria-label={mobileMenuOpen ? '关闭菜单' : '打开菜单'}
             aria-expanded={mobileMenuOpen}
           >
@@ -241,6 +282,7 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
                 onClose={() => setMobileMenuOpen(false)}
                 onFeaturesClick={handleFeaturesClick}
                 includeNavigation
+                refreshing={userRefreshing}
               />
             ) : (
               <div className="space-y-1 rounded-[22px] border border-white/80 bg-white/94 p-3 shadow-[0_24px_70px_rgba(54,48,100,0.18)] backdrop-blur-2xl">

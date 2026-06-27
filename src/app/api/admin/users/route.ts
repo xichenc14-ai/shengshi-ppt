@@ -216,12 +216,12 @@ export async function POST(request: NextRequest) {
         .from('orders')
         .select('paid_at,created_at,metadata,status,product_type')
         .eq('user_id', targetUserId)
-        .eq('status', 'completed')
         .eq('product_type', 'subscription')
         .order('created_at', { ascending: false })
         .limit(100);
 
-      const latestExpire = calcPlanExpireFromOrders((subOrders || []) as Array<{ paid_at?: string | null; created_at?: string; metadata?: unknown }>);
+      const paidSubOrders = (subOrders || []).filter((order) => order.status === 'completed' || order.status === 'paid');
+      const latestExpire = calcPlanExpireFromOrders(paidSubOrders as Array<{ paid_at?: string | null; created_at?: string; metadata?: unknown }>);
       const now = new Date();
       const base = latestExpire && new Date(latestExpire).getTime() > now.getTime() ? new Date(latestExpire) : now;
       const paidAt = base.toISOString();

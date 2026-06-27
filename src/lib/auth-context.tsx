@@ -36,6 +36,8 @@ interface AuthContextType {
   logout: () => void;
   updateCredits: (credits: number) => void;
   updateUser: (data: Partial<UserInfo>) => void;
+  refreshUser: (options?: { force?: boolean }) => Promise<UserInfo | null>;
+  syncUserSnapshot: (snapshot: Partial<UserInfo>) => Promise<UserInfo | null>;
   openLogin: () => void;
   closeLogin: () => void;
   openPayment: (plan: PaymentPlan) => void;
@@ -53,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 从服务端session恢复用户状态
   useEffect(() => {
-    fetch('/api/session')
+    fetch('/api/session', { cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
         if (data.isLoggedIn && data.user) {
@@ -116,6 +118,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .catch(() => false);
   }, []);
 
+  const refreshUser = useCallback(async (options?: { force?: boolean }) => {
+    try {
+      const res = options?.force
+        ? await fetch('/api/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'update', user: {} }),
+            cache: 'no-store',
+          })
+        : await fetch('/api/session', { cache: 'no-store' });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if ((data?.isLoggedIn || data?.success) && data?.user) {
+        setUser(data.user);
+        return data.user as UserInfo;
+      }
+      if (!data?.isLoggedIn) setUser(null);
+      return null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const syncUserSnapshot = useCallback(async (snapshot: Partial<UserInfo>) => {
+    setUser(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        ...snapshot,
+        credits: Number(snapshot.credits ?? prev.credits ?? 0),
+        plan_type: snapshot.plan_type || prev.plan_type || 'free',
+      };
+    });
+    return await refreshUser({ force: true });
+  }, [refreshUser]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      void refreshUser();
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') void refreshUser();
+    };
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [refreshUser]);
+
   const logout = useCallback(() => {
     setUser(null);
     // 销毁服务端session
@@ -126,11 +179,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(prev => {
       if (!prev) return prev;
       const updated = { ...prev, credits };
-      fetch('/api/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update', user: { credits } }),
-      }).catch(() => {});
+      window.setTimeout(() => {
+        void fetch('/api/session', { cache: 'no-store' })
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data?.isLoggedIn && data?.user) setUser(data.user);
+          })
+          .catch(() => {});
+      }, 300);
       return updated;
     });
   }, []);
@@ -163,6 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider value={{
       user, loading, showLogin, showPayment, paymentPlan,
       login, logout, updateCredits, updateUser,
+      refreshUser, syncUserSnapshot,
       openLogin, closeLogin, openPayment, closePayment,
     }}>
       {children}
