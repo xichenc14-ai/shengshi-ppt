@@ -9,6 +9,7 @@ import {
   isDevCleanupAllowed,
   isIPBlocked,
   rateLimit,
+  rollbackSMSRateLimit,
 } from '@/lib/rate-limit';
 import { checkVerifyAttemptsDB, clearVerifyAttempts, recordVerifyAttempt } from '@/lib/verify-attempts';
 import type { DeductCreditsResult, TypedSupabaseClient } from '@/lib/supabase-types';
@@ -249,6 +250,7 @@ export async function POST(req: NextRequest) {
         if (!result.success) {
           console.error('[SMS] 发送失败:', result.error || 'unknown');
           if (process.env.NODE_ENV === 'production') {
+            rollbackSMSRateLimit(ip, phone);
             return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
           }
           console.warn('[SMS] 发送失败，开发环境使用本地验证码:', result.error);
@@ -258,6 +260,7 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         console.error('[SMS] 模块异常:', e);
         if (process.env.NODE_ENV === 'production') {
+          rollbackSMSRateLimit(ip, phone);
           return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
         }
       }
@@ -269,6 +272,7 @@ export async function POST(req: NextRequest) {
         .insert({ phone, code: finalCode, expires_at: expiresAt, verified: false });
       if (insertErr) {
         console.error('[SMS] 验证码写入失败:', insertErr);
+        rollbackSMSRateLimit(ip, phone);
         return NextResponse.json({ error: '验证码写入失败，请稍后重试' }, { status: 500 });
       }
 
@@ -615,17 +619,17 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '新手机号格式不正确' }, { status: 400 });
       }
 
+      const { data: exists } = await sb.from('users').select('id').eq('phone', newPhone).limit(1);
+      if (exists && exists.length > 0) {
+        return NextResponse.json({ error: '该手机号已被绑定' }, { status: 409 });
+      }
+
       const smsCheck = await checkSMSRateLimit(ip, newPhone);
       if (!smsCheck.allowed) {
         return NextResponse.json(
           { error: smsCheck.reason, retryAfter: smsCheck.retryAfter },
           { status: 429 }
         );
-      }
-
-      const { data: exists } = await sb.from('users').select('id').eq('phone', newPhone).limit(1);
-      if (exists && exists.length > 0) {
-        return NextResponse.json({ error: '该手机号已被绑定' }, { status: 409 });
       }
 
       const code = genCode();
@@ -644,16 +648,23 @@ export async function POST(req: NextRequest) {
         delete fallbackPayload.type;
         ({ error: insertErr } = await sb.from('verification_codes').insert(fallbackPayload));
       }
-      if (insertErr) return NextResponse.json({ error: '验证码写入失败' }, { status: 500 });
+      if (insertErr) {
+        rollbackSMSRateLimit(ip, newPhone);
+        return NextResponse.json({ error: '验证码写入失败' }, { status: 500 });
+      }
 
       try {
         const { sendSMS } = await import('@/lib/sms-client');
         const result = await sendSMS(newPhone, code);
         if (!result.success && process.env.NODE_ENV === 'production') {
+          rollbackSMSRateLimit(ip, newPhone);
+          await sb.from('verification_codes').delete().eq('phone', newPhone).eq('code', code);
           return NextResponse.json({ error: '验证码发送失败，请稍后重试' }, { status: 500 });
         }
       } catch (e) {
         if (process.env.NODE_ENV === 'production') {
+          rollbackSMSRateLimit(ip, newPhone);
+          await sb.from('verification_codes').delete().eq('phone', newPhone).eq('code', code);
           return NextResponse.json({ error: '验证码发送失败，请稍后重试' }, { status: 500 });
         }
         console.warn('[ChangePhone] 发送验证码降级:', e);
@@ -720,7 +731,8 @@ export async function POST(req: NextRequest) {
    if (action === 'estimate_generation') {
       if (sb && await checkUserIsAdmin(sb, String(body?.userId || ''))) {
         const breakdown = estimateGenerationCredits({ numPages: body?.numPages || 10, imageSource: body?.imageSource || 'themeAccent', imageModel: body?.imageModel, estimatedImages: body?.estimatedImages || 0 });
-        return NextResponse.json({ success: true, estimate: true, needed: 0, balance: (() => { try { return getSharedKeyPoolRemaining(); } catch { return 0; } })(), sufficient: true, breakdown, note: '管理员账户使用共享服务额度' });
+        const balance = await getSharedKeyPoolRemaining().catch(() => 0);
+        return NextResponse.json({ success: true, estimate: true, needed: 0, balance, sufficient: true, breakdown, note: '管理员账户使用共享服务额度' });
       }
       const { userId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
       if (!userId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
@@ -742,7 +754,8 @@ export async function POST(req: NextRequest) {
     if (action === 'hold_generation') {
       if (sb && await checkUserIsAdmin(sb, String(body?.userId || ''))) {
         const breakdown = estimateGenerationCredits({ numPages: body?.numPages || 10, imageSource: body?.imageSource || 'themeAccent', imageModel: body?.imageModel, estimatedImages: body?.estimatedImages || 0 });
-        return NextResponse.json({ success: true, holdAmount: 0, balance: (() => { try { return getSharedKeyPoolRemaining(); } catch { return 0; } })(), breakdown, note: '管理员账户不占用平台积分' });
+        const balance = await getSharedKeyPoolRemaining().catch(() => 0);
+        return NextResponse.json({ success: true, holdAmount: 0, balance, breakdown, note: '管理员账户不占用平台积分' });
       }
       const { userId, generationId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
       if (!userId || !generationId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
@@ -794,7 +807,8 @@ export async function POST(req: NextRequest) {
     if (action === 'settle_generation') {
       if (sb && await checkUserIsAdmin(sb, String(body?.userId || ''))) {
         const breakdown = estimateGenerationCredits({ numPages: body?.numPages || 10, imageSource: body?.imageSource || 'themeAccent', imageModel: body?.imageModel, estimatedImages: body?.estimatedImages || 0 });
-        return NextResponse.json({ success: true, creditsUsed: 0, balance: (() => { try { return getSharedKeyPoolRemaining(); } catch { return 0; } })(), compensated: false, breakdown, note: '管理员账户不占用平台积分，使用共享服务额度' });
+        const balance = await getSharedKeyPoolRemaining().catch(() => 0);
+        return NextResponse.json({ success: true, creditsUsed: 0, balance, compensated: false, breakdown, note: '管理员账户不占用平台积分，使用共享服务额度' });
       }
       const { userId, generationId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
       if (!userId || !generationId) return NextResponse.json({ error: '参数错误' }, { status: 400 });

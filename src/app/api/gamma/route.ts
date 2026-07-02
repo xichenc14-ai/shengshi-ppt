@@ -473,7 +473,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 🚨 V8: 使用Key池智能选择（替代单一环境变量）
-    const selectedKey = selectBestKey();
+    const selectedKey = await selectBestKey();
     const apiKey = selectedKey.key;
     console.log('[Gamma] 使用Key:', selectedKey.label, '| 余额:', selectedKey.remaining);
 
@@ -604,7 +604,7 @@ export async function POST(request: NextRequest) {
       const errText = await gammaResponse.text();
       console.error('[Gamma] API error:', gammaResponse.status, errText);
       // 记录Key失败
-      recordKeyFailure(apiKey);
+      await recordKeyFailure(apiKey);
       return NextResponse.json(
         { error: `生成服务调用失败: ${gammaResponse.status}`, detail: errText.substring(0, 500) },
         { status: 502 }
@@ -616,7 +616,7 @@ export async function POST(request: NextRequest) {
 
     // 🚨 V8: 记录积分信息（如果有返回）
     if (gammaData.credits) {
-      updateKeyBalance(apiKey, gammaData.credits.deducted, gammaData.credits.remaining);
+      await updateKeyBalance(apiKey, gammaData.credits.deducted, gammaData.credits.remaining);
       console.log('[Gamma] 积分扣除:', gammaData.credits.deducted, '| 剩余:', gammaData.credits.remaining);
     }
 
@@ -670,8 +670,8 @@ export async function GET(request: NextRequest) {
     }
 
     // GET查询按 key 池重试，避免单 key 限流导致“已生成但状态丢失”
-    const first = selectBestKey();
-    const orderedKeys = [first, ...getAllKeys().filter((k) => k.key !== first.key)];
+    const first = await selectBestKey();
+    const orderedKeys = [first, ...(await getAllKeys()).filter((k) => k.key !== first.key)];
     const maxAttempts = Math.min(4, orderedKeys.length);
     let lastStatus = 502;
     let lastErrorText = '查询失败';
@@ -691,7 +691,7 @@ export async function GET(request: NextRequest) {
         lastErrorText = `查询失败: ${response.status}`;
         // 仅在显式限流/鉴权失败时记失败并切换下一个 key
         if (response.status === 429 || response.status === 401 || response.status === 403 || response.status >= 500) {
-          recordKeyFailure(current.key);
+          await recordKeyFailure(current.key);
           continue;
         }
         return NextResponse.json({ error: lastErrorText }, { status: 502 });
@@ -699,7 +699,7 @@ export async function GET(request: NextRequest) {
 
       const data = await response.json();
       if (data.status === 'completed' && data.credits) {
-        updateKeyBalance(current.key, data.credits.deducted, data.credits.remaining);
+        await updateKeyBalance(current.key, data.credits.deducted, data.credits.remaining);
       }
       return NextResponse.json(data);
     }

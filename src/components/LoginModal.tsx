@@ -124,6 +124,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
   // ===== 手机号：输入手机号 → 自动获取验证码 =====
   const goToVerify = useCallback(async () => {
     if (!phone || !isValidPhone(phone)) { setError('请输入正确的手机号'); return; }
+    if (countdown > 0) return;
     if (sendingCodeRef.current) return;
     sendingCodeRef.current = true;
     setLoading(true); setError(''); setAttemptsLeft(null);
@@ -151,7 +152,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
       sendingCodeRef.current = false;
       setLoading(false);
     }
-  }, [phone]);
+  }, [phone, countdown]);
 
   // ===== 重新发送验证码 =====
   const resendCode = useCallback(async () => {
@@ -349,10 +350,12 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                   </div>
                   <button
                     onClick={goToVerify}
-                    disabled={!isValidPhone(phone) || loading}
+                    disabled={!isValidPhone(phone) || loading || countdown > 0}
                     className="w-full py-3.5 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-2xl text-sm font-bold hover:shadow-lg hover:shadow-purple-300/40 active:scale-[0.98] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                   >
-                    {loading ? (
+                    {countdown > 0 ? (
+                      `${countdown}s 后重试`
+                    ) : loading ? (
                       <span className="flex items-center justify-center gap-2">
                         <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
                         发送中...

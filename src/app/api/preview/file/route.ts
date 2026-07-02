@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const selectedKey = selectBestKey();
+    const selectedKey = await selectBestKey();
     const apiKey = selectedKey.key;
 
     const statusRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {

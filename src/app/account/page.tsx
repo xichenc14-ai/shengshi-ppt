@@ -42,13 +42,13 @@ interface AccountOverview {
   };
   admin?: {
     gamma_pool_credits?: number;
-    gamma_pool_note?: string;
   } | null;
 }
 
 const PLAN_NAMES: Record<string, { label: string; emoji: string; badgeClass: string }> = {
   free: { label: '免费用户', emoji: '💚', badgeClass: 'bg-slate-100 text-slate-600' },
   shengxin: { label: '省心会员', emoji: '💎', badgeClass: 'bg-indigo-100 text-indigo-700' },
+  plus: { label: '省心会员', emoji: '💎', badgeClass: 'bg-indigo-100 text-indigo-700' },
   advanced: { label: '尊享会员', emoji: '👑', badgeClass: 'bg-violet-100 text-violet-700' },
   basic: { label: '省心会员', emoji: '💎', badgeClass: 'bg-indigo-100 text-indigo-700' },
   standard: { label: '尊享会员', emoji: '👑', badgeClass: 'bg-violet-100 text-violet-700' },
@@ -58,8 +58,8 @@ const PLAN_NAMES: Record<string, { label: string; emoji: string; badgeClass: str
 };
 
 const PLAN_PURCHASES = {
-  shengxin: { id: 'shengxin', name: '省心会员（月付）', price: '¥19.9', billing: 'monthly' },
-  advanced: { id: 'advanced', name: '尊享会员（月付）', price: '¥49.9', billing: 'monthly' },
+  plus: { id: 'plus', name: '省心会员（月付）', price: '¥19.9', billing: 'monthly' },
+  pro: { id: 'pro', name: '尊享会员（月付）', price: '¥49.9', billing: 'monthly' },
 } as const;
 
 const AVATAR_CHOICES = ['✨', '📘', '🎯', '💡', '🚀', '🌟', '🧠', '🪄'];
@@ -179,18 +179,23 @@ export default function AccountPage() {
   const plan = useMemo(() => PLAN_NAMES[user?.plan_type || 'free'] || PLAN_NAMES.free, [user?.plan_type]);
   const normalizedPlan = useMemo(() => {
     const raw = String(overview?.user?.plan_type || user?.plan_type || 'free');
-    if (['advanced', 'standard', 'pro', 'vip', 'supreme'].includes(raw)) return 'advanced';
-    if (['shengxin', 'basic'].includes(raw)) return 'shengxin';
+    if (['pro', 'advanced', 'standard', 'vip', 'supreme', 'enterprise'].includes(raw)) return 'pro';
+    if (['plus', 'shengxin', 'basic'].includes(raw)) return 'plus';
     return 'free';
   }, [overview?.user?.plan_type, user?.plan_type]);
   const planExpiresAt = overview?.user?.plan_expires_at || user?.plan_expires_at || null;
   const totalCreditsUsed = overview?.user?.total_credits_used || 0;
   const generationCount = overview?.metrics?.generation_count || 0;
   const currentCredits = Number(overview?.user?.credits ?? user?.credits ?? 0);
+  const isAdmin = Boolean(user?.is_admin || overview?.admin);
 
   const openPayment = (kind: 'renew' | 'upgrade') => {
-    const target = kind === 'renew' && normalizedPlan !== 'free' ? normalizedPlan : 'advanced';
-    const base = target === 'advanced' ? PLAN_PURCHASES.advanced : PLAN_PURCHASES.shengxin;
+    if (kind === 'upgrade') {
+      router.push('/pricing');
+      return;
+    }
+    const target = normalizedPlan !== 'free' ? normalizedPlan : 'plus';
+    const base = target === 'pro' ? PLAN_PURCHASES.pro : PLAN_PURCHASES.plus;
     setPaymentPlan({
       ...base,
       purchaseMode: kind,
@@ -296,9 +301,14 @@ export default function AccountPage() {
       const data = await res.json();
       if (!res.ok || data.error) {
         setError(data.error || '验证码发送失败');
+        const retryAfter = Number(data.retryAfter);
+        if (Number.isFinite(retryAfter) && retryAfter > 0) {
+          setCountdown(Math.ceil(retryAfter));
+        }
         return;
       }
-      setCountdown(60);
+      const retryAfter = Number(data.retryAfter);
+      setCountdown(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.ceil(retryAfter) : 60);
       setMessage('验证码已发送到新手机号');
     } finally {
       setSendingCode(false);
@@ -396,7 +406,7 @@ export default function AccountPage() {
 
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
           {[
-            { label: '可用积分', value: currentCredits, icon: Coins, color: 'from-amber-400 to-orange-500' },
+            { label: isAdmin ? '管理员额度' : '可用积分', value: currentCredits, icon: Coins, color: 'from-amber-400 to-orange-500' },
             { label: '生成次数', value: generationCount, icon: PresentationChart, color: 'from-blue-500 to-indigo-500' },
             { label: '累计消耗', value: totalCreditsUsed, icon: DownloadSimple, color: 'from-cyan-500 to-blue-500' },
             { label: '会员等级', value: plan.label, icon: Sparkle, color: 'from-violet-500 to-fuchsia-500' },
@@ -461,7 +471,7 @@ export default function AccountPage() {
                     <p className="mt-1 text-base font-black text-slate-900">{planExpiresAt ? fmtDate(planExpiresAt) : '当前有效'}</p>
                   </div>
                   <div className="rounded-2xl border border-indigo-100 bg-indigo-50/55 p-4">
-                    <p className="text-[11px] text-slate-400">可用积分</p>
+                    <p className="text-[11px] text-slate-400">{isAdmin ? '管理员额度' : '可用积分'}</p>
                     <p className="mt-1 text-base font-black text-slate-900">{currentCredits}</p>
                   </div>
                   <div className="rounded-2xl border border-indigo-100 bg-indigo-50/55 p-4">
@@ -469,7 +479,7 @@ export default function AccountPage() {
                     <p className="mt-1 text-base font-black text-slate-900">{totalCreditsUsed}</p>
                   </div>
                 </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {!isAdmin && <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <button
                     type="button"
                     onClick={() => openPayment(normalizedPlan === 'free' ? 'upgrade' : 'renew')}
@@ -479,13 +489,13 @@ export default function AccountPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={normalizedPlan === 'advanced'}
+                    disabled={normalizedPlan === 'pro'}
                     onClick={() => openPayment('upgrade')}
                     className="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm font-bold text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     升级尊享会员 <ArrowRight size={14} weight="bold" />
                   </button>
-                </div>
+                </div>}
                 <Link href="/pricing" className="mt-3 inline-flex text-xs font-semibold text-indigo-600 hover:text-indigo-700">
                   查看完整套餐权益
                 </Link>

@@ -22,6 +22,7 @@
     "dashboard:commercial": "node scripts/commercial-dashboard.mjs",
     "env:commercial:export": "node scripts/commercial-env-export.mjs",
     "handoff:commercial": "node scripts/commercial-handoff-summary.mjs",
+    "admin:bootstrap": "node scripts/admin-bootstrap-user.mjs",
     "audit:mobile-ui": "node scripts/mobile-ui-audit.mjs",
     "release-gate:nonpayment": "node scripts/nonpayment-release-gate.mjs"
   },

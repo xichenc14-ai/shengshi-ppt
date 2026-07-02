@@ -5,11 +5,12 @@ import { updateOrderCompat } from '@/lib/payment/order-storage';
 export const FREE_MONTHLY_CREDITS = 40;
 
 export const PLAN_PRICES: Record<string, { name: string; monthly: number; annual: number; credits: number; rank: number }> = {
+  plus: { name: '省心会员', monthly: 19.9, annual: 199, credits: 500, rank: 1 },
+  pro: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500, rank: 2 },
   shengxin: { name: '省心会员', monthly: 19.9, annual: 199, credits: 500, rank: 1 },
   advanced: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500, rank: 2 },
   basic: { name: '省心会员', monthly: 19.9, annual: 199, credits: 500, rank: 1 },
   standard: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500, rank: 2 },
-  pro: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500, rank: 2 },
   vip: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500, rank: 2 },
   supreme: { name: '尊享会员', monthly: 49.9, annual: 499, credits: 1500, rank: 2 },
 };
@@ -100,23 +101,21 @@ function addOneMonth(from: Date): Date {
   return next;
 }
 
-export function normalizePlanId(planType?: string | null): 'free' | 'shengxin' | 'advanced' {
+export function normalizePlanId(planType?: string | null): 'free' | 'plus' | 'pro' {
   const raw = String(planType || 'free');
-  if (raw === 'shengxin' || raw === 'basic') return 'shengxin';
-  if (raw === 'advanced' || raw === 'standard' || raw === 'pro' || raw === 'vip' || raw === 'supreme') return 'advanced';
+  if (raw === 'plus' || raw === 'shengxin' || raw === 'basic') return 'plus';
+  if (raw === 'pro' || raw === 'advanced' || raw === 'standard' || raw === 'vip' || raw === 'supreme' || raw === 'enterprise') return 'pro';
   return 'free';
 }
 
 export function storagePlanType(planId: string): string {
-  if (planId === 'shengxin') return 'basic';
-  if (planId === 'advanced') return 'pro';
-  return planId;
+  return normalizePlanId(planId);
 }
 
 export function getPlanRank(planType?: string | null): number {
   const planId = normalizePlanId(planType);
-  if (planId === 'advanced') return 2;
-  if (planId === 'shengxin') return 1;
+  if (planId === 'pro') return 2;
+  if (planId === 'plus') return 1;
   return 0;
 }
 

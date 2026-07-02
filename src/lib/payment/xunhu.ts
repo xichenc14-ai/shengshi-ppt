@@ -35,6 +35,18 @@ export interface XunhuQueryOrderResult {
   raw: Record<string, unknown>;
 }
 
+export interface XunhuRefundInput {
+  orderNo: string;
+  amountFen: number;
+  reason?: string;
+}
+
+export interface XunhuRefundResult {
+  refundId?: string;
+  status?: string;
+  raw: Record<string, unknown>;
+}
+
 export interface XunhuNotifyPayload {
   trade_order_id?: string;
   total_fee?: string;
@@ -195,6 +207,52 @@ export async function queryXunhuOrder(orderNo: string): Promise<XunhuQueryOrderR
     transactionId: typeof data.transaction_id === 'string' ? data.transaction_id : undefined,
     paidDate: typeof data.paid_date === 'string' ? data.paid_date : undefined,
     openOrderId: typeof data.open_order_id === 'string' ? data.open_order_id : undefined,
+    raw,
+  };
+}
+
+export async function refundXunhuOrder(input: XunhuRefundInput): Promise<XunhuRefundResult> {
+  const config = getXunhuConfig();
+  if (!config) {
+    throw new Error('虎皮椒支付未配置 XUNHU_PAY_APPID/XUNHU_PAY_SECRET');
+  }
+
+  const payload: XunhuPayload = {
+    appid: config.appid,
+    out_trade_order: input.orderNo,
+    trade_order_id: input.orderNo,
+    refund_fee: toYuan(input.amountFen),
+    total_fee: toYuan(input.amountFen),
+    reason: (input.reason || 'admin refund').slice(0, 120),
+    time: Math.floor(Date.now() / 1000),
+    nonce_str: createNonce(),
+  };
+  const signedPayload = { ...payload, hash: createXunhuHash(payload, config.secret) };
+
+  const response = await fetch(getXunhuEndpoint(config.gateway, 'refund'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(signedPayload),
+  });
+
+  const raw = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (!response.ok || !raw) {
+    throw new Error(`虎皮椒退款失败: HTTP ${response.status}`);
+  }
+
+  if (typeof raw.hash === 'string' && !verifyXunhuHash(raw as XunhuPayload, config.secret)) {
+    throw new Error('虎皮椒退款响应验签失败');
+  }
+
+  const errcode = Number(raw.errcode);
+  if (errcode !== 0) {
+    throw new Error(String(raw.errmsg || '虎皮椒退款失败'));
+  }
+
+  const data = raw.data && typeof raw.data === 'object' ? raw.data as Record<string, unknown> : raw;
+  return {
+    refundId: String(data.refund_id || data.refund_no || data.open_refund_id || ''),
+    status: typeof data.status === 'string' ? data.status : undefined,
     raw,
   };
 }

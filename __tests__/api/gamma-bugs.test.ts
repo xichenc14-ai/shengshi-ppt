@@ -271,7 +271,7 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
     expect(res.status).toBe(200);
     const fetchCall = mockFetch.mock.calls[0];
     const calledBody = JSON.parse(fetchCall[1].body as string);
-    expect(calledBody.themeId).toBe('consultant');
+    expect(calledBody.themeId).toBe('petrol');
     expect(String(calledBody.additionalInstructions)).toContain('蓝色系');
   });
 

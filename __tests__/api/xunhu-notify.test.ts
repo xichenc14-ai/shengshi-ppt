@@ -73,7 +73,7 @@ describe('/api/payment/xunhu/notify', () => {
             select: () => ({
               eq: () => ({
                 single: async () => ({
-                  data: { credits: 100 },
+                    data: { id: 'user-1', credits: 100, plan_type: 'free' },
                   error: null,
                 }),
               }),
@@ -121,8 +121,8 @@ describe('/api/payment/xunhu/notify', () => {
 
     expect(res.status).toBe(200);
     expect(text).toBe('success');
-    const membershipUpdate = userUpdates.find((item) => item.plan_type === 'basic');
-    expect(membershipUpdate?.plan_type).toBe('basic');
+    const membershipUpdate = userUpdates.find((item) => item.plan_type === 'plus');
+    expect(membershipUpdate?.plan_type).toBe('plus');
     expect(membershipUpdate?.credits).toBe(600);
     expect(creditTransactions[0].amount).toBe(500);
     expect(orderUpdates.at(-1)?.status).toBe('paid');

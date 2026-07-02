@@ -1999,6 +1999,9 @@ export default function Home() {
         `/api/export-pptx?generationId=${exportGenerationId}&name=${encodeURIComponent(fallbackFilename)}`;
       triggerBrowserDownload(downloadPath);
       setAutoDownloadMessage('started');
+      window.setTimeout(() => {
+        setAutoDownloadMessage('completed');
+      }, 1600);
 
       try {
         await fetch('/api/download', {
@@ -2640,7 +2643,7 @@ export default function Home() {
                     <div className="sx-appear pt-1 md:pt-6 text-center">
                       <h1 className="text-[30px] md:text-6xl lg:text-7xl font-black tracking-tight leading-[1.04] sx-gradient-text">创建你的 PPT</h1>
                       <p className="mt-1.5 md:mt-4 text-[17px] md:text-2xl font-extrabold text-slate-900">
-                        <span className="sx-accent-text">省心PPT让演示更快，更精美，更省心！</span>
+                        <span className="sx-accent-text">省心PPT让演示更快，更美，更省心！</span>
                       </p>
                       <p className="mt-3.5 md:mt-5 max-w-xl mx-auto text-[13px] md:text-base text-slate-500 leading-relaxed">
                         输入主题，AI 自动完成大纲、版式、配色和配图，让每一次表达都有专业设计感。

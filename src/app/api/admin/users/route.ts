@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireAdmin } from '@/lib/admin-auth';
+import { writeAdminAuditLog } from '@/lib/admin-audit';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -30,6 +31,78 @@ function toIsoDateEnd(input: string): string | null {
   const d = new Date(trimmed);
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
+}
+
+function addOneMonthISO(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1);
+  return d.toISOString();
+}
+
+function normalizePlanType(planType: string): 'free' | 'plus' | 'pro' {
+  if (planType === 'plus' || planType === 'shengxin' || planType === 'basic') return 'plus';
+  if (['pro', 'advanced', 'standard', 'vip', 'supreme', 'enterprise'].includes(planType)) return 'pro';
+  return 'free';
+}
+
+function storagePlanType(planType: string): 'free' | 'plus' | 'pro' {
+  return normalizePlanType(planType);
+}
+
+function isMissingColumnError(error: { code?: string; message?: string } | null | undefined): string | null {
+  if (!error) return null;
+  const message = String(error.message || '');
+  if (error.code !== 'PGRST204' && !message.includes('column')) return null;
+  return message.match(/'([^']+)' column/)?.[1] || null;
+}
+
+async function updateUserCompat(
+  sb: NonNullable<ReturnType<typeof getSupabase>>,
+  userId: string,
+  payload: Record<string, unknown>
+): Promise<{ error: { message?: string } | null }> {
+  const nextPayload = { ...payload };
+  for (let i = 0; i < 8; i += 1) {
+    if (Object.keys(nextPayload).length === 0) return { error: null };
+    const { error } = await sb.from('users').update(nextPayload).eq('id', userId);
+    const missing = isMissingColumnError(error as { code?: string; message?: string } | null);
+    if (missing && missing in nextPayload) {
+      delete nextPayload[missing];
+      continue;
+    }
+    return { error: error as { message?: string } | null };
+  }
+  return { error: { message: '用户字段兼容更新失败' } };
+}
+
+async function readUserSnapshot(
+  sb: NonNullable<ReturnType<typeof getSupabase>>,
+  userId: string
+) {
+  const selections = [
+    'id,phone,nickname,credits,plan_type,total_credits_used,last_login_at,created_at,updated_at,plan_expires_at',
+    'id,phone,nickname,credits,plan_type,total_credits_used,last_login_at,created_at,updated_at',
+    'id,phone,nickname,credits,plan_type,last_login_at,created_at,updated_at',
+  ];
+  for (const select of selections) {
+    const { data, error } = await sb.from('users').select(select).eq('id', userId).single();
+    if (!error && data) {
+      const row = data as unknown as Record<string, unknown>;
+      return {
+        id: String(row.id || ''),
+        phone: String(row.phone || ''),
+        nickname: String(row.nickname || '用户'),
+        credits: Number(row.credits || 0),
+        plan_type: normalizePlanType(String(row.plan_type || 'free')),
+        raw_plan_type: String(row.plan_type || 'free'),
+        total_credits_used: Number(row.total_credits_used || 0),
+        plan_expires_at: typeof row.plan_expires_at === 'string' ? row.plan_expires_at : null,
+        last_login_at: typeof row.last_login_at === 'string' ? row.last_login_at : null,
+        created_at: String(row.created_at || ''),
+      };
+    }
+  }
+  return null;
 }
 
 function calcPlanExpireFromOrders(orders: Array<{ paid_at?: string | null; created_at?: string; metadata?: unknown }>): string | null {
@@ -111,33 +184,137 @@ export async function POST(request: NextRequest) {
         type: 'admin_adjust',
         description: `后台调账-${reason}`,
       });
+      await writeAdminAuditLog(sb as never, request, {
+        operatorUserId: auth.userId,
+        operatorPhone: auth.phone,
+        action: 'user_adjust_credits',
+        targetType: 'user',
+        targetId: targetUserId,
+        before: { credits: currentCredits },
+        after: { credits: nextCredits, delta },
+        reason,
+      });
 
+      const snapshot = await readUserSnapshot(sb, targetUserId);
       return NextResponse.json({
         success: true,
         action,
         credits: Number(updatedUser.credits),
+        user: snapshot,
+        transactionRecorded: !txErr,
+        warning: txErr ? '积分已更新，但流水记录失败' : undefined,
+      });
+    }
+
+    if (action === 'set_credits') {
+      const nextCredits = Math.max(0, Math.floor(Number(body?.credits ?? body?.targetCredits ?? 0)));
+      const reason = safeReason(body?.reason);
+      if (!Number.isFinite(nextCredits)) return NextResponse.json({ error: '积分额度无效' }, { status: 400 });
+
+      const currentCredits = Number(user.credits || 0);
+      const delta = nextCredits - currentCredits;
+      const { data: updatedUser, error: uErr } = await sb
+        .from('users')
+        .update({ credits: nextCredits })
+        .eq('id', targetUserId)
+        .eq('credits', currentCredits)
+        .select('credits')
+        .single();
+      if (uErr || !updatedUser) {
+        return NextResponse.json({ error: '积分已发生变化，请刷新后重试' }, { status: 409 });
+      }
+
+      const { error: txErr } = await sb.from('credit_transactions').insert({
+        user_id: targetUserId,
+        amount: delta,
+        balance_after: nextCredits,
+        type: 'admin_set_credits',
+        description: `后台设置积分为${nextCredits}-${reason}`,
+      });
+      await writeAdminAuditLog(sb as never, request, {
+        operatorUserId: auth.userId,
+        operatorPhone: auth.phone,
+        action: 'user_set_credits',
+        targetType: 'user',
+        targetId: targetUserId,
+        before: { credits: currentCredits },
+        after: { credits: nextCredits, delta },
+        reason,
+      });
+
+      const snapshot = await readUserSnapshot(sb, targetUserId);
+      return NextResponse.json({
+        success: true,
+        action,
+        credits: Number(updatedUser.credits),
+        delta,
+        user: snapshot,
         transactionRecorded: !txErr,
         warning: txErr ? '积分已更新，但流水记录失败' : undefined,
       });
     }
 
     if (action === 'set_plan') {
-      const planType = String(body?.planType || '').trim();
-      if (!['free', 'shengxin', 'advanced', 'basic', 'standard', 'pro', 'vip', 'supreme'].includes(planType)) {
+      const requestedPlanType = String(body?.planType || '').trim();
+      if (!['free', 'plus', 'pro', 'shengxin', 'advanced', 'basic', 'standard', 'vip', 'supreme', 'enterprise'].includes(requestedPlanType)) {
         return NextResponse.json({ error: '套餐类型无效' }, { status: 400 });
       }
-      const { error: setErr } = await sb.from('users').update({ plan_type: planType }).eq('id', targetUserId);
-      if (setErr) return NextResponse.json({ error: '套餐更新失败' }, { status: 500 });
-      return NextResponse.json({ success: true, action, plan_type: planType });
+      const planType = normalizePlanType(requestedPlanType);
+      const expireAtISO = planType === 'free'
+        ? null
+        : (toIsoDateEnd(String(body?.expireAt || body?.expiresAt || '')) || addOneMonthISO());
+      const startedAt = planType === 'free' ? null : new Date().toISOString();
+      const { error: setErr } = await updateUserCompat(sb, targetUserId, {
+        plan_type: storagePlanType(planType),
+        plan_started_at: startedAt,
+        plan_expires_at: expireAtISO,
+        last_entitlement_sync_at: new Date().toISOString(),
+      });
+      if (setErr) return NextResponse.json({ error: `套餐更新失败: ${setErr.message || ''}` }, { status: 500 });
+
+      if (planType !== 'free') {
+        const orderNo = `admin_plan_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+        await sb.from('orders').insert({
+          user_id: targetUserId,
+          order_no: orderNo,
+          product_type: 'subscription',
+          product_name: '后台手动修改套餐',
+          amount: 0,
+          status: 'completed',
+          pay_method: 'admin',
+          metadata: {
+            manualExpireAt: expireAtISO,
+            reason: safeReason(body?.reason),
+            operator: auth.userId,
+            planType,
+            storagePlanType: storagePlanType(planType),
+            action,
+          },
+          paid_at: startedAt,
+        });
+      }
+
+      const snapshot = await readUserSnapshot(sb, targetUserId);
+      await writeAdminAuditLog(sb as never, request, {
+        operatorUserId: auth.userId,
+        operatorPhone: auth.phone,
+        action: 'user_set_plan',
+        targetType: 'user',
+        targetId: targetUserId,
+        before: { plan_type: user.plan_type },
+        after: { plan_type: planType, plan_expires_at: expireAtISO },
+        reason: safeReason(body?.reason),
+      });
+      return NextResponse.json({ success: true, action, plan_type: planType, plan_expires_at: expireAtISO, user: snapshot });
     }
 
     if (action === 'set_plan_date' || action === 'grant_membership') {
       const planTypeRaw = String(body?.planType || '').trim();
-      const planType = planTypeRaw || (String(user.plan_type || 'free'));
+      const planType = normalizePlanType(planTypeRaw || (String(user.plan_type || 'free')));
       const reason = safeReason(body?.reason);
       const expireAtISO = toIsoDateEnd(String(body?.expireAt || body?.expiresAt || ''));
 
-      if (!['free', 'shengxin', 'advanced', 'basic', 'standard', 'pro', 'vip', 'supreme'].includes(planType)) {
+      if (!['free', 'plus', 'pro', 'shengxin', 'advanced', 'basic', 'standard', 'vip', 'supreme', 'enterprise'].includes(planTypeRaw || planType)) {
         return NextResponse.json({ error: '套餐类型无效' }, { status: 400 });
       }
       if (!expireAtISO) {
@@ -155,7 +332,7 @@ export async function POST(request: NextRequest) {
       ({
         error: userUpdateErr,
       } = await sb.from('users').update({
-        plan_type: planType,
+        plan_type: storagePlanType(planType),
         credits: nextCredits,
         plan_expires_at: expireAtISO,
       }).eq('id', targetUserId));
@@ -193,17 +370,30 @@ export async function POST(request: NextRequest) {
           reason,
           operator: auth.userId,
           planType,
+          storagePlanType: storagePlanType(planType),
           action,
         },
         paid_at: new Date().toISOString(),
       });
+      await writeAdminAuditLog(sb as never, request, {
+        operatorUserId: auth.userId,
+        operatorPhone: auth.phone,
+        action: action === 'grant_membership' ? 'user_grant_membership' : 'user_set_plan_date',
+        targetType: 'user',
+        targetId: targetUserId,
+        before: { plan_type: user.plan_type, credits: user.credits },
+        after: { plan_type: planType, plan_expires_at: expireAtISO, credits: nextCredits, grantCredits },
+        reason,
+      });
 
+      const snapshot = await readUserSnapshot(sb, targetUserId);
       return NextResponse.json({
         success: true,
         action,
         plan_type: planType,
         plan_expires_at: expireAtISO,
         credits: nextCredits,
+        user: snapshot,
       });
     }
 
@@ -241,10 +431,26 @@ export async function POST(request: NextRequest) {
       if (orderErr) return NextResponse.json({ error: `续期记录写入失败: ${orderErr.message}` }, { status: 500 });
 
       // 同步plan_type；到期展示从订单推导
-      await sb.from('users').update({ plan_type: currentPlan }).eq('id', targetUserId);
-
       const nextExpire = addMonths(paidAt, months);
-      return NextResponse.json({ success: true, action, plan_type: currentPlan, plan_expires_at: nextExpire });
+      await updateUserCompat(sb, targetUserId, {
+        plan_type: storagePlanType(currentPlan),
+        plan_started_at: paidAt,
+        plan_expires_at: nextExpire,
+        last_entitlement_sync_at: new Date().toISOString(),
+      });
+
+      await writeAdminAuditLog(sb as never, request, {
+        operatorUserId: auth.userId,
+        operatorPhone: auth.phone,
+        action: 'user_extend_plan',
+        targetType: 'user',
+        targetId: targetUserId,
+        before: { plan_type: user.plan_type },
+        after: { plan_type: currentPlan, months, plan_expires_at: nextExpire },
+        reason,
+      });
+      const snapshot = await readUserSnapshot(sb, targetUserId);
+      return NextResponse.json({ success: true, action, plan_type: normalizePlanType(currentPlan), plan_expires_at: nextExpire, user: snapshot });
     }
 
     return NextResponse.json({ error: '未知操作' }, { status: 400 });

@@ -232,7 +232,7 @@ describe('POST /api/outline', () => {
     }) as unknown as NextRequest);
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.themeId).toBe('dune');
+    expect(data.themeId).toBe('icebreaker');
     expect(data.imageMode).toBe('web');
   });
 
@@ -281,7 +281,7 @@ describe('POST /api/outline', () => {
     }) as unknown as NextRequest);
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.themeId).toBe('howlite');
+    expect(data.themeId).toBe('pearl');
     expect(data.imageMode).toBe('web');
   });
 
@@ -356,7 +356,7 @@ describe('POST /api/outline', () => {
     }) as unknown as NextRequest);
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.themeId).toBe('dialogue');
+    expect(data.themeId).toBe('rush');
     expect(data.meta.intent.themeLocked).toBe(true);
     expect(data.meta.intent.themeLabel).toBe('红色系');
   });
@@ -381,7 +381,7 @@ describe('POST /api/outline', () => {
     }) as unknown as NextRequest);
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.themeId).toBe('consultant');
+    expect(data.themeId).toBe('petrol');
     expect(data.meta.intent.themeLocked).toBe(true);
     expect(data.meta.intent.themeLabel).toBe('蓝色系');
   });

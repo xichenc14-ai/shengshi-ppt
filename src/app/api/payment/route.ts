@@ -6,7 +6,7 @@ import { verifyAlipayCallback, normalizeAlipayPublicKey } from '@/lib/payment/al
 import { createProviderOrderIntent } from '@/lib/payment/provider-adapter';
 import { getClientIP, rateLimit } from '@/lib/rate-limit';
 import { isPaymentFeatureEnabledServer } from '@/lib/payment-feature';
-import { canCreatePlanOrder, fulfillPaidOrder, PLAN_PRICES, reconcileUserEntitlements } from '@/lib/payment/subscription';
+import { canCreatePlanOrder, fulfillPaidOrder, normalizePlanId, PLAN_PRICES, reconcileUserEntitlements } from '@/lib/payment/subscription';
 import { insertOrderCompat, updateOrderCompat } from '@/lib/payment/order-storage';
 import { isXunhuPaidResult, queryXunhuOrder, xunhuStatusToOrderStatus } from '@/lib/payment/xunhu';
 
@@ -89,7 +89,8 @@ export async function POST(req: NextRequest) {
       if (!isPaymentFeatureEnabledServer()) {
         return NextResponse.json({ error: '支付通道申请中，暂不可下单' }, { status: 503 });
       }
-      const { planId, payMethod, userId, billing = 'monthly' } = body;
+      const { payMethod, userId, billing = 'monthly' } = body;
+      const planId = normalizePlanId(String(body.planId || ''));
       const purchaseMode = String(body.purchaseMode || 'upgrade') === 'renew' ? 'renew' : 'upgrade';
       const createOrderLimit = rateLimit(`payment:create_order:${clientIP}:${userId || 'anon'}`, { windowMs: 60 * 1000, maxRequests: 6 });
       if (!createOrderLimit.allowed) {
@@ -104,7 +105,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      if (!planId) return NextResponse.json({ error: '请选择套餐' }, { status: 400 });
+      if (planId === 'free') return NextResponse.json({ error: '请选择套餐' }, { status: 400 });
 
       const plan = PLAN_PRICES[planId];
       if (!plan) return NextResponse.json({ error: '套餐不存在' }, { status: 400 });

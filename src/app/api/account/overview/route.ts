@@ -126,12 +126,8 @@ export async function GET() {
       .reduce((sum, o) => sum + Number(o.amount || 0) / 100, 0);
 
     const isAdmin = isAdminIdentity({ id: user.id, phone: user.phone || '' });
-    const userCredits = isAdmin ? (() => {
-      try { return getSharedKeyPoolRemaining(); } catch { return 0; }
-    })() : Number(user.credits || 0);
-    const gammaPoolCredits = isAdmin ? (() => {
-      try { return getSharedKeyPoolRemaining(); } catch { return 0; }
-    })() : null;
+    const gammaPoolCredits = isAdmin ? await getSharedKeyPoolRemaining().catch(() => 0) : null;
+    const userCredits = isAdmin ? (gammaPoolCredits || 0) : Number(user.credits || 0);
 
     return NextResponse.json({
       user: {
@@ -139,7 +135,7 @@ export async function GET() {
         phone: user.phone || '',
         nickname: user.nickname || '用户',
         credits: userCredits,
-        plan_type: user.plan_type || 'free',
+        plan_type: isAdmin ? 'pro' : (user.plan_type || 'free'),
         plan_expires_at: planExpiresAt,
         total_credits_used: Number((user as { total_credits_used?: number | null }).total_credits_used || 0),
         last_login_at: user.last_login_at,
@@ -152,7 +148,6 @@ export async function GET() {
       },
       admin: isAdmin ? {
         gamma_pool_credits: gammaPoolCredits,
-        gamma_pool_note: '基于最近一次 Gamma 生成响应追踪；与用户积分独立',
       } : null,
       recentOrders: orders.slice(0, 20),
       recentTransactions: transactions.slice(0, 80),

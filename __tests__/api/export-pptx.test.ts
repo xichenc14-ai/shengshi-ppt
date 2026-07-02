@@ -8,6 +8,14 @@ vi.mock('@/lib/gamma-key-pool', () => ({
     label: '测试key',
     remaining: 1000,
   }),
+  getAllKeys: vi.fn().mockReturnValue([
+    {
+      key: 'mock-key',
+      label: '测试key',
+      remaining: 1000,
+    },
+  ]),
+  recordKeyFailure: vi.fn(),
 }));
 
 const mockFetch = vi.fn();
@@ -74,5 +82,55 @@ describe('/api/export-pptx', () => {
 
     expect(response.status).toBe(502);
     expect(data.error.code).toBe('INVALID_PPTX');
+  });
+
+  it('tries the next Gamma key when the first key cannot read the generation', async () => {
+    const keyPool = await import('@/lib/gamma-key-pool');
+    vi.mocked(keyPool.selectBestKey).mockReturnValueOnce({
+      key: 'wrong-key',
+      label: '错误key',
+      remaining: 1000,
+    } as any);
+    vi.mocked(keyPool.getAllKeys).mockReturnValueOnce([
+      {
+        key: 'wrong-key',
+        label: '错误key',
+        remaining: 1000,
+      },
+      {
+        key: 'creator-key',
+        label: '创建key',
+        remaining: 1000,
+      },
+    ] as any);
+
+    mockFetch
+      .mockResolvedValueOnce(new Response('not found', { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        status: 'completed',
+        exportUrl: 'https://example.com/result.pptx',
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(validPptxBytes(), {
+        status: 200,
+        headers: { 'Content-Type': 'application/octet-stream' },
+      }));
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(200);
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      'https://public-api.gamma.app/v1.0/generations/gen-1',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-API-KEY': 'creator-key' }),
+      }),
+    );
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      3,
+      'https://example.com/result.pptx',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Accept: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }),
+      }),
+    );
   });
 });

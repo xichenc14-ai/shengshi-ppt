@@ -1,5 +1,8 @@
 node_modules/
 .next/
+backups/abandoned-current-window-*/
+backups/pre-gamma-visual-control-*/
+backups/theme-redo-*/
 .env.local
 .env.vercel
 .env.production.local

@@ -1,5 +1,12 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { rateLimit, getRateLimitConfig, getClientIP, checkVerifyAttempts } from '@/lib/rate-limit';
+import { describe, it, expect } from 'vitest';
+import {
+  rateLimit,
+  getRateLimitConfig,
+  getClientIP,
+  checkVerifyAttempts,
+  checkSMSRateLimit,
+  rollbackSMSRateLimit,
+} from '@/lib/rate-limit';
 
 describe('getRateLimitConfig', () => {
   it('should return config for /api/outline', () => {
@@ -101,5 +108,44 @@ describe('checkVerifyAttempts', () => {
     const result = checkVerifyAttempts(phone);
     expect(result.allowed).toBe(false);
     expect(result.reason).toBeDefined();
+  });
+});
+
+describe('checkSMSRateLimit', () => {
+  it('should block a different phone on the same IP within 60 seconds', async () => {
+    const suffix = Date.now();
+    const ip = `sms-shared-ip:${suffix}`;
+
+    const first = await checkSMSRateLimit(ip, `138${String(suffix).slice(-8).padStart(8, '0')}`);
+    const second = await checkSMSRateLimit(ip, `139${String(suffix + 1).slice(-8).padStart(8, '0')}`);
+
+    expect(first.allowed).toBe(true);
+    expect(second.allowed).toBe(false);
+    expect(second.reason).toBe('请60秒后再试');
+  });
+
+  it('should still block the same phone within 60 seconds', async () => {
+    const suffix = Date.now();
+    const phone = `137${String(suffix).slice(-8).padStart(8, '0')}`;
+
+    const first = await checkSMSRateLimit(`sms-ip-a:${suffix}`, phone);
+    const second = await checkSMSRateLimit(`sms-ip-b:${suffix}`, phone);
+
+    expect(first.allowed).toBe(true);
+    expect(second.allowed).toBe(false);
+    expect(second.reason).toBe('请60秒后再试');
+  });
+
+  it('should allow immediate retry after rolling back a failed send', async () => {
+    const suffix = Date.now();
+    const ip = `sms-rollback-ip:${suffix}`;
+    const phone = `136${String(suffix).slice(-8).padStart(8, '0')}`;
+
+    const first = await checkSMSRateLimit(ip, phone);
+    rollbackSMSRateLimit(ip, phone);
+    const second = await checkSMSRateLimit(ip, phone);
+
+    expect(first.allowed).toBe(true);
+    expect(second.allowed).toBe(true);
   });
 });

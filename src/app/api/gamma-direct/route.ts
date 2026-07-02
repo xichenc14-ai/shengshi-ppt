@@ -311,7 +311,7 @@ export async function POST(request: NextRequest) {
     // ===== Layer 6: Gamma API Call (existing code unchanged) =====
 
     // 🚨 V8: 使用Key池智能选择
-    const selectedKey = selectBestKey();
+    const selectedKey = await selectBestKey();
     const apiKey = selectedKey.key;
     console.log('[Gamma Direct] 使用Key:', selectedKey.label, '| 余额:', selectedKey.remaining);
 
@@ -395,7 +395,7 @@ export async function POST(request: NextRequest) {
     if (!createRes.ok) {
       const errText = await createRes.text();
       console.error('[GammaDirect] API error:', createRes.status, errText);
-      recordKeyFailure(apiKey);
+      await recordKeyFailure(apiKey);
       console.log(`[GammaDirect] ERROR reason=gamma_api_failed code=GAMMA_API_ERROR status=${createRes.status}`);
       return NextResponse.json({
         error: `生成服务调用失败: ${createRes.status}`,
@@ -408,7 +408,7 @@ export async function POST(request: NextRequest) {
 
     // 🚨 V8: 记录积分信息（如果有返回）
     if (createData.credits) {
-      updateKeyBalance(apiKey, createData.credits.deducted, createData.credits.remaining);
+      await updateKeyBalance(apiKey, createData.credits.deducted, createData.credits.remaining);
       console.log('[GammaDirect] 积分扣除:', createData.credits.deducted, '| 剩余:', createData.credits.remaining);
     }
 

@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getAllKeys, getKeyPoolStatus, selectBestKey } from '@/lib/gamma-key-pool';
+import { requireAdmin } from '@/lib/admin-auth';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -19,18 +20,22 @@ function getErrorMessage(error: unknown): string {
 // GET: 查询 Gamma API 账户信息（管理/监控用）
 // 注意：Gamma API 没有 /account 端点，余额从 key-pool 追踪
 // 实时余额只能从生成任务的响应中获取
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.reason || '无权限' }, { status: auth.reason === '请先登录' ? 401 : 403 });
+  }
+
   try {
     // 1. 获取 workspace 信息（/me 端点可用）
-    const allKeys = getAllKeys();
+    const allKeys = await getAllKeys();
     let liveBalance: { remaining: number; deducted: number; generationId: string } | null = null;
-    const apiKey = (() => {
-      try {
-        return selectBestKey().key;
-      } catch {
-        return allKeys[0]?.key || '';
-      }
-    })();
+    let apiKey = '';
+    try {
+      apiKey = (await selectBestKey()).key;
+    } catch {
+      apiKey = allKeys[0]?.key || '';
+    }
 
     try {
       if (!apiKey) throw new Error('无可用 Gamma Key');
@@ -71,7 +76,7 @@ export async function GET() {
     }
 
     // 2. 获取 key pool 追踪的余额（基于历史生成响应，非实时）
-    const poolStatus = getKeyPoolStatus();
+    const poolStatus = await getKeyPoolStatus();
     const sharedRemaining = liveBalance?.remaining ?? poolStatus.sharedRemaining;
 
     return NextResponse.json({
@@ -80,12 +85,17 @@ export async function GET() {
       keyPools: poolStatus.keys.map(k => ({
         label: k.label,
         remaining: k.remaining,
+        status: k.status,
+        quotaPoolTag: k.quotaPoolTag,
+        countsTowardAdminQuota: k.countsTowardAdminQuota,
         lastUsed: k.lastUsed,
         successCount: k.successCount,
         failCount: k.failCount,
       })),
-      totalRemaining: sharedRemaining,
+      totalRemaining: poolStatus.adminTotalRemaining,
       sharedRemaining,
+      adminTotalRemaining: poolStatus.adminTotalRemaining,
+      quotaGroups: poolStatus.quotaGroups,
       healthyKeyCount: poolStatus.healthyCount,
       lowBalanceKeys: poolStatus.lowBalanceKeys,
       liveBalance: liveBalance ? {

@@ -10,7 +10,7 @@ import { APP_VERSION } from '@/lib/version';
 import { isPaymentFeatureEnabledClient } from '@/lib/payment-feature';
 
 type Plan = {
-  id: 'free' | 'shengxin' | 'advanced';
+  id: 'free' | 'plus' | 'pro';
   name: string;
   price: number;
   credits: number;
@@ -25,8 +25,8 @@ type Plan = {
 type CompareRow = {
   label: string;
   free: { text: string; type: 'ok' | 'off' | 'strike' | 'neutral' };
-  shengxin: { text: string; type: 'ok' | 'off' | 'neutral' };
-  advanced: { text: string; type: 'ok' | 'off' | 'neutral' };
+  plus: { text: string; type: 'ok' | 'off' | 'neutral' };
+  pro: { text: string; type: 'ok' | 'off' | 'neutral' };
 };
 
 const CREDITS_PER_PAGE = 3;
@@ -49,7 +49,7 @@ const PLANS: Plan[] = [
     approxCostPerPage: '0.3',
   },
   {
-    id: 'shengxin',
+    id: 'plus',
     name: '省心会员',
     price: 19.9,
     credits: 500,
@@ -66,7 +66,7 @@ const PLANS: Plan[] = [
     approxCostPerPage: '0.15',
   },
   {
-    id: 'advanced',
+    id: 'pro',
     name: '尊享会员',
     price: 49.9,
     credits: 1500,
@@ -87,56 +87,56 @@ const COMPARE_ROWS: CompareRow[] = [
   {
     label: '专业模式',
     free: { text: '支持', type: 'ok' },
-    shengxin: { text: '支持', type: 'ok' },
-    advanced: { text: '支持', type: 'ok' },
+    plus: { text: '支持', type: 'ok' },
+    pro: { text: '支持', type: 'ok' },
   },
   {
     label: '省心模式',
     free: { text: '会员专享', type: 'strike' },
-    shengxin: { text: '支持', type: 'ok' },
-    advanced: { text: '支持', type: 'ok' },
+    plus: { text: '支持', type: 'ok' },
+    pro: { text: '支持', type: 'ok' },
   },
   {
     label: '页数上限',
     free: { text: '8页', type: 'neutral' },
-    shengxin: { text: '20页', type: 'ok' },
-    advanced: { text: '40页', type: 'ok' },
+    plus: { text: '20页', type: 'ok' },
+    pro: { text: '40页', type: 'ok' },
   },
   {
     label: '图片模型',
     free: { text: '主题套图 + Pexels图库', type: 'neutral' },
-    shengxin: { text: '主题套图 + Pexels图库 + AI定制图', type: 'ok' },
-    advanced: { text: '主题套图 + Pexels图库 + AI定制图 + AI尊享图', type: 'ok' },
+    plus: { text: '主题套图 + Pexels图库 + AI定制图', type: 'ok' },
+    pro: { text: '主题套图 + Pexels图库 + AI定制图 + AI尊享图', type: 'ok' },
   },
   {
     label: '附件数量',
     free: { text: '最多1个', type: 'neutral' },
-    shengxin: { text: '最多5个', type: 'ok' },
-    advanced: { text: '最多5个', type: 'ok' },
+    plus: { text: '最多5个', type: 'ok' },
+    pro: { text: '最多5个', type: 'ok' },
   },
   {
     label: '附件格式',
     free: { text: 'PPTX、PDF（下载）', type: 'neutral' },
-    shengxin: { text: 'PDF、PPTX、XLSX、JPG 等', type: 'ok' },
-    advanced: { text: 'PDF、PPTX、XLSX、JPG 等', type: 'ok' },
+    plus: { text: 'PDF、PPTX、XLSX、JPG 等', type: 'ok' },
+    pro: { text: 'PDF、PPTX、XLSX、JPG 等', type: 'ok' },
   },
   {
     label: '附件大小',
     free: { text: '文档10MB / 总计10MB', type: 'neutral' },
-    shengxin: { text: '文档30MB / 图片2.5MB / 总计100MB', type: 'ok' },
-    advanced: { text: '文档30MB / 图片2.5MB / 总计100MB', type: 'ok' },
+    plus: { text: '文档30MB / 图片2.5MB / 总计100MB', type: 'ok' },
+    pro: { text: '文档30MB / 图片2.5MB / 总计100MB', type: 'ok' },
   },
   {
     label: 'AI模型',
     free: { text: '不支持', type: 'off' },
-    shengxin: { text: '支持标准 AI 模型', type: 'ok' },
-    advanced: { text: '支持高阶 AI 模型', type: 'ok' },
+    plus: { text: '支持标准 AI 模型', type: 'ok' },
+    pro: { text: '支持高阶 AI 模型', type: 'ok' },
   },
   {
     label: '积分结算',
     free: { text: '按生成页数统一扣积分', type: 'neutral' },
-    shengxin: { text: '按生成页数统一扣积分', type: 'ok' },
-    advanced: { text: '按生成页数统一扣积分', type: 'ok' },
+    plus: { text: '按生成页数统一扣积分', type: 'ok' },
+    pro: { text: '按生成页数统一扣积分', type: 'ok' },
   },
 ];
 
@@ -154,20 +154,20 @@ function statusCell(cell: { text: string; type: 'ok' | 'off' | 'strike' | 'neutr
 }
 
 function planMarker(planId: Plan['id']): string {
-  if (planId === 'shengxin') return '💎';
-  if (planId === 'advanced') return '👑';
+  if (planId === 'plus') return '💎';
+  if (planId === 'pro') return '👑';
   return '';
 }
 
-function normalizeUserPlan(planType?: string | null): 'free' | 'shengxin' | 'advanced' {
-  if (planType === 'shengxin' || planType === 'basic') return 'shengxin';
-  if (planType === 'advanced' || planType === 'standard' || planType === 'pro' || planType === 'vip' || planType === 'supreme') return 'advanced';
+function normalizeUserPlan(planType?: string | null): 'free' | 'plus' | 'pro' {
+  if (planType === 'plus' || planType === 'shengxin' || planType === 'basic') return 'plus';
+  if (planType === 'pro' || planType === 'advanced' || planType === 'standard' || planType === 'vip' || planType === 'supreme' || planType === 'enterprise') return 'pro';
   return 'free';
 }
 
 function planRank(planId: Plan['id']): number {
-  if (planId === 'advanced') return 2;
-  if (planId === 'shengxin') return 1;
+  if (planId === 'pro') return 2;
+  if (planId === 'plus') return 1;
   return 0;
 }
 
@@ -291,7 +291,7 @@ function PlanCard({
 export default function PricingPage() {
   const { user, openPayment, openLogin, showPayment, closePayment, paymentPlan, showLogin, closeLogin, refreshUser } = useAuth();
   const paymentEnabled = isPaymentFeatureEnabledClient();
-  const [selectedPlan, setSelectedPlan] = React.useState<'shengxin' | 'advanced'>('shengxin');
+  const [selectedPlan, setSelectedPlan] = React.useState<'plus' | 'pro'>('plus');
   const [creditMessage, setCreditMessage] = React.useState('');
 
   React.useEffect(() => {
@@ -395,8 +395,8 @@ export default function PricingPage() {
                     <tr key={row.label} className="border-t border-indigo-100/60">
                       <td className="py-3 pr-4 text-slate-700 font-semibold">{row.label}</td>
                       <td className="py-3 px-3">{statusCell(row.free)}</td>
-                      <td className="py-3 px-3">{statusCell(row.shengxin)}</td>
-                      <td className="py-3 px-3">{statusCell(row.advanced)}</td>
+                      <td className="py-3 px-3">{statusCell(row.plus)}</td>
+                      <td className="py-3 px-3">{statusCell(row.pro)}</td>
                     </tr>
                   ))}
                 </tbody>

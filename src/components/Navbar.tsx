@@ -142,9 +142,9 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
       .then((data) => {
         if (cancelled || !data) return;
         const liveRemaining = Number(data?.liveBalance?.remaining);
-        const sharedRemaining = Number(data?.sharedRemaining ?? data?.totalRemaining);
-        if (Number.isFinite(liveRemaining)) setAdminServiceCredits(liveRemaining);
-        else if (Number.isFinite(sharedRemaining)) setAdminServiceCredits(sharedRemaining);
+        const adminRemaining = Number(data?.adminTotalRemaining ?? data?.totalRemaining ?? data?.sharedRemaining);
+        if (Number.isFinite(adminRemaining)) setAdminServiceCredits(adminRemaining);
+        else if (Number.isFinite(liveRemaining)) setAdminServiceCredits(liveRemaining);
       })
       .catch(() => {});
     return () => {
@@ -165,9 +165,9 @@ export default function Navbar({ onLogoClick }: NavbarProps) {
         const res = await fetch('/api/gamma-balance', { cache: 'no-store' });
         const data = res.ok ? await res.json() : null;
         const liveRemaining = Number(data?.liveBalance?.remaining);
-        const sharedRemaining = Number(data?.sharedRemaining ?? data?.totalRemaining);
-        if (Number.isFinite(liveRemaining)) setAdminServiceCredits(liveRemaining);
-        else if (Number.isFinite(sharedRemaining)) setAdminServiceCredits(sharedRemaining);
+        const adminRemaining = Number(data?.adminTotalRemaining ?? data?.totalRemaining ?? data?.sharedRemaining);
+        if (Number.isFinite(adminRemaining)) setAdminServiceCredits(adminRemaining);
+        else if (Number.isFinite(liveRemaining)) setAdminServiceCredits(liveRemaining);
       }
     } catch {
     } finally {

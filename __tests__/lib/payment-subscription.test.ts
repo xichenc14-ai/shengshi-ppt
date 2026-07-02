@@ -86,7 +86,7 @@ describe('payment subscription service', () => {
 
     expect(result.success).toBe(true);
     expect(user.credits).toBe(580);
-    expect(user.plan_type).toBe('basic');
+    expect(user.plan_type).toBe('plus');
     expect(new Date(String(user.plan_expires_at)).getTime()).toBeGreaterThan(currentExpire.getTime());
     expect(transactions.at(-1)?.description).toContain('续费省心会员');
   });

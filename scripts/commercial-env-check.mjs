@@ -77,6 +77,9 @@ const coreRequired = [
   'ALLOWED_CALLBACK_IPS',
 ];
 
+const adminRequiredAny = ['ADMIN_USER_PHONES', 'ADMIN_USER_IDS'];
+const adminRequired = ['ADMIN_SECRET_ENCRYPTION_KEY'];
+
 const wechatTemplate = [
   'PAYMENT_WECHAT_URL_TEMPLATE',
   'PAYMENT_WECHAT_QRCODE_TEMPLATE',
@@ -95,6 +98,8 @@ const wechatSdk = ['WECHAT_PAY_MCH_ID', 'WECHAT_PAY_APP_ID', 'WECHAT_PAY_API_V3_
 const alipaySdk = ['ALIPAY_APP_ID', 'ALIPAY_PRIVATE_KEY', 'ALIPAY_PUBLIC_KEY'];
 
 const coreReady = allPresent(coreRequired);
+const adminIdentityReady = hasAny(adminRequiredAny);
+const adminSecretReady = allPresent(adminRequired);
 const notifyUrl = process.env.PAYMENT_NOTIFY_URL || '';
 const notifyHttps = /^https:\/\//i.test(notifyUrl);
 const notifySecret = process.env.PAYMENT_NOTIFY_SECRET || '';
@@ -113,6 +118,8 @@ const alipayReady = hasAny(alipayTemplate) || allPresent(alipaySdk);
 
 process.stdout.write('\n=== Commercial Environment Readiness ===\n');
 printRow('Core variables', coreReady, coreReady ? '' : `missing: ${missing(coreRequired).join(', ')}`);
+printRow('Admin identity allowlist', adminIdentityReady, adminIdentityReady ? '' : `missing one of: ${adminRequiredAny.join(', ')}`);
+printRow('Admin Gamma Key encryption', adminSecretReady, adminSecretReady ? '' : `missing: ${missing(adminRequired).join(', ')}`);
 printRow('PAYMENT_NOTIFY_URL is https', notifyHttps, notifyHttps ? '' : `value: ${notifyUrl || '(empty)'}`);
 printRow('PAYMENT_NOTIFY_SECRET strength', notifySecretStrong, notifySecretStrong ? '' : `length: ${notifySecret.length}`);
 printRow(
@@ -126,8 +133,17 @@ printRow('WeChat template URL is https', wxTemplateHttps, wxTemplateHttps ? '' :
 printRow('Alipay template URL is https', aliTemplateHttps, aliTemplateHttps ? '' : `value: ${aliTemplateUrl}`);
 printRow('WeChat provider ready', wechatReady, wechatReady ? '' : `missing sdk: ${missing(wechatSdk).join(', ')}`);
 printRow('Alipay provider ready', alipayReady, alipayReady ? '' : `missing sdk: ${missing(alipaySdk).join(', ')}`);
+printRow(
+  'Automatic refund switch',
+  true,
+  process.env.PAYMENT_AUTO_REFUND_ENABLED === 'true'
+    ? 'enabled; verify provider refund parameters before production traffic'
+    : 'disabled; refunds enter manual_required/refund_pending workflow'
+);
 
 const ok = coreReady
+  && adminIdentityReady
+  && adminSecretReady
   && notifyHttps
   && notifySecretStrong
   && callbackIpValid

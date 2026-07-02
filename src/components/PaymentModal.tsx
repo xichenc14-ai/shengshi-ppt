@@ -7,6 +7,14 @@ import { isPaymentFeatureEnabledClient } from '@/lib/payment-feature';
 
 // 收款码图片映射
 const QR_CODE_MAP: Record<string, Record<'monthly' | 'annual', string>> = {
+  'plus': {
+    monthly: '/payment-qrcodes/basic-monthly.jpg',
+    annual: '/payment-qrcodes/basic-annual.jpg',
+  },
+  'pro': {
+    monthly: '/payment-qrcodes/pro-monthly.jpg',
+    annual: '/payment-qrcodes/pro-annual.jpg',
+  },
   'shengxin': {
     monthly: '/payment-qrcodes/basic-monthly.jpg',
     annual: '/payment-qrcodes/basic-annual.jpg',
@@ -20,10 +28,6 @@ const QR_CODE_MAP: Record<string, Record<'monthly' | 'annual', string>> = {
     annual: '/payment-qrcodes/basic-annual.jpg',
   },
   'standard': {
-    monthly: '/payment-qrcodes/pro-monthly.jpg',
-    annual: '/payment-qrcodes/pro-annual.jpg',
-  },
-  'pro': {
     monthly: '/payment-qrcodes/pro-monthly.jpg',
     annual: '/payment-qrcodes/pro-annual.jpg',
   },
@@ -196,7 +200,7 @@ export default function PaymentModal({ open, onClose, plan }: PaymentModalProps)
     const planName = String(
       message?.match(/成为(.+?)！/)?.[1]
       || (freshUser?.plan_type === 'pro' || freshUser?.plan_type === 'advanced' ? '尊享会员' : '')
-      || (freshUser?.plan_type === 'basic' || freshUser?.plan_type === 'shengxin' ? '省心会员' : '')
+      || (freshUser?.plan_type === 'plus' || freshUser?.plan_type === 'basic' || freshUser?.plan_type === 'shengxin' ? '省心会员' : '')
       || plan?.name
       || order?.productName
       || '会员'

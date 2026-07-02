@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { selectBestKey } from '@/lib/gamma-key-pool';
+import { getAllKeys, recordKeyFailure, selectBestKey } from '@/lib/gamma-key-pool';
 import { getGammaAdditionalExportUnsupportedMessage } from '@/lib/gamma-export';
 
 export const runtime = 'nodejs';
@@ -9,6 +9,7 @@ const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/53
 const FORMAT = 'pptx' as const;
 const MIME_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 const MIN_PPTX_BYTES = 1024;
+const RETRYABLE_STATUS_CODES = new Set([401, 403, 404, 429, 500, 502, 503, 504]);
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -38,6 +39,12 @@ function isValidPptxBuffer(buffer: Buffer): boolean {
   return packageIndex >= 0 && presentationIndex >= 0;
 }
 
+async function getOrderedKeys() {
+  const first = await selectBestKey();
+  const allKeys = await getAllKeys();
+  return [first, ...allKeys.filter((key) => key.key !== first.key)];
+}
+
 /**
  * PPTX 下载代理 API (D5: 统一错误处理)
  * 
@@ -63,29 +70,51 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const selectedKey = selectBestKey();
-    const apiKey = selectedKey.key;
-    console.log('[ExportPPTX] generationId:', generationId, 'key:', selectedKey.label);
+    const orderedKeys = await getOrderedKeys();
+    let apiKey = orderedKeys[0]?.key || '';
+    let statusData: any = null;
+    let lastStatus = 502;
+    let lastErrorMessage = '查询失败';
 
-    // Step 1: 检查 generation 状态
-    const statusRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
-      headers: {
-        'X-API-KEY': apiKey,
-        'User-Agent': GAMMA_UA,
-      },
-    });
+    // Step 1: 检查 generation 状态。多 Key 池下，generation 可能只能被创建它的 Key 查询。
+    for (const keyInfo of orderedKeys) {
+      console.log('[ExportPPTX] generationId:', generationId, 'key:', keyInfo.label);
+      const statusRes = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
+        headers: {
+          'X-API-KEY': keyInfo.key,
+          'User-Agent': GAMMA_UA,
+        },
+      });
 
-    if (!statusRes.ok) {
-      console.error('[ExportPPTX] 状态查询失败:', statusRes.status);
+      if (!statusRes.ok) {
+        lastStatus = statusRes.status;
+        lastErrorMessage = `查询失败: ${statusRes.status}`;
+        console.error('[ExportPPTX] 状态查询失败:', statusRes.status, 'key:', keyInfo.label);
+        if (RETRYABLE_STATUS_CODES.has(statusRes.status)) {
+          await recordKeyFailure(keyInfo.key);
+          continue;
+        }
+        return NextResponse.json({
+          generationId,
+          status: 'failed',
+          error: { code: 'EXPORT_FAILED', message: lastErrorMessage },
+        }, { status: 502 });
+      }
+
+      const candidateStatusData = await statusRes.json();
+      console.log('[ExportPPTX] Generation 状态:', candidateStatusData.status, 'key:', keyInfo.label);
+      apiKey = keyInfo.key;
+      statusData = candidateStatusData;
+      break;
+    }
+
+    if (!statusData) {
       return NextResponse.json({
         generationId,
         status: 'failed',
-        error: { code: 'EXPORT_FAILED', message: `查询失败: ${statusRes.status}` },
+        error: { code: 'EXPORT_FAILED', message: `${lastErrorMessage}（已重试 ${orderedKeys.length} 个 Key，最后状态 ${lastStatus}）` },
       }, { status: 502 });
     }
-
-    const statusData = await statusRes.json();
-    console.log('[ExportPPTX] Generation 状态:', statusData.status);
 
     if (statusData.status === 'pending' || statusData.status === 'in_progress' || statusData.status === 'processing') {
       return NextResponse.json({

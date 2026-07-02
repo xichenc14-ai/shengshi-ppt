@@ -144,6 +144,7 @@ export async function GET() {
     const user = session.user
       ? {
           ...session.user,
+          ...(isAdminIdentity({ id: session.user.id, phone: session.user.phone }) ? { plan_type: 'pro' } : {}),
           is_admin: isAdminIdentity({ id: session.user.id, phone: session.user.phone }),
         }
       : null;
@@ -186,6 +187,7 @@ export async function POST(req: NextRequest) {
       const isAdmin = isAdminIdentity({ id: nextUser.id, phone: nextUser.phone });
       if (isAdmin) {
         nextUser.is_admin = true;
+        nextUser.plan_type = 'pro';
       }
       session.user = nextUser;
       session.isLoggedIn = true;

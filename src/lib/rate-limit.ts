@@ -79,28 +79,60 @@ export interface SMSRateLimitResult {
   retryAfter?: number; // 秒
 }
 
+function rollbackRateLimit(key: string) {
+  const entry = memoryStore.get(key);
+  if (!entry) return;
+  if (entry.count <= 1) {
+    memoryStore.delete(key);
+    return;
+  }
+  memoryStore.set(key, { ...entry, count: entry.count - 1 });
+}
+
+export function rollbackSMSRateLimit(ip: string, phone: string): void {
+  rollbackRateLimit(`sms_phone_min:${phone}`);
+  rollbackRateLimit(`sms_phone:${phone}`);
+  rollbackRateLimit(`sms_ip_min:${ip}`);
+  rollbackRateLimit(`sms_ip:${ip}`);
+}
+
 export async function checkSMSRateLimit(ip: string, phone: string): Promise<SMSRateLimitResult> {
+  const consumedKeys: string[] = [];
+  const rollbackConsumed = () => {
+    for (const key of consumedKeys) rollbackRateLimit(key);
+  };
+
   // L1: IP 级别 - 同一IP每小时最多发送 10 条
-  const ipResult = rateLimit(`sms_ip:${ip}`, { windowMs: 60 * 60 * 1000, maxRequests: 10 });
+  const ipKey = `sms_ip:${ip}`;
+  const ipResult = rateLimit(ipKey, { windowMs: 60 * 60 * 1000, maxRequests: 10 });
   if (!ipResult.allowed) {
     return { allowed: false, reason: '发送过于频繁，请稍后再试', retryAfter: Math.ceil((ipResult.resetAt - Date.now()) / 1000) };
   }
+  consumedKeys.push(ipKey);
 
   // L2: IP 级别 - 同一IP每分钟最多 1 条（防快速重发）
-  const ipMinuteResult = rateLimit(`sms_ip_min:${ip}`, { windowMs: 60 * 1000, maxRequests: 1 });
+  const ipMinuteKey = `sms_ip_min:${ip}`;
+  const ipMinuteResult = rateLimit(ipMinuteKey, { windowMs: 60 * 1000, maxRequests: 1 });
   if (!ipMinuteResult.allowed) {
+    rollbackConsumed();
     return { allowed: false, reason: '请60秒后再试', retryAfter: Math.ceil((ipMinuteResult.resetAt - Date.now()) / 1000) };
   }
+  consumedKeys.push(ipMinuteKey);
 
   // L3: 手机号级别 - 同一手机号每小时最多 5 条
-  const phoneResult = rateLimit(`sms_phone:${phone}`, { windowMs: 60 * 60 * 1000, maxRequests: 5 });
+  const phoneKey = `sms_phone:${phone}`;
+  const phoneResult = rateLimit(phoneKey, { windowMs: 60 * 60 * 1000, maxRequests: 5 });
   if (!phoneResult.allowed) {
+    rollbackConsumed();
     return { allowed: false, reason: '该手机号今日发送次数已达上限', retryAfter: Math.ceil((phoneResult.resetAt - Date.now()) / 1000) };
   }
+  consumedKeys.push(phoneKey);
 
   // L4: 手机号级别 - 同一手机号每60秒最多 1 条
-  const phoneMinuteResult = rateLimit(`sms_phone_min:${phone}`, { windowMs: 60 * 1000, maxRequests: 1 });
+  const phoneMinuteKey = `sms_phone_min:${phone}`;
+  const phoneMinuteResult = rateLimit(phoneMinuteKey, { windowMs: 60 * 1000, maxRequests: 1 });
   if (!phoneMinuteResult.allowed) {
+    rollbackConsumed();
     return { allowed: false, reason: '请60秒后再试', retryAfter: Math.ceil((phoneMinuteResult.resetAt - Date.now()) / 1000) };
   }
 

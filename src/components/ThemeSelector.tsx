@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { COLOR_CATEGORIES, getRecommendedThemes, getThemesByCategory, type ThemeData } from '@/lib/theme-database';
 
 interface ThemeSelectorProps {
@@ -104,6 +104,7 @@ function getThemeCard(theme: ThemeData, active: boolean, onChange: (themeId: str
 
 export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('recommended');
+  const [themePage, setThemePage] = useState(0);
   const spectrumRef = useRef<HTMLDivElement>(null);
   const activePointerRef = useRef<number | null>(null);
   const pointerStartIndexRef = useRef<number | null>(null);
@@ -154,6 +155,8 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
     return categoryOptions.find((item) => item.id === selectedCategory)?.themes || recommendedThemeList;
   }, [categoryOptions, selectedCategory, recommendedThemeList]);
 
+  const themePageCount = Math.max(1, Math.ceil(themes.length / 3));
+
   const selectedMeta = useMemo(() => {
     const selected = categoryOptions.find((item) => item.id === selectedCategory);
     if (selected) {
@@ -177,9 +180,14 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
     return Math.min(categoryOptions.length - 1, Math.floor(relativeX / (innerWidth / categoryOptions.length)));
   };
 
+  const chooseCategory = (categoryId: CategoryId) => {
+    setSelectedCategory(categoryId);
+    setThemePage(0);
+  };
+
   const selectCategoryAt = (clientX: number) => {
     const category = categoryOptions[getCategoryIndexAt(clientX)];
-    if (category) setSelectedCategory(category.id);
+    if (category) chooseCategory(category.id);
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -242,6 +250,33 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
     rail.scrollLeft = drag.startScrollLeft - deltaX;
   };
 
+  const updateThemePageFromScroll = () => {
+    const rail = themesRailRef.current;
+    if (!rail || themePageCount <= 1) {
+      setThemePage(0);
+      return;
+    }
+
+    const maxScrollLeft = Math.max(0, rail.scrollWidth - rail.clientWidth);
+    if (maxScrollLeft === 0) {
+      setThemePage(0);
+      return;
+    }
+
+    const nextPage = Math.round((rail.scrollLeft / maxScrollLeft) * (themePageCount - 1));
+    setThemePage(Math.max(0, Math.min(themePageCount - 1, nextPage)));
+  };
+
+  const scrollToThemePage = (pageIndex: number) => {
+    const rail = themesRailRef.current;
+    if (!rail || themePageCount <= 1) return;
+
+    const maxScrollLeft = Math.max(0, rail.scrollWidth - rail.clientWidth);
+    const targetLeft = themePageCount === 1 ? 0 : (maxScrollLeft * pageIndex) / (themePageCount - 1);
+    rail.scrollTo({ left: targetLeft, behavior: 'smooth' });
+    setThemePage(pageIndex);
+  };
+
   const finishThemeDrag = () => {
     const moved = themeDragRef.current.moved;
     themeDragRef.current.active = false;
@@ -255,6 +290,12 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
     event.preventDefault();
     event.stopPropagation();
   };
+
+  useEffect(() => {
+    const rail = themesRailRef.current;
+    if (!rail) return;
+    rail.scrollTo({ left: 0 });
+  }, [selectedCategory]);
 
   return (
     <div>
@@ -290,7 +331,7 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
                   type="button"
                   onClick={() => {
                     if (suppressClickRef.current) return;
-                    setSelectedCategory(cat.id);
+                    chooseCategory(cat.id);
                   }}
                   className={`relative mx-[8%] rounded-full border transition-[border-color,box-shadow,background,transform] duration-150 ${
                     active
@@ -316,10 +357,28 @@ export default function ThemeSelector({ value, onChange }: ThemeSelectorProps) {
             onMouseUp={finishThemeDrag}
             onMouseLeave={finishThemeDrag}
             onClickCapture={suppressThemeClickAfterDrag}
+            onScroll={updateThemePageFromScroll}
             aria-label={`当前${selectedMeta.name}色系主题，电脑端四列展示，移动端可左右滑动，共 ${themes.length} 个`}
           >
             {themes.map((theme) => getThemeCard(theme, value === theme.id, onChange))}
           </div>
+
+          {themePageCount > 1 && (
+            <div className="mt-1.5 flex items-center justify-center gap-1.5 sm:hidden" aria-label="主题卡分页">
+              {Array.from({ length: themePageCount }).map((_, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => scrollToThemePage(index)}
+                  className={`h-1.5 rounded-full transition-all ${
+                    themePage === index ? 'w-4 bg-violet-500' : 'w-1.5 bg-slate-300'
+                  }`}
+                  aria-label={`查看第 ${index + 1} 组主题`}
+                  aria-current={themePage === index ? 'true' : undefined}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

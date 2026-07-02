@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireAdmin } from '@/lib/admin-auth';
-import { getSharedKeyPoolRemaining } from '@/lib/gamma-key-pool';
+import { getKeyPoolStatus, getSharedKeyPoolRemaining } from '@/lib/gamma-key-pool';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -33,6 +33,13 @@ function addMonths(baseISO: string, months: number): string {
   const d = new Date(base);
   d.setMonth(d.getMonth() + months);
   return d.toISOString();
+}
+
+function normalizePlanType(planType: string | null | undefined): 'free' | 'plus' | 'pro' {
+  const raw = String(planType || 'free').toLowerCase();
+  if (raw === 'plus' || raw === 'shengxin' || raw === 'basic') return 'plus';
+  if (['pro', 'advanced', 'standard', 'vip', 'supreme', 'enterprise'].includes(raw)) return 'pro';
+  return 'free';
 }
 
 function isMissingTableError(error: unknown, tableName: string): boolean {
@@ -189,12 +196,14 @@ export async function GET(request: NextRequest) {
 
     let normalizedUsers = users.map((u) => {
       const planExpiresAt = (u as { plan_expires_at?: string | null }).plan_expires_at || planExpireMap.get(u.id) || null;
+      const normalizedPlanType = normalizePlanType(String(u.plan_type || 'free'));
       return {
         id: u.id,
         phone: u.phone || '',
         nickname: u.nickname || '用户',
         credits: Number(u.credits || 0),
-        plan_type: u.plan_type || 'free',
+        plan_type: normalizedPlanType,
+        raw_plan_type: u.plan_type || 'free',
         total_credits_used: Number((u as { total_credits_used?: number | null }).total_credits_used || 0),
         plan_expires_at: planExpiresAt,
         paid_amount_yuan: Number((paidAmountMap.get(u.id) || 0).toFixed(2)),
@@ -206,7 +215,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (planFilter && planFilter !== 'all') {
-      normalizedUsers = normalizedUsers.filter((u) => (u.plan_type || 'free').toLowerCase() === planFilter);
+      normalizedUsers = normalizedUsers.filter((u) => normalizePlanType(u.plan_type) === normalizePlanType(planFilter));
     }
     if (keyword) {
       normalizedUsers = normalizedUsers.filter((u) => {
@@ -217,6 +226,9 @@ export async function GET(request: NextRequest) {
 
     const nowTs = Date.now();
     const allNormalizedUsers = normalizedUsers;
+    const gammaStatus = await getKeyPoolStatus().catch(() => null);
+    const adminGammaCredits = gammaStatus?.adminTotalRemaining ?? (await getSharedKeyPoolRemaining().catch(() => 0));
+
     const summary = {
       total_users: normalizedUsers.length,
       paid_users: normalizedUsers.filter((u) => u.plan_type !== 'free').length,
@@ -230,12 +242,9 @@ export async function GET(request: NextRequest) {
       ),
       total_generation: normalizedUsers.reduce((sum, u) => sum + u.generation_count, 0),
       total_download: normalizedUsers.reduce((sum, u) => sum + u.download_count, 0),
-      admin_user_credits: (() => {
-        try { return getSharedKeyPoolRemaining(); } catch { return 0; }
-      })(),
-      admin_gamma_pool_credits: (() => {
-        try { return getSharedKeyPoolRemaining(); } catch { return 0; }
-      })(),
+      admin_user_credits: adminGammaCredits,
+      admin_gamma_pool_credits: adminGammaCredits,
+      admin_gamma_quota_groups: gammaStatus?.quotaGroups || [],
       admin_gamma_live_balance: (() => {
         try {
           const txGen = (transactions || []).find(
@@ -247,7 +256,7 @@ export async function GET(request: NextRequest) {
           return { generationId: genId };
         } catch { return null; }
       })(),
-      admin_gamma_pool_note: '服务额度为共享余额，多个 key 不叠加',
+      admin_gamma_pool_note: '同额度标记的 key 不重复叠加，不同标记的 key 额度叠加；额度用尽/停用/无效 key 不参与可用额度',
       feedback_total: effectiveFeedbackRows.length,
       feedback_positive: effectiveFeedbackRows.filter((r) => r.vote === 'up').length,
       feedback_negative: effectiveFeedbackRows.filter((r) => r.vote === 'down').length,
@@ -274,6 +283,7 @@ export async function GET(request: NextRequest) {
         product_name: o.product_name || '',
         pay_method: o.pay_method || '',
         amount_yuan: Number((Number(o.amount || 0) / 100).toFixed(2)),
+        status: o.status || '',
         paid_at: o.paid_at || o.created_at,
       }));
 
