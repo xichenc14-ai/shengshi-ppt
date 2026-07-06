@@ -65,7 +65,18 @@ type AttachmentTask = {
   status: AttachmentTaskStatus;
   message: string;
 };
-type SlideItem = { id: string; title: string; content?: string[]; notes?: string };
+type SlideItem = {
+  id: string;
+  title: string;
+  content?: string[];
+  notes?: string;
+  visualType?: string;
+  layoutIntent?: string;
+  chartSpec?: { type?: string; title?: string; data?: unknown[]; source?: string };
+  diagramSpec?: { type?: string; nodes?: string[]; edges?: unknown[] };
+  iconHints?: string[];
+  imageIntent?: string;
+};
 type OutlinePreprocessInfo = {
   truncated?: boolean;
   requestedMode?: 'generate' | 'condense' | 'preserve';

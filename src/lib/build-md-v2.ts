@@ -15,6 +15,21 @@ export type SlideItem = {
   points?: string[];   // 页面核心要点数组（新字段名，优先级更高）
   bullets?: string[];  // D2: canonical 字段
   notes?: string;      // 演讲者备注
+  visualType?: string;
+  layoutIntent?: string;
+  chartSpec?: {
+    type?: string;
+    title?: string;
+    data?: unknown[];
+    source?: string;
+  };
+  diagramSpec?: {
+    type?: string;
+    nodes?: string[];
+    edges?: unknown[];
+  };
+  iconHints?: string[];
+  imageIntent?: string;
 };
 
 export type BuildMdV2Result = {
@@ -58,7 +73,9 @@ function buildContentPage(
   speakerNotes?: string,
   isContinuation: boolean = false,
   strictPreserve: boolean = false,
-  imageHint?: string
+  imageHint?: string,
+  visualHint?: string,
+  visualType?: string
 ): string {
   const lines: string[] = [];
 
@@ -67,13 +84,23 @@ function buildContentPage(
   lines.push(`## ${title}${titleSuffix}`);
   lines.push('');
 
-  // 要点处理：全部用 ### 大文本包裹。
-  // Gamma 对普通列表正文会偏小，所以这里直接提升为标题级正文。
-  for (const point of points) {
-    const trimmed = point.trim();
-    if (!trimmed) continue;
-    lines.push(`### ${trimmed}`);
+  const normalizedVisualType = String(visualType || '').trim();
+
+  // 要点处理：默认全部用 ### 大文本包裹；流程/时间线页改用有序结构触发 Gamma 原生布局。
+  if (['process', 'timeline', 'cycle', 'funnel'].includes(normalizedVisualType)) {
+    points.forEach((point, idx) => {
+      const trimmed = point.trim();
+      if (!trimmed) return;
+      lines.push(`${idx + 1}. **${trimmed}**`);
+    });
     lines.push('');
+  } else {
+    for (const point of points) {
+      const trimmed = point.trim();
+      if (!trimmed) continue;
+      lines.push(`### ${trimmed}`);
+      lines.push('');
+    }
   }
 
   // 留白填充提示：≤2 点页面自动注入
@@ -85,6 +112,11 @@ function buildContentPage(
 
   if (imageHint) {
     lines.push(`> *(${imageHint})*`);
+    lines.push('');
+  }
+
+  if (visualHint) {
+    lines.push(`> *(${visualHint})*`);
     lines.push('');
   }
 
@@ -102,6 +134,41 @@ function buildContentPage(
   }
 
   return lines.join('\n');
+}
+
+function buildPerPageVisualHint(slide: SlideItem, points: string[]): string {
+  const visualType = String(slide.visualType || '').trim();
+  const layoutIntent = String(slide.layoutIntent || '').trim();
+  const iconHints = Array.isArray(slide.iconHints)
+    ? slide.iconHints.map((item) => String(item).trim()).filter(Boolean).slice(0, 5)
+    : [];
+  const chartSpec = slide.chartSpec && typeof slide.chartSpec === 'object'
+    ? slide.chartSpec
+    : undefined;
+  const diagramSpec = slide.diagramSpec && typeof slide.diagramSpec === 'object'
+    ? slide.diagramSpec
+    : undefined;
+
+  if (!visualType && !layoutIntent && iconHints.length === 0 && !chartSpec && !diagramSpec) {
+    return '';
+  }
+
+  const parts: string[] = [];
+  if (visualType) parts.push(`可视化类型=${visualType}`);
+  if (layoutIntent) parts.push(`布局意图=${layoutIntent}`);
+  if (iconHints.length > 0) parts.push(`图标语义=${iconHints.join('、')}`);
+  if (chartSpec?.type) {
+    parts.push(`图表建议=${chartSpec.type}${chartSpec.title ? `｜${chartSpec.title}` : ''}${chartSpec.source ? `｜来源:${chartSpec.source}` : ''}`);
+  }
+  if (diagramSpec?.type) {
+    const nodes = Array.isArray(diagramSpec.nodes) ? diagramSpec.nodes.slice(0, 6).join('→') : '';
+    parts.push(`逻辑图建议=${diagramSpec.type}${nodes ? `｜${nodes}` : ''}`);
+  }
+  if (!visualType && points.length >= 3) {
+    parts.push('可视化类型=iconGrid');
+  }
+
+  return `Gamma可视化约束：${parts.join('；')}。优先映射为 Gamma 原生布局、图表、时间线、流程、矩阵或图标卡片；不要退化成纯文字堆叠。`;
 }
 
 function normalizeImageModeForHint(imageMode: string): 'themeAccent' | 'web' | 'ai' | 'noImages' {
@@ -195,6 +262,7 @@ export function buildMdV2(
       const isLastChunk = chunkIndex === normalizedChunks.length - 1;
       const isContinuation = !isFirstChunk;
       const imageHint = buildPerPageImageHint(imageMode, index, total, isContinuation, slide.title);
+      const visualHint = buildPerPageVisualHint(slide, chunk);
 
       // 🚨 V6.1 修复：不再强制首页=封面、末页=结尾
       // 每一页都按正常内容页处理，让 Gamma 自己决定封面/结尾
@@ -205,7 +273,9 @@ export function buildMdV2(
           isLastChunk ? slide.notes : undefined,
           isContinuation,
           strictPreserve,
-          imageHint
+          imageHint,
+          visualHint,
+          slide.visualType
         )
       );
 
@@ -259,6 +329,15 @@ export function buildAdditionalInstructions(
 - 禁止将列表识别为表格
 - 禁止堆砌超过4个要点
 - 禁止留大面积空白
+
+`;
+
+  const visualRules = `【Gamma原生可视化映射】
+- 逐页读取“Gamma可视化约束 / visualType / layoutIntent / chartSpec / diagramSpec / iconHints”，并映射为 Gamma 原生布局。
+- timeline/process/cycle/funnel 页面优先使用时间线、流程、循环、漏斗；comparison/matrix 页面优先使用左右对比、2x2矩阵、象限；dashboard/chart 页面优先使用数字看板和原生图表。
+- iconGrid 页面必须用图标语义、数字徽章、色块卡片或形状组合增强层次；每个要点要有可见视觉标记，禁止整页只有普通文本。
+- 只有 chartSpec 中存在真实数据时才生成图表；禁止自造百分比、金额、趋势数据。
+- 如果某种图表或逻辑图无法生成，降级为图标卡片/数字徽章/色块分组，不能降级为纯文字白板。
 
 `;
 
@@ -329,7 +408,7 @@ export function buildAdditionalInstructions(
 所有正文内容必须使用简体中文（zh-cn）
 标题和正文禁止使用英文（除非是公认的技术术语或品牌名）`;
 
-  return `${CRITICAL_DEFENSE}${baseRules}${toneRule}${imageRules}${languageRules}`;
+  return `${CRITICAL_DEFENSE}${baseRules}${visualRules}${toneRule}${imageRules}${languageRules}`;
 }
 
 // V6：废弃以下函数，已被 chunkArray + buildContentPage 取代

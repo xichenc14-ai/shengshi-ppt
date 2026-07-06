@@ -9,7 +9,18 @@ import { DEFAULT_THEME_ID } from '@/lib/theme-database';
 export type Phase = 'landing' | 'input' | 'streaming' | 'outline' | 'generating' | 'direct-generating' | 'result';
 
 export type UploadedFile = { name: string; type: string; size: number; content?: string };
-export type SlideItem = { id: string; title: string; content?: string[]; notes?: string };
+export type SlideItem = {
+  id: string;
+  title: string;
+  content?: string[];
+  notes?: string;
+  visualType?: string;
+  layoutIntent?: string;
+  chartSpec?: { type?: string; title?: string; data?: unknown[]; source?: string };
+  diagramSpec?: { type?: string; nodes?: string[]; edges?: unknown[] };
+  iconHints?: string[];
+  imageIntent?: string;
+};
 type OutlineResultPayload = { title: string; slides: SlideItem[]; themeId?: string; tone?: string; imageMode?: string };
 type GenerationResultPayload = { title: string; slides: SlideItem[]; dlUrl: string; actualPages?: number };
 type SmartGammaPayloadState = Record<string, unknown> | null;

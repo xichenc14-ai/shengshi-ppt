@@ -6,7 +6,9 @@ const MINIMAX_API_KEY = normalizeProviderKey(process.env.MINIMAX_API_KEY);
 
 // MiniMax 的 API 格式兼容 OpenAI，同时支持 vision
 const MINIMAX_BASE = 'https://api.minimaxi.com/v1';
-export const DEFAULT_MINIMAX_TEXT_MODEL = 'MiniMax-M2.7';
+export const DEFAULT_MINIMAX_TEXT_MODEL = 'MiniMax-M3';
+export const FALLBACK_MINIMAX_TEXT_MODEL = 'MiniMax-M2.7';
+export const FALLBACK_MINIMAX_VISION_MODEL = 'MiniMax-VL-01';
 
 export interface MiniMaxMessage {
   role: 'user' | 'assistant' | 'system';
@@ -14,9 +16,10 @@ export interface MiniMaxMessage {
 }
 
 export interface MiniMaxContentPart {
-  type: 'text' | 'image_url';
+  type: 'text' | 'image_url' | 'video_url';
   text?: string;
   image_url?: { url: string };
+  video_url?: { url: string };
 }
 
 export interface MiniMaxOptions {
@@ -29,10 +32,7 @@ export interface MiniMaxOptions {
 
 export function resolveMiniMaxTextModel(model?: string): string {
   const requested = model?.trim();
-  if (!requested || /^minimax-m3(?:$|[-.])/i.test(requested)) {
-    return DEFAULT_MINIMAX_TEXT_MODEL;
-  }
-  return requested;
+  return requested || DEFAULT_MINIMAX_TEXT_MODEL;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -121,41 +121,34 @@ export async function callMiniMaxVision(
     throw new Error('MiniMax API Key 未配置（MINIMAX_API_KEY）');
   }
 
-  const response = await fetch(`${MINIMAX_BASE}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${MINIMAX_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: 'MiniMax-VL-01',
-      messages: [
+  const messages: MiniMaxMessage[] = [
+    {
+      role: 'user',
+      content: [
         {
-          role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:${mimeType};base64,${imageBase64}`,
-              },
-            },
-            { type: 'text', text: prompt },
-          ],
+          type: 'image_url',
+          image_url: {
+            url: `data:${mimeType};base64,${imageBase64}`,
+          },
         },
+        { type: 'text', text: prompt },
       ],
-      max_tokens: maxTokens,
-      temperature,
-    }),
-  });
+    },
+  ];
 
-  if (!response.ok) {
-    const errText = await response.text();
-    console.error('MiniMax Vision error:', response.status, errText);
-    throw new Error(`MiniMax Vision 调用失败: ${response.status}`);
+  const models = [DEFAULT_MINIMAX_TEXT_MODEL, FALLBACK_MINIMAX_VISION_MODEL];
+  let lastError: unknown;
+
+  for (const model of models) {
+    try {
+      return await callMiniMax(messages, { model, maxTokens, temperature });
+    } catch (e: unknown) {
+      lastError = e;
+      console.warn(`[MiniMax Vision] ${model} failed, trying fallback if available:`, getErrorMessage(e));
+    }
   }
 
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
+  throw lastError instanceof Error ? lastError : new Error('MiniMax Vision 调用失败');
 }
 
 /**
@@ -205,32 +198,38 @@ export async function callMiniMaxWithRetry(
 ): Promise<string> {
   const { maxRetries = 3, retryDelayMs = 1000, timeoutMs = 30000, ...rest } = options;
   const startTime = Date.now();
+  const models = options.model
+    ? [resolveMiniMaxTextModel(options.model)]
+    : [DEFAULT_MINIMAX_TEXT_MODEL, FALLBACK_MINIMAX_TEXT_MODEL];
+  let finalError: unknown;
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const result = await callMiniMax(messages, { ...rest, timeoutMs });
-      console.log(`[MiniMax] 尝试 ${attempt}/${maxRetries} 成功，耗时 ${Date.now() - startTime}ms`);
-      return result;
-    } catch (e: unknown) {
-      const elapsed = Date.now() - startTime;
-      const errorMessage = getErrorMessage(e);
-      const errorName = e instanceof Error ? e.name : '';
-      console.error(`[MiniMax] 尝试 ${attempt}/${maxRetries} 失败:`, errorMessage, `耗时 ${elapsed}ms`);
+  for (const model of models) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await callMiniMax(messages, { ...rest, model, timeoutMs });
+        console.log(`[MiniMax] ${model} 尝试 ${attempt}/${maxRetries} 成功，耗时 ${Date.now() - startTime}ms`);
+        return result;
+      } catch (e: unknown) {
+        finalError = e;
+        const elapsed = Date.now() - startTime;
+        const errorMessage = getErrorMessage(e);
+        const errorName = e instanceof Error ? e.name : '';
+        console.error(`[MiniMax] ${model} 尝试 ${attempt}/${maxRetries} 失败:`, errorMessage, `耗时 ${elapsed}ms`);
 
-      // 529 过载或网络超时 → 重试
-      if (errorMessage.includes('529') || errorMessage.includes('超时') || errorName === 'AbortError') {
-        if (attempt < maxRetries) {
-          const delay = retryDelayMs * attempt; // 递增延迟
-          console.log(`[MiniMax] 等待 ${delay}ms 后重试...`);
-          await new Promise(r => setTimeout(r, delay));
-          continue;
+        // 529 过载或网络超时 → 重试
+        if (errorMessage.includes('529') || errorMessage.includes('超时') || errorName === 'AbortError') {
+          if (attempt < maxRetries) {
+            const delay = retryDelayMs * attempt; // 递增延迟
+            console.log(`[MiniMax] 等待 ${delay}ms 后重试...`);
+            await new Promise(r => setTimeout(r, delay));
+            continue;
+          }
         }
-      }
 
-      // 其他错误或已达最大重试次数 → 抛出
-      throw e;
+        break;
+      }
     }
   }
 
-  throw new Error('MiniMax 所有重试均失败');
+  throw finalError instanceof Error ? finalError : new Error('MiniMax 所有重试均失败');
 }

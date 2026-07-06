@@ -9,6 +9,21 @@ export interface OutlineSlide {
   content?: string[];
   speakerNotes?: string;
   notes?: string;
+  visualType?: string;
+  layoutIntent?: string;
+  chartSpec?: {
+    type?: string;
+    title?: string;
+    data?: unknown[];
+    source?: string;
+  };
+  diagramSpec?: {
+    type?: string;
+    nodes?: string[];
+    edges?: unknown[];
+  };
+  iconHints?: string[];
+  imageIntent?: string;
 }
 
 export interface OutlineMeta {

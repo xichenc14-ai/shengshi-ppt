@@ -12,12 +12,18 @@ const PPTX_SAFE_ICON_RULES = `【PPTX安全图标与字体规范-最高优先级
 - 要点标记必须使用PPTX稳定元素：圆形/胶囊形/数字徽章/短线/分隔线/色块/Unicode文字符号，确保导出PPTX后不出现破图、红叉、缺图图标。
 - 图标感可以用基础矢量形状组合实现，例如圆点+线条、序号圆牌、勾选符号、箭头符号；不要插入图片格式的小图标。
 - 字体层级必须符合国内PPT阅读习惯：主标题使用 # 一级标题且≥44pt；页面标题使用 ## 且≥32pt；核心要点使用 ### 或 #### 标题级大文本且≥24pt；禁止普通小字正文作为主要内容。`;
+const GAMMA_VISUAL_LAYOUT_RULES = `【Gamma原生可视化映射-最高优先级】
+- 逐页读取 inputText 中的“Gamma可视化约束 / visualType / layoutIntent / chartSpec / diagramSpec / iconHints”，并映射为 Gamma 原生布局。
+- timeline/process/cycle/funnel 页面优先使用时间线、流程、循环、漏斗；comparison/matrix 页面优先使用左右对比、2x2矩阵、象限；dashboard/chart 页面优先使用数字看板和原生图表。
+- iconGrid 页面必须用图标语义、数字徽章、色块卡片或形状组合增强层次；每个要点要有可见视觉标记，禁止整页只有普通文本。
+- 只有 chartSpec 中存在真实数据时才生成图表；禁止自造百分比、金额、趋势数据。
+- 如果某种图表或逻辑图无法生成，降级为图标卡片/数字徽章/色块分组，不能降级为纯文字白板。`;
 
 function normalizePptxSafeInstructions(instructions: string): string {
   const withoutFragileIconBlocks = String(instructions || '')
     .replace(/【图标规则】[\s\S]*?(?=\n\n【配图规则】)/g, '')
     .replace(/【图标规范-统一风格】[\s\S]*?(?=\n\n【|$)/g, '');
-  return `${withoutFragileIconBlocks.trim()}\n\n${PPTX_SAFE_ICON_RULES}`;
+  return `${withoutFragileIconBlocks.trim()}\n\n${PPTX_SAFE_ICON_RULES}\n\n${GAMMA_VISUAL_LAYOUT_RULES}`;
 }
 
 function resolveLockedThemeFromIntent(intentHints: unknown, currentThemeId: string): string {

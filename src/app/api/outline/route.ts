@@ -62,6 +62,12 @@ type OutlineLikeSlide = {
   bullets?: unknown;
   notes?: unknown;
   speakerNotes?: unknown;
+  visualType?: unknown;
+  layoutIntent?: unknown;
+  chartSpec?: unknown;
+  diagramSpec?: unknown;
+  iconHints?: unknown;
+  imageIntent?: unknown;
   [key: string]: unknown;
 };
 
@@ -380,6 +386,8 @@ function buildSmartWorkflowInstruction(params: {
 第3步-Markdown排版触发：
 - 正文优先使用###大文本短句，必要时使用**粗体短句**
 - 对比内容用左右对照结构；流程内容用1.2.3有序列表；主次内容用嵌套列表
+- 每页必须判断 visualType：timeline/process/comparison/matrix/funnel/pyramid/dashboard/chart/diagram/iconGrid/imageHero/quote
+- 数据页必须产出 chartSpec；流程/关系页必须产出 diagramSpec；普通要点页必须产出 iconHints
 - 分页必须使用 --- 且保持边界稳定
 
 第4步-视觉风格与隐喻：
@@ -408,7 +416,8 @@ ${materialLines}
 【硬性输出要求】
 - 输出必须是严格JSON（不要markdown代码块）
 - slides 数量必须等于 ${params.numCards}
-- 每页 content 建议 3-4 条，notes 用于放补充说明`;
+- 每页 content 建议 3-4 条，notes 用于放补充说明
+- 每页必须包含 visualType、layoutIntent、iconHints；数据/关系页面补充 chartSpec 或 diagramSpec`;
 }
 
 // ===== JSON 解析函数（带多层修复 + Markdown fallback） =====
@@ -572,6 +581,57 @@ function normalizeOutlineBullets(value: unknown): string[] {
   return [];
 }
 
+function normalizeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? '').trim()).filter(Boolean).slice(0, 6);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[,，、;；\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 6);
+  }
+  return [];
+}
+
+const ALLOWED_VISUAL_TYPES = new Set([
+  'text',
+  'iconGrid',
+  'timeline',
+  'process',
+  'cycle',
+  'comparison',
+  'matrix',
+  'funnel',
+  'pyramid',
+  'dashboard',
+  'chart',
+  'diagram',
+  'quote',
+  'imageHero',
+]);
+
+function normalizeVisualType(value: unknown, title: string, bullets: string[]): string {
+  const raw = String(value || '').trim();
+  if (ALLOWED_VISUAL_TYPES.has(raw)) return raw;
+  const text = `${title}\n${bullets.join('\n')}`.toLowerCase();
+  if (/时间|历程|阶段|里程碑|timeline|过去|现在|未来/.test(text)) return 'timeline';
+  if (/流程|步骤|路径|机制|闭环|pipeline|process|1\.|2\.|3\./i.test(text)) return 'process';
+  if (/对比|差异|优势|劣势|before|after|vs|竞品/.test(text)) return 'comparison';
+  if (/象限|矩阵|优先级|维度|分类|matrix/.test(text)) return 'matrix';
+  if (/漏斗|转化|获客|留存|funnel/.test(text)) return 'funnel';
+  if (/层级|金字塔|战略|体系|pyramid/.test(text)) return 'pyramid';
+  if (/\d|%|同比|环比|增长|下降|金额|亿元|万|数据|指标|统计|占比|趋势/.test(text)) return 'chart';
+  if (/关系|架构|结构|依赖|链路|生态/.test(text)) return 'diagram';
+  return bullets.length >= 3 ? 'iconGrid' : 'text';
+}
+
+function normalizeRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
 function isPlaceholderBullet(text: string): boolean {
   const normalized = text.trim();
   if (!normalized) return true;
@@ -619,11 +679,21 @@ function refineOutlineSlides(slides: OutlineLikeSlide[], topic: string): Outline
     }
 
     const finalBullets = unique.slice(0, 4);
+    const visualType = normalizeVisualType(slide?.visualType, title, finalBullets);
+    const iconHints = normalizeStringArray(slide?.iconHints);
     return {
       ...slide,
       title,
       content: finalBullets,
       bullets: finalBullets,
+      visualType,
+      layoutIntent: typeof slide?.layoutIntent === 'string' && slide.layoutIntent.trim()
+        ? slide.layoutIntent.trim()
+        : `使用 Gamma 原生 ${visualType} 视觉结构呈现本页，不要退化为纯文字堆叠`,
+      chartSpec: normalizeRecord(slide?.chartSpec),
+      diagramSpec: normalizeRecord(slide?.diagramSpec),
+      iconHints: iconHints.length > 0 ? iconHints : finalBullets.map((item) => item.slice(0, 12)).slice(0, 4),
+      imageIntent: typeof slide?.imageIntent === 'string' ? slide.imageIntent.trim() : '',
       notes: typeof slide?.notes === 'string'
         ? slide.notes
         : (typeof slide?.speakerNotes === 'string' ? slide.speakerNotes : ''),
@@ -781,6 +851,13 @@ export async function POST(request: NextRequest) {
 ## 数据可视化标注
 涉及数据时在notes中标注图表：趋势📈 折线图 | 比较📊 柱状图 | 占比🥧 饼图 | 关系🔵 散点图 | 流程➡️ 流程图
 
+## 可视化语义字段（必须逐页填写）
+- visualType 只能选：iconGrid / timeline / process / comparison / matrix / funnel / pyramid / dashboard / chart / diagram / quote / imageHero / text
+- layoutIntent 用一句话说明希望 Gamma 映射的原生布局，例如“用 4 个图标卡片呈现”“用横向时间线呈现”“用左右对比布局呈现”
+- iconHints 给 2-5 个中文图标语义词，不要写外部图标库名称
+- chartSpec 只在有真实数据时填写，禁止编造数据
+- diagramSpec 只在流程、关系、架构页填写，节点必须来自原文或合理标题抽象
+
 ## 起承转合结构
 - 起(1-2页): 封面+背景引入
 - 承(中间页): 核心内容展开
@@ -817,7 +894,7 @@ export async function POST(request: NextRequest) {
 
 ## 输出格式
 严格输出JSON，不用markdown代码块：
-{"title":"PPT主标题","scene":"场景类型","storyline":"故事线名","themeId":"主题ID","tone":"professional/casual/creative/bold/traditional","imageMode":"theme-img/web/ai/noImages","slides":[{"title":"页面标题≤15字","content":["要点1≤25字","要点2","要点3"],"notes":"备注"}]}
+{"title":"PPT主标题","scene":"场景类型","storyline":"故事线名","themeId":"主题ID","tone":"professional/casual/creative/bold/traditional","imageMode":"theme-img/web/ai/noImages","slides":[{"title":"页面标题≤15字","content":["要点1≤25字","要点2","要点3"],"visualType":"iconGrid","layoutIntent":"用3-4个图标卡片呈现核心要点","iconHints":["趋势","效率","增长"],"chartSpec":null,"diagramSpec":null,"imageIntent":"如需图片，选择与本页主题直接相关的插图；失败则用图标卡片","notes":"备注"}]}
 
 总共${numCards}页`,
 
@@ -839,10 +916,11 @@ export async function POST(request: NextRequest) {
 - imageMode 仅允许: theme-img / web / ai / noImages
 - 默认 imageMode = theme-img
 - 自动匹配 scene/themeId/tone；若用户明确指定则必须服从用户指定
+- 每页必须补充 visualType、layoutIntent、iconHints；有真实数据时补 chartSpec，有流程/关系时补 diagramSpec
 
 【输出格式】
 严格输出JSON，不要markdown代码块：
-{"title":"PPT主标题","scene":"场景","storyline":"故事线","themeId":"主题ID","tone":"professional/casual/creative/bold/traditional","imageMode":"theme-img/web/ai/noImages","slides":[{"title":"标题≤15字","content":["要点1","要点2","要点3"],"notes":"备注"}]}
+{"title":"PPT主标题","scene":"场景","storyline":"故事线","themeId":"主题ID","tone":"professional/casual/creative/bold/traditional","imageMode":"theme-img/web/ai/noImages","slides":[{"title":"标题≤15字","content":["要点1","要点2","要点3"],"visualType":"process","layoutIntent":"用流程/时间线呈现步骤关系","iconHints":["步骤","协作","交付"],"chartSpec":null,"diagramSpec":{"type":"flow","nodes":["节点1","节点2"],"edges":[]},"imageIntent":"","notes":"备注"}]}
 
 总共${numCards}页`,
 
@@ -863,10 +941,11 @@ export async function POST(request: NextRequest) {
 - imageMode 仅允许: theme-img / web / ai / noImages
 - 默认 imageMode = theme-img
 - 自动匹配 scene/themeId/tone；若用户明确指定则必须服从用户指定
+- 每页必须补充 visualType、layoutIntent、iconHints；保留原文事实，不因可视化字段新增事实
 
 【输出格式】
 严格输出JSON，不要markdown代码块：
-{"title":"从原文提取的主标题","scene":"场景","themeId":"主题ID","tone":"professional/casual/creative/bold/traditional","imageMode":"theme-img/web/ai/noImages","slides":[{"title":"原文标题","content":["原文要点1","原文要点2"],"notes":"备注"}]}
+{"title":"从原文提取的主标题","scene":"场景","themeId":"主题ID","tone":"professional/casual/creative/bold/traditional","imageMode":"theme-img/web/ai/noImages","slides":[{"title":"原文标题","content":["原文要点1","原文要点2"],"visualType":"iconGrid","layoutIntent":"用图标卡片承载原文要点","iconHints":["要点","说明"],"chartSpec":null,"diagramSpec":null,"imageIntent":"","notes":"备注"}]}
 
 总共${numCards}页`,
     };
@@ -1036,6 +1115,12 @@ ${promptInputText}`;
         content: normalizedBullets, // 兼容旧字段
         speakerNotes: normalizedNotes,
         notes: normalizedNotes, // 兼容旧字段
+        visualType: typeof s.visualType === 'string' ? s.visualType : undefined,
+        layoutIntent: typeof s.layoutIntent === 'string' ? s.layoutIntent : undefined,
+        chartSpec: normalizeRecord(s.chartSpec) as OutlineSlide['chartSpec'],
+        diagramSpec: normalizeRecord(s.diagramSpec) as OutlineSlide['diagramSpec'],
+        iconHints: normalizeStringArray(s.iconHints),
+        imageIntent: typeof s.imageIntent === 'string' ? s.imageIntent : undefined,
       };
     });
 
@@ -1075,6 +1160,12 @@ ${promptInputText}`;
       content: s.bullets,
       speakerNotes: s.speakerNotes,
       notes: s.speakerNotes,
+      visualType: s.visualType,
+      layoutIntent: s.layoutIntent,
+      chartSpec: s.chartSpec,
+      diagramSpec: s.diagramSpec,
+      iconHints: s.iconHints,
+      imageIntent: s.imageIntent,
     }));
 
     // D2: 返回 canonical outline（title + slides[] + meta）

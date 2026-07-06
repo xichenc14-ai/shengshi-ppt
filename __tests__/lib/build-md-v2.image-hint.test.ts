@@ -22,8 +22,29 @@ describe('buildMdV2 image hint strategy', () => {
     expect(markdown).toContain('只有在主题强调图已成功加载且可见时才放图片');
     expect(markdown).toContain('必须删除图片元素和图片容器');
     expect(instructions).toContain('内容页默认使用无图、图标或色块布局，不创建固定图片槽');
+    expect(instructions).toContain('Gamma原生可视化映射');
     expect(instructions).not.toContain('每页使用不同的强调布局');
     expect(instructions).not.toContain('禁止输出纯文字大白板');
     expect(markdown).not.toContain('改用网图');
+  });
+
+  it('carries visual intent into markdown for Gamma layout mapping', () => {
+    const { markdown } = buildMdV2('可视化测试', [
+      {
+        id: 'v1',
+        title: '实施路径',
+        bullets: ['需求澄清', '方案设计', '生成交付'],
+        visualType: 'process',
+        layoutIntent: '用横向流程图呈现三步路径',
+        iconHints: ['需求', '设计', '交付'],
+        diagramSpec: { type: 'flow', nodes: ['需求澄清', '方案设计', '生成交付'] },
+      },
+    ] as any, 'theme-img');
+
+    expect(markdown).toContain('1. **需求澄清**');
+    expect(markdown).toContain('Gamma可视化约束');
+    expect(markdown).toContain('可视化类型=process');
+    expect(markdown).toContain('逻辑图建议=flow');
+    expect(markdown).toContain('图标语义=需求、设计、交付');
   });
 });

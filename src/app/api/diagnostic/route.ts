@@ -53,7 +53,7 @@ export async function POST() {
             'Authorization': `Bearer ${MINIMAX_API_KEY}`,
           },
           body: JSON.stringify({
-            model: 'MiniMax-M2.7',
+            model: 'MiniMax-M3',
             messages: [{ role: 'user', content: '用JSON返回：{"reply":"ok"}' }],
             max_tokens: 100,
           }),

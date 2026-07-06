@@ -1,7 +1,7 @@
 # 省心PPT - 技术设计决策
 
-> **版本**: v1.1
-> **最后更新**: 2026-05-10
+> **版本**: v1.2
+> **最后更新**: 2026-07-06
 
 ---
 
@@ -13,8 +13,8 @@
 - **决策**: 统一所有 AI 服务使用 MiniMax
   - 移除 GLM（智谱）客户端 (`src/lib/glm-client.ts` 已标记废弃)
   - 移除 Kimi（月之暗面）客户端 (`src/lib/kimi-client.ts` 已标记废弃)
-  - 统一使用 MiniMax-M2.7 进行文本生成（大纲生成、内容分析）
-  - 图片理解使用 MiniMax-VL-01
+  - 优先使用 MiniMax-M3 进行文本生成与多模态预处理（大纲生成、内容分析、图片语义）
+  - 文本备用路线使用 MiniMax-M2.7；图片备用路线使用 MiniMax-VL-01
   - 图片生成使用 MiniMax image-01
 - **原因**: 兮晨哥哥要求统一使用原生 MiniMax key，简化架构
 - **影响范围**: outline API、understand-image API
@@ -52,8 +52,9 @@
 
 ### MiniMax
 - **用途**: 文本生成、大纲生成、图片理解、图片生成
-- **文本模型**: MiniMax-M2.7（8K上下文，8192输出）
-- **视觉模型**: MiniMax-VL-01
+- **优先模型**: MiniMax-M3（文本/图片/视频多模态，1M上下文）
+- **文本备用模型**: MiniMax-M2.7
+- **视觉备用模型**: MiniMax-VL-01
 - **生图模型**: image-01
 
 ### Supabase
