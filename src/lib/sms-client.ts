@@ -7,9 +7,12 @@
 
 type SMSProvider = 'aliyun_auth' | 'luosimao' | 'tencent';
 
+export const REMOTE_SMS_CODE_MARKER = '__REMOTE_SMS_PROVIDER_VERIFY__';
+
 interface SMSSendResult {
   success: boolean;
-  code?: string;       // 阿里云返回的系统生成验证码
+  code?: string;       // 本地可校验验证码；DYPNS 可能不返回真实验证码
+  remoteVerify?: boolean; // true 表示验证码需回源到服务商校验
   error?: string;
   messageId?: string;
 }
@@ -22,14 +25,18 @@ type DypnsModule = {
   default?: {
     default?: new (config: unknown) => {
       sendSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
+      checkSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
     };
   } | (new (config: unknown) => {
     sendSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
+    checkSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
   });
   Client?: new (config: unknown) => {
     sendSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
+    checkSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
   };
   SendSmsVerifyCodeRequest: new (payload: Record<string, unknown>) => unknown;
+  CheckSmsVerifyCodeRequest: new (payload: Record<string, unknown>) => unknown;
 };
 
 type TencentModule = {
@@ -62,18 +69,33 @@ function maskPhone(phone: string): string {
   return phone.replace(/^(\d{3})\d{4}(\d{4})$/, '$1****$2');
 }
 
+async function createAliyunAuthClient() {
+  const accessKeyId = process.env.ALIYUN_ACCESS_KEY_ID;
+  const accessKeySecret = process.env.ALIYUN_ACCESS_KEY_SECRET;
+
+  if (!accessKeyId || !accessKeySecret) {
+    return { error: 'ALIYUN_ACCESS_KEY_ID / SECRET 未配置' };
+  }
+
+  const Dypnsapi = await import('@alicloud/dypnsapi20170525') as unknown as DypnsModule;
+  const OpenApi = await import('@alicloud/openapi-client') as unknown as OpenApiModule;
+
+  const config = new OpenApi.Config({
+    accessKeyId,
+    accessKeySecret,
+    endpoint: 'dypnsapi.aliyuncs.com',
+  });
+
+  const DypnsClient = resolveDypnsClient(Dypnsapi);
+  return { Dypnsapi, client: new DypnsClient(config) };
+}
+
 // ===== 阿里云短信认证（dypnsapi）=====
 // 个人开发者友好：100次免费套餐包
 // 使用系统赠送签名+模板，API自动生成验证码
 async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
-  const accessKeyId = process.env.ALIYUN_ACCESS_KEY_ID;
-  const accessKeySecret = process.env.ALIYUN_ACCESS_KEY_SECRET;
   const signName = process.env.ALIYUN_SMS_SIGN_NAME;
   const templateCode = process.env.ALIYUN_SMS_TEMPLATE_CODE;
-
-  if (!accessKeyId || !accessKeySecret) {
-    return { success: false, error: 'ALIYUN_ACCESS_KEY_ID / SECRET 未配置' };
-  }
 
   if (!signName || !templateCode) {
     console.warn('[SMS] ALIYUN_SMS_SIGN_NAME 或 ALIYUN_SMS_TEMPLATE_CODE 未配置，降级为控制台打印');
@@ -83,21 +105,14 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
   }
 
   try {
-    const Dypnsapi = await import('@alicloud/dypnsapi20170525') as unknown as DypnsModule;
-    const OpenApi = await import('@alicloud/openapi-client') as unknown as OpenApiModule;
-
-    const config = new OpenApi.Config({
-      accessKeyId,
-      accessKeySecret,
-      endpoint: 'dypnsapi.aliyuncs.com',
-    });
-
-    const DypnsClient = resolveDypnsClient(Dypnsapi);
-    const client = new DypnsClient(config);
+    const aliyun = await createAliyunAuthClient();
+    if ('error' in aliyun) return { success: false, error: aliyun.error };
+    const { Dypnsapi, client } = aliyun;
     const sendRes = await client.sendSmsVerifyCode(new Dypnsapi.SendSmsVerifyCodeRequest({
       phoneNumber: phone,
       signName,
       templateCode,
+      ...(process.env.ALIYUN_SMS_SCHEME_NAME ? { schemeName: process.env.ALIYUN_SMS_SCHEME_NAME } : {}),
       // 模板参数：##code## = 系统自动生成验证码，min = 有效时长(分钟)
       templateParam: JSON.stringify({ code: '##code##', min: '5' }),
       codeLength: 6,        // 6位验证码
@@ -124,11 +139,11 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
       );
       console.log('[SMS] Extracted verifyCode:', returnedCode);
       if (!returnedCode) {
-        console.warn('[SMS] API 未返回验证码，使用本地生成');
-        const fallbackCode = String(Math.floor(100000 + Math.random() * 900000));
+        console.warn('[SMS] API 未返回验证码，将使用服务商远端校验，避免本地验证码与短信内容不一致');
         return {
           success: true,
-          code: fallbackCode,
+          code: REMOTE_SMS_CODE_MARKER,
+          remoteVerify: true,
           messageId: String(bodyObj.RequestId ?? bodyObj.requestId ?? ''),
         };
       }
@@ -152,6 +167,33 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
       return { success: true, code: fallbackCode, messageId: 'dev-mode' };
     }
     return { success: false, error: `阿里云短信异常: ${msg}` };
+  }
+}
+
+async function verifyViaAliyunAuth(phone: string, code: string): Promise<{ valid: boolean; error?: string }> {
+  try {
+    const aliyun = await createAliyunAuthClient();
+    if ('error' in aliyun) return { valid: false, error: aliyun.error };
+    const { Dypnsapi, client } = aliyun;
+    const checkRes = await client.checkSmsVerifyCode(new Dypnsapi.CheckSmsVerifyCodeRequest({
+      phoneNumber: phone,
+      verifyCode: code,
+      countryCode: '86',
+      caseAuthPolicy: 1,
+      ...(process.env.ALIYUN_SMS_SCHEME_NAME ? { schemeName: process.env.ALIYUN_SMS_SCHEME_NAME } : {}),
+    }));
+    const body = (checkRes.body ?? {}) as Record<string, unknown>;
+    const model = (body.Model ?? body.model ?? {}) as Record<string, unknown>;
+    const verifyResult = String(model.VerifyResult ?? model.verifyResult ?? '').toUpperCase();
+    const respCode = String(body.Code ?? body.code ?? '');
+    if ((respCode === 'OK' || body.Success === true || body.success === true) && verifyResult === 'PASS') {
+      return { valid: true };
+    }
+    return { valid: false, error: '验证码错误或已过期' };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'unknown';
+    console.error('[SMS] 阿里云验证码远端校验异常:', msg);
+    return { valid: false, error: '验证码校验服务异常，请稍后重试' };
   }
 }
 
@@ -231,5 +273,16 @@ export async function sendSMS(phone: string, code?: string): Promise<SMSSendResu
       return sendViaTencent(phone, code);
     default:
       return { success: false, error: `不支持的短信服务商: ${provider}` };
+  }
+}
+
+export async function verifyRemoteSMSCode(phone: string, code: string): Promise<{ valid: boolean; error?: string }> {
+  const provider = getProvider();
+
+  switch (provider) {
+    case 'aliyun_auth':
+      return verifyViaAliyunAuth(phone, code);
+    default:
+      return { valid: false, error: '当前短信服务商不支持远端验证码校验' };
   }
 }
