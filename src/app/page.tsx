@@ -866,7 +866,8 @@ export default function Home() {
       const outlineTimeout = setTimeout(() => outlineController.abort(), 180000); // 3分钟超时
       let od: any = null;
       const runDirectFallback = async () => {
-        setStepText('流式连接波动，正在切换稳态生成...');
+        setStepText('流式连接波动，正在切换到稳态生成...');
+        setGenProgress((prev) => Math.max(prev, 48));
         const oRes = await fetch('/api/outline', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -933,20 +934,36 @@ export default function Home() {
               const fallbackMsgByStage: Record<string, string> = {
                 analyzing: '正在识别用户需求与素材结构...',
                 planning: '正在规划故事线与章节结构...',
-                generating: '正在生成每页标题与要点...',
+                generating: '正在生成每页标题、要点和可视化建议...',
                 polishing: '正在做最终校验...',
               };
               const stageMsg = evt.message || fallbackMsgByStage[evt.stage] || '正在处理中...';
-              if (evt.stage === 'analyzing') {
-                setGenProgress(20);
+              const explicitProgress = Number(evt.progress);
+              if (Number.isFinite(explicitProgress) && explicitProgress > 0) {
+                setGenProgress((prev) => Math.max(prev, Math.min(95, explicitProgress)));
+              } else if (evt.stage === 'analyzing') {
+                setGenProgress((prev) => Math.max(prev, 20));
               } else if (evt.stage === 'planning') {
-                setGenProgress(30);
+                setGenProgress((prev) => Math.max(prev, 30));
               } else if (evt.stage === 'generating') {
-                setGenProgress(45);
+                setGenProgress((prev) => Math.max(prev, 42));
               } else if (evt.stage === 'polishing') {
-                setGenProgress(58);
+                setGenProgress((prev) => Math.max(prev, 58));
               }
               setStepText(stageMsg);
+              touchPersistedResumeState();
+              continue;
+            }
+
+            if (evt.type === 'heartbeat') {
+              const progress = Number(evt.progress);
+              if (Number.isFinite(progress) && progress > 0) {
+                setGenProgress((prev) => Math.max(prev, Math.min(58, progress)));
+              } else {
+                setGenProgress((prev) => Math.min(58, Math.max(prev + 1, 42)));
+              }
+              const elapsed = Math.max(1, Math.round((Number(evt.elapsedMs) || 0) / 1000));
+              setStepText(evt.message ? `${evt.message}（${elapsed}秒）` : `大纲模型处理中...（${elapsed}秒）`);
               touchPersistedResumeState();
               continue;
             }
@@ -956,7 +973,7 @@ export default function Home() {
               const total = Math.max(1, Number(evt.total) || evt.slides.length || 1);
               const current = Math.min(total, Math.max(0, Number(evt.current) || evt.slides.length || 0));
               const stageProgress = 60 + Math.round((current / total) * 25);
-              setGenProgress(stageProgress);
+              setGenProgress((prev) => Math.max(prev, stageProgress));
               setStepText(`已生成 ${current}/${total} 页大纲...`);
               touchPersistedResumeState();
               continue;
@@ -1687,8 +1704,8 @@ export default function Home() {
 
     const stageSoftCaps: Record<OutlineStageKey, number> = {
       analyzing: 24,
-      planning: 44,
-      generating: 78,
+      planning: 52,
+      generating: 84,
       polishing: 94,
     };
     const stageSoftRates: Record<OutlineStageKey, number> = {
@@ -1700,7 +1717,7 @@ export default function Home() {
     const stageFloor: Record<OutlineStageKey, number> = {
       analyzing: 12,
       planning: 24,
-      generating: 42,
+      generating: 50,
       polishing: 80,
     };
 

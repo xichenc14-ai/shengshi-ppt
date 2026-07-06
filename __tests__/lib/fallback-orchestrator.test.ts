@@ -40,8 +40,10 @@ describe('fallback-orchestrator', () => {
     expect(callDeepSeekWithRetry).not.toHaveBeenCalled();
 
     const options = callMiniMaxWithRetry.mock.calls[0][1];
-    expect(options.maxRetries).toBe(2);
-    expect(options.timeoutMs).toBe(30000);
+    expect(options.maxRetries).toBe(1);
+    expect(options.timeoutMs).toBe(45000);
+    expect(options.temperature).toBe(0.35);
+    expect(options.thinking).toBe('disabled');
   });
 
   it('accepts deepseek key from DEEPSEEK_API_KEYS pool when explicitly selected', async () => {

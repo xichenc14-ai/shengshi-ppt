@@ -28,6 +28,7 @@ export interface MiniMaxOptions {
   temperature?: number;
   system?: string;
   timeoutMs?: number;
+  thinking?: 'disabled' | 'adaptive';
 }
 
 export function resolveMiniMaxTextModel(model?: string): string {
@@ -54,6 +55,7 @@ export async function callMiniMax(
     temperature = 0.7,
     system,
     timeoutMs = 60000,
+    thinking,
   } = options;
   const model = resolveMiniMaxTextModel(options.model);
 
@@ -82,7 +84,9 @@ export async function callMiniMax(
         model,
         messages: apiMessages,
         max_tokens: maxTokens,
+        max_completion_tokens: maxTokens,
         temperature,
+        ...(model === DEFAULT_MINIMAX_TEXT_MODEL && thinking ? { thinking: { type: thinking } } : {}),
       }),
       signal: controller.signal,
     });

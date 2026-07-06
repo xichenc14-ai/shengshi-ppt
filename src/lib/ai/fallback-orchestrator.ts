@@ -52,7 +52,9 @@ export interface FallbackOptions {
 // === Constants ===
 
 const BASE_TIMEOUT_MS = 30_000;
+const OUTLINE_TIMEOUT_MS = Number(process.env.OUTLINE_PROVIDER_TIMEOUT_MS || 45_000);
 const PROVIDER_RETRIES = 2;
+const OUTLINE_PROVIDER_RETRIES = 1;
 
 // === Helper Functions ===
 
@@ -97,7 +99,7 @@ function isProviderConfigured(provider: FallbackProvider): boolean {
   return Boolean(singleDeepSeek || deepSeekPool[0]);
 }
 
-function buildProviderOrder(): FallbackProvider[] {
+function buildProviderOrder(taskType?: string): FallbackProvider[] {
   // 支持通过环境变量切换主模型：
   // OUTLINE_PRIMARY_PROVIDER=deepseek|minimax（推荐）
   // AI_PRIMARY_PROVIDER=deepseek|minimax（兼容别名）
@@ -107,6 +109,7 @@ function buildProviderOrder(): FallbackProvider[] {
     || 'minimax';
 
   const secondary: FallbackProvider = preferred === 'deepseek' ? 'minimax' : 'deepseek';
+  if (taskType === 'outline') return [preferred, secondary];
   return [preferred, secondary, preferred];
 }
 
@@ -119,13 +122,19 @@ export async function callWithFallback(
   const messages = buildMessages(options.systemPrompt, options.userPrompt);
 
   // 尝试顺序：主模型 → 备用模型 → 主模型重试
-  const providers = buildProviderOrder();
+  const providers = buildProviderOrder(options.taskType);
   let lastError: unknown;
   let lastStatusCode: number | undefined;
 
   for (const provider of providers) {
     const attemptStart = Date.now();
-    const timeoutMs = BASE_TIMEOUT_MS;
+    const isOutlineTask = options.taskType === 'outline';
+    const timeoutMs = isOutlineTask ? OUTLINE_TIMEOUT_MS : BASE_TIMEOUT_MS;
+    const maxRetries = isOutlineTask ? OUTLINE_PROVIDER_RETRIES : PROVIDER_RETRIES;
+    const temperature = isOutlineTask ? 0.35 : undefined;
+    const thinking = isOutlineTask
+      ? (process.env.OUTLINE_MINIMAX_THINKING === 'adaptive' ? 'adaptive' : 'disabled')
+      : undefined;
 
     if (!isProviderConfigured(provider)) {
       const msg = `${provider} API Key 未配置，跳过`;
@@ -143,8 +152,8 @@ export async function callWithFallback(
 
     try {
       const data = provider === 'minimax'
-        ? await callMiniMaxWithRetry(messages, { timeoutMs, maxRetries: PROVIDER_RETRIES })
-        : await callDeepSeekWithRetry(messages, { timeoutMs, maxRetries: PROVIDER_RETRIES });
+        ? await callMiniMaxWithRetry(messages, { timeoutMs, maxRetries, ...(temperature !== undefined ? { temperature } : {}), ...(thinking ? { thinking } : {}) })
+        : await callDeepSeekWithRetry(messages, { timeoutMs, maxRetries, ...(temperature !== undefined ? { temperature } : {}) });
 
       const durationMs = Date.now() - attemptStart;
       const fallbackAttempt: FallbackAttempt = {

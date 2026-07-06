@@ -47,6 +47,34 @@ describe('POST /api/outline/stream', () => {
     expect((options.headers as Record<string, string>).cookie).toBe('shengxin_session=test-session');
   });
 
+  it('emits heartbeat events while the outline model is still running', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 2600));
+      return new Response(JSON.stringify({
+        title: '慢速大纲',
+        slides: [{ id: 's1', title: '封面', content: ['要点'] }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await POST(new Request('http://localhost/api/outline/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        inputText: '生成8页商务汇报',
+        userInstruction: '生成8页商务汇报',
+        slideCount: 8,
+      }),
+    }) as unknown as NextRequest);
+
+    const events = (await response.text()).trim().split('\n').map((line) => JSON.parse(line));
+    expect(events.some((event) => event.type === 'heartbeat')).toBe(true);
+    expect(events.some((event) => event.type === 'complete')).toBe(true);
+  });
+
   it('emits an error instead of synthesizing an outline from internal prompt wrappers', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       error: 'AI 大纲服务暂时不可用，未生成任何大纲，请稍后重试',

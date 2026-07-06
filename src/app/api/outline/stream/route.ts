@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 type OutlineStreamEvent =
-  | { type: 'stage'; stage: 'analyzing' | 'planning' | 'generating' | 'polishing'; message: string }
+  | { type: 'stage'; stage: 'analyzing' | 'planning' | 'generating' | 'polishing'; message: string; progress?: number }
+  | { type: 'heartbeat'; stage: 'planning' | 'generating'; message: string; elapsedMs: number; progress: number }
   | { type: 'slides'; slides: unknown[]; current: number; total: number }
   | { type: 'complete'; data: unknown }
   | { type: 'error'; status: number; message: string };
@@ -78,27 +79,61 @@ export async function POST(request: NextRequest) {
           type: 'stage',
           stage: 'analyzing',
           message: `已接收素材：约${textLength}字，${Math.max(paragraphCount, 1)}段${detectedFileCount > 0 ? `，${detectedFileCount}个附件片段` : ''}`,
+          progress: 18,
         });
         await sleep(120);
         push({
           type: 'stage',
           stage: 'planning',
           message: `正在按「${modeLabel}」处理方式整理内容，目标 ${requestedSlides} 页大纲...`,
+          progress: 30,
+        });
+        await sleep(80);
+        push({
+          type: 'stage',
+          stage: 'generating',
+          message: '正在调用大纲模型，生成标题、要点和可视化建议...',
+          progress: 40,
         });
 
-        const outlineRes = await fetch(`${origin}/api/outline`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-forwarded-for': forwardIp,
-            ...(cookie ? { cookie } : {}),
-            ...(authorization ? { authorization } : {}),
-          },
-          body: JSON.stringify(body),
-          cache: 'no-store',
-        });
+        const startedAt = Date.now();
+        const heartbeatMessages = [
+          '模型仍在处理素材，正在提炼页面主线...',
+          '正在把长文本压缩为可演示的章节结构...',
+          '正在匹配每页标题、要点、图表与图标提示...',
+          '正在检查页数、逻辑顺序和内容密度...',
+          '复杂素材处理会稍久一些，连接正常，请继续等待...',
+        ];
+        let heartbeatIndex = 0;
+        const heartbeat = setInterval(() => {
+          const elapsedMs = Date.now() - startedAt;
+          const progress = Math.min(57, 42 + Math.floor(elapsedMs / 3500));
+          push({
+            type: 'heartbeat',
+            stage: 'generating',
+            message: heartbeatMessages[heartbeatIndex % heartbeatMessages.length],
+            elapsedMs,
+            progress,
+          });
+          heartbeatIndex += 1;
+        }, 2500);
 
-        push({ type: 'stage', stage: 'generating', message: '正在生成页面标题与关键要点...' });
+        let outlineRes: Response;
+        try {
+          outlineRes = await fetch(`${origin}/api/outline`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-forwarded-for': forwardIp,
+              ...(cookie ? { cookie } : {}),
+              ...(authorization ? { authorization } : {}),
+            },
+            body: JSON.stringify(body),
+            cache: 'no-store',
+          });
+        } finally {
+          clearInterval(heartbeat);
+        }
 
         const raw = await outlineRes.text();
         let parsed: ParsedOutlinePayload | null = null;
@@ -119,6 +154,7 @@ export async function POST(request: NextRequest) {
         const slides: unknown[] = Array.isArray(parsed.slides) ? parsed.slides : [];
         const progressive: unknown[] = [];
 
+        push({ type: 'stage', stage: 'polishing', message: '大纲已返回，正在逐页写入预览...', progress: 60 });
         for (let i = 0; i < slides.length; i++) {
           progressive.push(slides[i]);
           push({ type: 'slides', slides: [...progressive], current: i + 1, total: slides.length });
