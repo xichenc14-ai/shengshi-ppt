@@ -18,6 +18,8 @@ export type StoredArtifactMeta = {
 };
 
 const DEFAULT_SIGNED_URL_TTL_SECONDS = 10 * 60;
+const R2_MAX_ATTEMPTS = 3;
+const R2_RETRY_BASE_MS = 350;
 
 let cachedClient: S3Client | null = null;
 
@@ -56,9 +58,71 @@ function getR2Client(): S3Client {
     region: 'auto',
     endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
     credentials: { accessKeyId, secretAccessKey },
+    maxAttempts: R2_MAX_ATTEMPTS,
   });
 
   return cachedClient;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readErrorField(error: unknown, field: string): unknown {
+  return error && typeof error === 'object'
+    ? (error as Record<string, unknown>)[field]
+    : undefined;
+}
+
+function isRetryableStorageError(error: unknown): boolean {
+  const statusCode = Number(
+    readErrorField(readErrorField(error, '$metadata'), 'httpStatusCode')
+    || readErrorField(error, '$statusCode')
+    || readErrorField(error, 'statusCode')
+    || 0
+  );
+  const code = String(readErrorField(error, 'code') || readErrorField(error, 'Code') || readErrorField(error, 'name') || '');
+
+  if ([408, 429, 500, 502, 503, 504].includes(statusCode)) return true;
+  return /Timeout|ECONNRESET|EAI_AGAIN|ETIMEDOUT|NetworkingError|RequestTimeout|SlowDown/i.test(code);
+}
+
+async function withStorageRetry<T>(operation: string, fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= R2_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= R2_MAX_ATTEMPTS || !isRetryableStorageError(error)) break;
+      await wait(R2_RETRY_BASE_MS * attempt);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(`${operation} failed: ${formatStorageError(lastError)}`);
+}
+
+export function formatStorageError(error: unknown): string {
+  if (error instanceof Error) {
+    const metadata = readErrorField(error, '$metadata') as Record<string, unknown> | undefined;
+    const extra = {
+      name: error.name,
+      message: error.message,
+      code: readErrorField(error, 'code') || readErrorField(error, 'Code'),
+      httpStatusCode: metadata?.httpStatusCode,
+      attempts: metadata?.attempts,
+    };
+    return JSON.stringify(extra);
+  }
+
+  if (error && typeof error === 'object') {
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return Object.prototype.toString.call(error);
+    }
+  }
+
+  return String(error);
 }
 
 export function sha256Hex(buffer: Buffer): string {
@@ -78,7 +142,7 @@ export function buildArtifactObjectKey(format: ArtifactFormat, generationId: str
 export async function putArtifactObject(input: StoredArtifactInput): Promise<StoredArtifactMeta> {
   const sha256 = sha256Hex(input.body);
 
-  await getR2Client().send(new PutObjectCommand({
+  await withStorageRetry('putArtifactObject', () => getR2Client().send(new PutObjectCommand({
     Bucket: getR2Bucket(),
     Key: input.key,
     Body: input.body,
@@ -89,7 +153,7 @@ export async function putArtifactObject(input: StoredArtifactInput): Promise<Sto
       sha256,
       filename: encodeURIComponent(input.filename),
     },
-  }));
+  })));
 
   return {
     key: input.key,
@@ -100,10 +164,10 @@ export async function putArtifactObject(input: StoredArtifactInput): Promise<Sto
 
 export async function artifactObjectExists(key: string): Promise<boolean> {
   try {
-    await getR2Client().send(new HeadObjectCommand({
+    await withStorageRetry('artifactObjectExists', () => getR2Client().send(new HeadObjectCommand({
       Bucket: getR2Bucket(),
       Key: key,
-    }));
+    })));
     return true;
   } catch {
     return false;

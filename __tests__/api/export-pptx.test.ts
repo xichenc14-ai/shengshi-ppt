@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 import { GET } from '@/app/api/export-pptx/route';
+import * as artifactStorage from '@/lib/artifact-storage';
 
 vi.mock('@/lib/gamma-key-pool', () => ({
   selectBestKey: vi.fn().mockReturnValue({
@@ -16,6 +17,25 @@ vi.mock('@/lib/gamma-key-pool', () => ({
     },
   ]),
   recordKeyFailure: vi.fn(),
+}));
+
+vi.mock('@/lib/artifact-storage', () => ({
+  artifactObjectExists: vi.fn().mockResolvedValue(false),
+  buildArtifactObjectKey: vi.fn((format: string, generationId: string, sha256: string) => (
+    `${format}/${generationId}/${sha256.slice(0, 16)}.${format}`
+  )),
+  createArtifactSignedDownloadUrl: vi.fn().mockResolvedValue('https://r2.example.com/signed.pptx'),
+  formatStorageError: vi.fn((error: unknown) => (
+    error instanceof Error ? error.message : JSON.stringify(error)
+  )),
+  isArtifactAccelerationEnabled: vi.fn().mockReturnValue(false),
+  putArtifactObject: vi.fn(async (input: { key: string; body: Buffer }) => ({
+    key: input.key,
+    sizeBytes: input.body.length,
+    sha256: 'mock-sha256',
+  })),
+  sanitizeDownloadFilename: vi.fn((filename: string, fallback: string) => filename || fallback),
+  sha256Hex: vi.fn(() => 'mock-sha256'),
 }));
 
 const mockFetch = vi.fn();
@@ -38,6 +58,14 @@ function validPptxBytes(): ArrayBuffer {
 describe('/api/export-pptx', () => {
   beforeEach(() => {
     mockFetch.mockReset();
+    vi.mocked(artifactStorage.isArtifactAccelerationEnabled).mockReturnValue(false);
+    vi.mocked(artifactStorage.artifactObjectExists).mockResolvedValue(false);
+    vi.mocked(artifactStorage.createArtifactSignedDownloadUrl).mockResolvedValue('https://r2.example.com/signed.pptx');
+    vi.mocked(artifactStorage.putArtifactObject).mockResolvedValue({
+      key: 'pptx/gen-1/mock-sha256.pptx',
+      sizeBytes: 2048,
+      sha256: 'mock-sha256',
+    });
   });
 
   it('returns a validated PPTX package', async () => {
@@ -132,5 +160,28 @@ describe('/api/export-pptx', () => {
         headers: expect.objectContaining({ Accept: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }),
       }),
     );
+  });
+
+  it('redirects to R2 after upload even when metadata storage is unavailable', async () => {
+    vi.mocked(artifactStorage.isArtifactAccelerationEnabled).mockReturnValue(true);
+    mockFetch
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        status: 'completed',
+        exportUrl: 'https://example.com/result.pptx',
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(validPptxBytes(), {
+        status: 200,
+        headers: { 'Content-Type': 'application/octet-stream' },
+      }));
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('https://r2.example.com/signed.pptx');
+    expect(artifactStorage.putArtifactObject).toHaveBeenCalledTimes(1);
+    expect(artifactStorage.createArtifactSignedDownloadUrl).toHaveBeenCalledWith(expect.objectContaining({
+      key: 'pptx/gen-1/mock-sha256.pptx',
+      filename: 'test.pptx',
+    }));
   });
 });

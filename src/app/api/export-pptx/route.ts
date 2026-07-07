@@ -7,6 +7,7 @@ import {
   artifactObjectExists,
   buildArtifactObjectKey,
   createArtifactSignedDownloadUrl,
+  formatStorageError,
   isArtifactAccelerationEnabled,
   putArtifactObject,
   sanitizeDownloadFilename,
@@ -14,6 +15,8 @@ import {
 } from '@/lib/artifact-storage';
 
 export const runtime = 'nodejs';
+export const preferredRegion = 'hkg1';
+export const maxDuration = 60;
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -192,8 +195,20 @@ export async function GET(req: NextRequest) {
       error: { code: 'MISSING_ID', message: '缺少 generationId 参数' },
     }, { status: 400 });
   }
+  const safeFilename = sanitizeDownloadFilename(filename, `省心PPT.${FORMAT}`);
 
   try {
+    if (isArtifactAccelerationEnabled()) {
+      const existingArtifact = await findReadyArtifact(generationId);
+      if (existingArtifact) {
+        console.log('[ExportPPTX] R2 artifact 命中:', existingArtifact.object_key);
+        return redirectToArtifact({
+          ...existingArtifact,
+          filename: safeFilename,
+        });
+      }
+    }
+
     const orderedKeys = await getOrderedKeys();
     let apiKey = orderedKeys[0]?.key || '';
     let statusData: GammaStatusData | null = null;
@@ -275,15 +290,6 @@ export async function GET(req: NextRequest) {
     }
 
     console.log('[ExportPPTX] 获取到PPTX URL:', pptxUrl.substring(0, 80));
-    const safeFilename = sanitizeDownloadFilename(filename, `省心PPT.${FORMAT}`);
-
-    if (isArtifactAccelerationEnabled()) {
-      const existingArtifact = await findReadyArtifact(generationId);
-      if (existingArtifact) {
-        console.log('[ExportPPTX] R2 artifact 命中:', existingArtifact.object_key);
-        return redirectToArtifact(existingArtifact);
-      }
-    }
 
     // Step 3: 后端代理下载PPTX（解决跨域/302问题）
     const downloadPptx = (withApiKey = false) => fetch(pptxUrl, {
@@ -346,22 +352,27 @@ export async function GET(req: NextRequest) {
           contentType: MIME_TYPE,
           filename: safeFilename,
         });
-        const artifact = await saveReadyArtifact({
-          generationId,
-          objectKey,
-          filename: safeFilename,
-          sizeBytes: stored.sizeBytes,
-          sha256: stored.sha256,
-        });
+        let artifact: ArtifactRow | null = null;
+        try {
+          artifact = await saveReadyArtifact({
+            generationId,
+            objectKey,
+            filename: safeFilename,
+            sizeBytes: stored.sizeBytes,
+            sha256: stored.sha256,
+          });
+        } catch (metadataError) {
+          console.error('[ExportPPTX] R2 artifact 元数据入库失败，继续使用 R2 直链:', formatStorageError(metadataError));
+        }
 
-        console.log('[ExportPPTX] R2 artifact 已入库:', objectKey, 'bytes=', stored.sizeBytes);
+        console.log('[ExportPPTX] R2 artifact 已上传:', objectKey, 'bytes=', stored.sizeBytes, 'metadata=', artifact ? 'saved' : 'skipped');
         return redirectToArtifact(artifact || {
           object_key: objectKey,
           filename: safeFilename,
           mime_type: MIME_TYPE,
         });
       } catch (artifactError) {
-        console.error('[ExportPPTX] R2 artifact 入库失败，回退旧代理链路:', getErrorMessage(artifactError));
+        console.error('[ExportPPTX] R2 artifact 上传或签名失败，回退旧代理链路:', formatStorageError(artifactError));
       }
     }
 
