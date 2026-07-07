@@ -113,9 +113,9 @@ describe('sms-client aliyun_auth verification contract', () => {
     expect(result.code).toBe('654321');
     expect(sendSmsVerifyCodeWithOptions).toHaveBeenCalledTimes(2);
     expect(sendSmsVerifyCodeWithOptions.mock.calls[0]?.[1]).toMatchObject({
-      connectTimeout: 3000,
-      readTimeout: 8000,
-      maxAttempts: 2,
+      connectTimeout: 8000,
+      readTimeout: 12000,
+      maxAttempts: 3,
     });
   });
 

@@ -150,11 +150,11 @@ function sanitizeAliyunErrorMessage(message: string, phone?: string): string {
 
 const ALIYUN_RUNTIME_OPTIONS = {
   autoretry: true,
-  maxAttempts: 2,
+  maxAttempts: 3,
   backoffPolicy: 'fixed',
-  backoffPeriod: 500,
-  connectTimeout: 3000,
-  readTimeout: 8000,
+  backoffPeriod: 800,
+  connectTimeout: 8000,
+  readTimeout: 12000,
   keepAlive: false,
 };
 
@@ -168,7 +168,7 @@ async function sleep(ms: number): Promise<void> {
 }
 
 async function callAliyunWithRetry<T>(label: string, call: () => Promise<T>): Promise<T> {
-  const attempts = 2;
+  const attempts = 3;
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -177,7 +177,7 @@ async function callAliyunWithRetry<T>(label: string, call: () => Promise<T>): Pr
       lastError = error;
       if (attempt >= attempts || !isRetryableAliyunError(error)) break;
       console.warn(`[SMS] Aliyun DYPNS ${label} transient failure, retrying (${attempt}/${attempts})`);
-      await sleep(400);
+      await sleep(800);
     }
   }
   throw lastError;
