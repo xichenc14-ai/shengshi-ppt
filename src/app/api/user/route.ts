@@ -95,10 +95,6 @@ function pickCanonicalUser(users: UserLite[]): UserLite | null {
   })[0];
 }
 
-function normalizeSMSCode(value: unknown): string {
-  return String(value ?? '').replace(/\D/g, '').slice(0, 6);
-}
-
 function buildGenerationSettlementDescription(generationId: string): string {
   return `生成结算-${generationId}`;
 }
@@ -246,20 +242,24 @@ export async function POST(req: NextRequest) {
 
       const localCode = genCode();
       let finalCode = localCode;
-      let requiresRemoteVerify = false;
       try {
-        const { REMOTE_SMS_CODE_MARKER, sendSMS } = await import('@/lib/sms-client');
+        const { getStorableSMSCode, sendSMS } = await import('@/lib/sms-client');
         const result = await sendSMS(phone, localCode);
         if (!result.success) {
           console.error('[SMS] 发送失败:', result.error || 'unknown');
           if (process.env.NODE_ENV === 'production') {
+            if (Number(result.retryAfter) > 0) {
+              return NextResponse.json(
+                { error: '请60秒后再试', retryAfter: Math.ceil(Number(result.retryAfter)) },
+                { status: 429 }
+              );
+            }
             rollbackSMSRateLimit(ip, phone);
             return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
           }
           console.warn('[SMS] 发送失败，开发环境使用本地验证码:', result.error);
         } else {
-          requiresRemoteVerify = result.remoteVerify === true;
-          finalCode = requiresRemoteVerify ? REMOTE_SMS_CODE_MARKER : (normalizeSMSCode(result.code) || localCode);
+          finalCode = getStorableSMSCode(result, localCode);
         }
       } catch (e) {
         console.error('[SMS] 模块异常:', e);
@@ -302,13 +302,9 @@ export async function POST(req: NextRequest) {
       if (!records || records.length === 0) return { valid: false, error: '验证码错误或已过期' };
 
       const record = records[0] as { id: string; code: string; verified?: boolean };
-      const { REMOTE_SMS_CODE_MARKER, verifyRemoteSMSCode } = await import('@/lib/sms-client');
-      if (record.code === REMOTE_SMS_CODE_MARKER) {
-        const remote = await verifyRemoteSMSCode(phone, code);
-        if (!remote.valid) return { valid: false, error: remote.error || '验证码错误或已过期' };
-      } else if (record.code !== code) {
-        return { valid: false, error: '验证码错误或已过期' };
-      }
+      const { verifyStoredSMSCode } = await import('@/lib/sms-client');
+      const verifyResult = await verifyStoredSMSCode(phone, record.code, code);
+      if (!verifyResult.valid) return verifyResult;
 
       if (markVerified && !record.verified) {
         await sb.from('verification_codes').update({ verified: true }).eq('id', record.id);
@@ -448,6 +444,7 @@ export async function POST(req: NextRequest) {
     // ===== 验证码登录 =====
     if (action === 'verify_code') {
       const { phone, code } = body;
+      const { normalizeSMSCode } = await import('@/lib/sms-client');
       const normalizedCode = normalizeSMSCode(code);
       if (!phone || normalizedCode.length !== 6) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
@@ -645,16 +642,22 @@ export async function POST(req: NextRequest) {
       const localCode = genCode();
       let finalCode = localCode;
       try {
-        const { REMOTE_SMS_CODE_MARKER, sendSMS } = await import('@/lib/sms-client');
+        const { getStorableSMSCode, sendSMS } = await import('@/lib/sms-client');
         const result = await sendSMS(newPhone, localCode);
         if (!result.success && process.env.NODE_ENV === 'production') {
+          if (Number(result.retryAfter) > 0) {
+            return NextResponse.json(
+              { error: '请60秒后再试', retryAfter: Math.ceil(Number(result.retryAfter)) },
+              { status: 429 }
+            );
+          }
           rollbackSMSRateLimit(ip, newPhone);
           return NextResponse.json({ error: '验证码发送失败，请稍后重试' }, { status: 500 });
         }
         if (!result.success) {
           console.warn('[ChangePhone] 发送验证码降级:', result.error);
         } else {
-          finalCode = result.remoteVerify === true ? REMOTE_SMS_CODE_MARKER : (normalizeSMSCode(result.code) || localCode);
+          finalCode = getStorableSMSCode(result, localCode);
         }
       } catch (e) {
         if (process.env.NODE_ENV === 'production') {
@@ -721,13 +724,10 @@ export async function POST(req: NextRequest) {
       }
       const record = codeRows[0];
       if (new Date(record.expires_at) < new Date()) return NextResponse.json({ error: '验证码已过期' }, { status: 400 });
-      const normalizedCode = normalizeSMSCode(code);
-      const { REMOTE_SMS_CODE_MARKER, verifyRemoteSMSCode } = await import('@/lib/sms-client');
-      if (record.code === REMOTE_SMS_CODE_MARKER) {
-        const remote = await verifyRemoteSMSCode(newPhone, normalizedCode);
-        if (!remote.valid) return NextResponse.json({ error: remote.error || '验证码错误' }, { status: 400 });
-      } else if (record.code !== normalizedCode) {
-        return NextResponse.json({ error: '验证码错误' }, { status: 400 });
+      const { verifyStoredSMSCode } = await import('@/lib/sms-client');
+      const verifyResult = await verifyStoredSMSCode(newPhone, record.code, code);
+      if (!verifyResult.valid) {
+        return NextResponse.json({ error: verifyResult.error || '验证码错误' }, { status: 400 });
       }
 
       const { data: exists } = await sb.from('users').select('id').eq('phone', newPhone).neq('id', userId).limit(1);

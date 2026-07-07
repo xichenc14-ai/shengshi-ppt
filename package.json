@@ -1,6 +1,6 @@
 {
   "name": "demo",
-  "version": "10.96.0",
+  "version": "10.96.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -11,6 +11,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "env:commercial": "node scripts/commercial-env-check.mjs",
+    "env:sms": "node scripts/sms-env-check.mjs",
     "env:commercial:doctor": "node scripts/commercial-env-doctor.mjs",
     "go-live:commercial": "node scripts/commercial-go-live-check.mjs",
     "preflight:commercial": "node scripts/commercial-preflight.mjs",

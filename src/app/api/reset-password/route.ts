@@ -1,3 +1,5 @@
+export const runtime = 'nodejs';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getClientIP, rateLimit } from '@/lib/rate-limit';
@@ -39,25 +41,26 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: '发送过于频繁', retryAfter }, { status: 429 });
       }
 
-      // 生成验证码（6位）
-      const code = String(Math.floor(100000 + Math.random() * 900000));
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-
-      // 存储验证码
-      await sb.from('verification_codes').upsert({
-        phone,
-        code,
-        type: 'reset_password',
-        expires_at: expiresAt,
-        created_at: new Date().toISOString(),
-      });
+      const localCode = String(Math.floor(100000 + Math.random() * 900000));
+      let finalCode = localCode;
 
       // 短信发送（与登录注册保持一致）
       try {
-        const { sendSMS } = await import('@/lib/sms-client');
-        const result = await sendSMS(phone, code);
+        const { getStorableSMSCode, sendSMS } = await import('@/lib/sms-client');
+        const result = await sendSMS(phone, localCode);
         if (!result.success && process.env.NODE_ENV === 'production') {
+          if (Number(result.retryAfter) > 0) {
+            return NextResponse.json(
+              { error: '请60秒后再试', retryAfter: Math.ceil(Number(result.retryAfter)) },
+              { status: 429 }
+            );
+          }
           return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
+        }
+        if (!result.success) {
+          console.warn('[ResetPassword] 短信发送失败，开发模式降级:', result.error);
+        } else {
+          finalCode = getStorableSMSCode(result, localCode);
         }
       } catch (e) {
         if (process.env.NODE_ENV === 'production') {
@@ -66,12 +69,26 @@ export async function POST(request: NextRequest) {
         console.warn('[ResetPassword] 短信发送失败，开发模式降级:', e);
       }
 
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      await sb.from('verification_codes').delete().eq('phone', phone).eq('type', 'reset_password');
+      const { error: insertErr } = await sb.from('verification_codes').insert({
+        phone,
+        code: finalCode,
+        type: 'reset_password',
+        expires_at: expiresAt,
+        created_at: new Date().toISOString(),
+      });
+      if (insertErr) {
+        console.error('[ResetPassword] 验证码写入失败:', insertErr.message);
+        return NextResponse.json({ error: '验证码写入失败，请稍后重试' }, { status: 500 });
+      }
+
       // 在开发环境直接返回验证码方便测试
       if (process.env.NODE_ENV !== 'production') {
         return NextResponse.json({ 
           success: true, 
           message: '验证码已发送（开发模式：验证码将打印在控制台）',
-          devCode: code // 仅开发环境
+          devCode: finalCode // 仅开发环境
         });
       }
 
@@ -96,18 +113,22 @@ export async function POST(request: NextRequest) {
         .select('*')
         .eq('phone', phone)
         .eq('type', 'reset_password')
-        .single();
+        .order('created_at', { ascending: false })
+        .limit(1);
 
-      if (!codeRecord) {
+      const latestCodeRecord = Array.isArray(codeRecord) ? codeRecord[0] : null;
+      if (!latestCodeRecord) {
         return NextResponse.json({ error: '请先获取验证码' }, { status: 400 });
       }
 
-      if (codeRecord.code !== code) {
-        return NextResponse.json({ error: '验证码错误' }, { status: 400 });
+      if (new Date(latestCodeRecord.expires_at) < new Date()) {
+        return NextResponse.json({ error: '验证码已过期，请重新获取' }, { status: 400 });
       }
 
-      if (new Date(codeRecord.expires_at) < new Date()) {
-        return NextResponse.json({ error: '验证码已过期，请重新获取' }, { status: 400 });
+      const { verifyStoredSMSCode } = await import('@/lib/sms-client');
+      const verifyResult = await verifyStoredSMSCode(phone, latestCodeRecord.code, code);
+      if (!verifyResult.valid) {
+        return NextResponse.json({ error: verifyResult.error || '验证码错误' }, { status: 400 });
       }
 
       // 更新密码（写入 password_hash）

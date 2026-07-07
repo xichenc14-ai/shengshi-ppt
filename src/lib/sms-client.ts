@@ -14,6 +14,8 @@ interface SMSSendResult {
   code?: string;       // 本地可校验验证码；DYPNS 可能不返回真实验证码
   remoteVerify?: boolean; // true 表示验证码需回源到服务商校验
   error?: string;
+  errorCode?: string;
+  retryAfter?: number;
   messageId?: string;
 }
 
@@ -25,15 +27,21 @@ type DypnsModule = {
   default?: {
     default?: new (config: unknown) => {
       sendSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
+      sendSmsVerifyCodeWithOptions?: (request: unknown, runtime: Record<string, unknown>) => Promise<{ body?: unknown }>;
       checkSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
+      checkSmsVerifyCodeWithOptions?: (request: unknown, runtime: Record<string, unknown>) => Promise<{ body?: unknown }>;
     };
   } | (new (config: unknown) => {
     sendSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
+    sendSmsVerifyCodeWithOptions?: (request: unknown, runtime: Record<string, unknown>) => Promise<{ body?: unknown }>;
     checkSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
+    checkSmsVerifyCodeWithOptions?: (request: unknown, runtime: Record<string, unknown>) => Promise<{ body?: unknown }>;
   });
   Client?: new (config: unknown) => {
     sendSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
+    sendSmsVerifyCodeWithOptions?: (request: unknown, runtime: Record<string, unknown>) => Promise<{ body?: unknown }>;
     checkSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
+    checkSmsVerifyCodeWithOptions?: (request: unknown, runtime: Record<string, unknown>) => Promise<{ body?: unknown }>;
   };
   SendSmsVerifyCodeRequest: new (payload: Record<string, unknown>) => unknown;
   CheckSmsVerifyCodeRequest: new (payload: Record<string, unknown>) => unknown;
@@ -55,7 +63,7 @@ type TencentModule = {
 };
 
 function getProvider(): SMSProvider {
-  return (process.env.SMS_PROVIDER as SMSProvider) || 'aliyun_auth';
+  return (String(process.env.SMS_PROVIDER || 'aliyun_auth').replace(/^['"]|['"]$/g, '') as SMSProvider);
 }
 
 function resolveDypnsClient(Dypnsapi: DypnsModule) {
@@ -67,6 +75,112 @@ function resolveDypnsClient(Dypnsapi: DypnsModule) {
 
 function maskPhone(phone: string): string {
   return phone.replace(/^(\d{3})\d{4}(\d{4})$/, '$1****$2');
+}
+
+export function normalizeSMSCode(value: unknown): string {
+  return String(value ?? '').replace(/\D/g, '').slice(0, 6);
+}
+
+export function getStorableSMSCode(result: SMSSendResult, fallbackCode: string): string {
+  return result.remoteVerify === true
+    ? REMOTE_SMS_CODE_MARKER
+    : (normalizeSMSCode(result.code) || fallbackCode);
+}
+
+export async function verifyStoredSMSCode(
+  phone: string,
+  storedCode: string,
+  inputCode: unknown,
+): Promise<{ valid: boolean; error?: string }> {
+  const normalizedCode = normalizeSMSCode(inputCode);
+  if (normalizedCode.length !== 6) return { valid: false, error: '验证码错误或已过期' };
+  if (storedCode === REMOTE_SMS_CODE_MARKER) {
+    const remote = await verifyRemoteSMSCode(phone, normalizedCode);
+    if (!remote.valid) return { valid: false, error: remote.error || '验证码错误或已过期' };
+    return { valid: true };
+  }
+  return storedCode === normalizedCode
+    ? { valid: true }
+    : { valid: false, error: '验证码错误或已过期' };
+}
+
+function pickAliyunField(body: Record<string, unknown>, name: string): unknown {
+  return body[name] ?? body[name.charAt(0).toLowerCase() + name.slice(1)];
+}
+
+function aliyunSuccess(body: Record<string, unknown>): boolean {
+  const code = String(pickAliyunField(body, 'Code') ?? '').toUpperCase();
+  return code === 'OK' || pickAliyunField(body, 'Success') === true;
+}
+
+function aliyunError(prefix: string, body: Record<string, unknown>): string {
+  const code = String(pickAliyunField(body, 'Code') ?? 'UNKNOWN');
+  const message = String(pickAliyunField(body, 'Message') ?? 'UNKNOWN');
+  const requestId = String(pickAliyunField(body, 'RequestId') ?? '');
+  return `${prefix}: code=${code}; message=${message}${requestId ? `; requestId=${requestId}` : ''}`;
+}
+
+function aliyunErrorCode(body: Record<string, unknown>): string {
+  return String(pickAliyunField(body, 'Code') ?? 'UNKNOWN');
+}
+
+function aliyunRetryAfter(body: Record<string, unknown>): number | undefined {
+  const code = aliyunErrorCode(body).toUpperCase();
+  const message = String(pickAliyunField(body, 'Message') ?? '').toLowerCase();
+  if (code.includes('FREQUENCY') || message.includes('frequency')) return 60;
+  return undefined;
+}
+
+function logAliyunBody(label: string, body: Record<string, unknown>) {
+  const modelObj = (body.Model ?? body.model ?? {}) as Record<string, unknown>;
+  console.log(label, JSON.stringify({
+    code: pickAliyunField(body, 'Code'),
+    success: pickAliyunField(body, 'Success'),
+    message: pickAliyunField(body, 'Message'),
+    requestId: pickAliyunField(body, 'RequestId'),
+    hasVerifyCode: Boolean(modelObj.VerifyCode ?? modelObj.verifyCode ?? body.VerifyCode ?? body.verifyCode),
+  }));
+}
+
+function sanitizeAliyunErrorMessage(message: string, phone?: string): string {
+  let safeMessage = message.replace(/PhoneNumber=\d+/g, 'PhoneNumber=***');
+  if (phone) safeMessage = safeMessage.replaceAll(phone, maskPhone(phone));
+  return safeMessage;
+}
+
+const ALIYUN_RUNTIME_OPTIONS = {
+  autoretry: true,
+  maxAttempts: 2,
+  backoffPolicy: 'fixed',
+  backoffPeriod: 500,
+  connectTimeout: 3000,
+  readTimeout: 8000,
+  keepAlive: false,
+};
+
+function isRetryableAliyunError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /ConnectTimeout|ReadTimeout|Timeout|ETIMEDOUT|ECONNRESET|EAI_AGAIN|ENOTFOUND/i.test(message);
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function callAliyunWithRetry<T>(label: string, call: () => Promise<T>): Promise<T> {
+  const attempts = 2;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await call();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts || !isRetryableAliyunError(error)) break;
+      console.warn(`[SMS] Aliyun DYPNS ${label} transient failure, retrying (${attempt}/${attempts})`);
+      await sleep(400);
+    }
+  }
+  throw lastError;
 }
 
 async function createAliyunAuthClient() {
@@ -108,7 +222,8 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
     const aliyun = await createAliyunAuthClient();
     if ('error' in aliyun) return { success: false, error: aliyun.error };
     const { Dypnsapi, client } = aliyun;
-    const sendRes = await client.sendSmsVerifyCode(new Dypnsapi.SendSmsVerifyCodeRequest({
+    const request = new Dypnsapi.SendSmsVerifyCodeRequest({
+      countryCode: '86',
       phoneNumber: phone,
       signName,
       templateCode,
@@ -118,16 +233,22 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
       codeLength: 6,        // 6位验证码
       validTime: 300,       // 5分钟有效
       codeType: 1,          // 1=纯数字
+      duplicatePolicy: 1,   // 同一场景保留最新验证码
+      interval: 60,         // 服务商侧发送间隔
       returnVerifyCode: true, // 返回验证码，方便存储到数据库
-    }));
+    });
+    const sendRes = await callAliyunWithRetry('send', () => (
+      typeof client.sendSmsVerifyCodeWithOptions === 'function'
+        ? client.sendSmsVerifyCodeWithOptions(request, ALIYUN_RUNTIME_OPTIONS)
+        : client.sendSmsVerifyCode(request)
+    ));
 
     const body = (sendRes.body ?? {}) as Record<string, unknown>;
-    console.log('[SMS] Raw response body:', JSON.stringify(body));
+    logAliyunBody('[SMS] Aliyun DYPNS send response:', body);
     // SDK 返回结构: body.Code='OK' 或 body.Success=true
     // 验证码在 body.Model.VerifyCode 或 body.model.verifyCode
     const bodyObj = body as Record<string, unknown>;
-    const respCode = bodyObj.Code || bodyObj.code;
-    if (respCode === 'OK' || bodyObj.Success === true) {
+    if (aliyunSuccess(bodyObj)) {
       // 尝试多种路径提取验证码
       const modelObj = (bodyObj.Model ?? bodyObj.model ?? {}) as Record<string, unknown>;
       const returnedCode = String(
@@ -137,7 +258,7 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
         ?? bodyObj.verifyCode
         ?? ''
       );
-      console.log('[SMS] Extracted verifyCode:', returnedCode);
+      console.log('[SMS] Aliyun DYPNS returned verifyCode:', Boolean(returnedCode));
       if (!returnedCode) {
         console.warn('[SMS] API 未返回验证码，将使用服务商远端校验，避免本地验证码与短信内容不一致');
         return {
@@ -155,18 +276,21 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
     }
     return {
       success: false,
-      error: `阿里云短信认证失败: ${String(bodyObj.Message ?? bodyObj.message ?? respCode ?? '未知错误')}`,
+      error: aliyunError('阿里云短信认证失败', bodyObj),
+      errorCode: aliyunErrorCode(bodyObj),
+      retryAfter: aliyunRetryAfter(bodyObj),
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'unknown';
-    console.error('[SMS] 阿里云短信认证异常:', msg);
+    const safeMsg = sanitizeAliyunErrorMessage(msg, phone);
+    console.error('[SMS] 阿里云短信认证异常:', safeMsg);
     if (msg.includes('Cannot find module') || msg.includes('MODULE_NOT_FOUND')) {
       console.warn('[SMS] dypnsapi SDK 未安装，降级为控制台打印');
       const fallbackCode = String(Math.floor(100000 + Math.random() * 900000));
       console.log(`[SMS-DEV] 验证码: ${fallbackCode}，手机号: ${maskPhone(phone)}`);
       return { success: true, code: fallbackCode, messageId: 'dev-mode' };
     }
-    return { success: false, error: `阿里云短信异常: ${msg}` };
+    return { success: false, error: `阿里云短信异常: ${safeMsg}` };
   }
 }
 
@@ -175,24 +299,28 @@ async function verifyViaAliyunAuth(phone: string, code: string): Promise<{ valid
     const aliyun = await createAliyunAuthClient();
     if ('error' in aliyun) return { valid: false, error: aliyun.error };
     const { Dypnsapi, client } = aliyun;
-    const checkRes = await client.checkSmsVerifyCode(new Dypnsapi.CheckSmsVerifyCodeRequest({
+    const request = new Dypnsapi.CheckSmsVerifyCodeRequest({
       phoneNumber: phone,
       verifyCode: code,
       countryCode: '86',
       caseAuthPolicy: 1,
       ...(process.env.ALIYUN_SMS_SCHEME_NAME ? { schemeName: process.env.ALIYUN_SMS_SCHEME_NAME } : {}),
-    }));
+    });
+    const checkRes = await callAliyunWithRetry('verify', () => (
+      typeof client.checkSmsVerifyCodeWithOptions === 'function'
+        ? client.checkSmsVerifyCodeWithOptions(request, ALIYUN_RUNTIME_OPTIONS)
+        : client.checkSmsVerifyCode(request)
+    ));
     const body = (checkRes.body ?? {}) as Record<string, unknown>;
     const model = (body.Model ?? body.model ?? {}) as Record<string, unknown>;
     const verifyResult = String(model.VerifyResult ?? model.verifyResult ?? '').toUpperCase();
-    const respCode = String(body.Code ?? body.code ?? '');
-    if ((respCode === 'OK' || body.Success === true || body.success === true) && verifyResult === 'PASS') {
+    if (aliyunSuccess(body) && verifyResult === 'PASS') {
       return { valid: true };
     }
     return { valid: false, error: '验证码错误或已过期' };
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'unknown';
-    console.error('[SMS] 阿里云验证码远端校验异常:', msg);
+    console.error('[SMS] 阿里云验证码远端校验异常:', sanitizeAliyunErrorMessage(msg, phone));
     return { valid: false, error: '验证码校验服务异常，请稍后重试' };
   }
 }
