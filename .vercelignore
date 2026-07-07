@@ -1,5 +1,11 @@
 backups/
 design-assets/
+.env*
+.vercel/
+.next/
+node_modules/
+*.tsbuildinfo
+.DS_Store
 /mobile-*.png
 /production-*.png
 /design-qa-comparison.png
