@@ -1,6 +1,0 @@
-node_modules/
-.next/
-.env.local
-*.tsbuildinfo
-.vercel
-__tests__/coverage/
