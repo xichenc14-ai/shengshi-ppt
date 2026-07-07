@@ -112,6 +112,9 @@ const wxTemplateUrl = process.env.PAYMENT_WECHAT_URL_TEMPLATE || process.env.WEC
 const aliTemplateUrl = process.env.PAYMENT_ALIPAY_URL_TEMPLATE || process.env.ALIPAY_PAY_URL_TEMPLATE || '';
 const wxTemplateHttps = !wxTemplateUrl || /^https:\/\//i.test(wxTemplateUrl);
 const aliTemplateHttps = !aliTemplateUrl || /^https:\/\//i.test(aliTemplateUrl);
+const r2Keys = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'];
+const downloadAccelerationConfigured = allPresent(r2Keys);
+const downloadAccelerationDisabled = process.env.DOWNLOAD_ACCELERATION_ENABLED === 'false';
 
 const wechatReady = hasAny(wechatTemplate) || allPresent(wechatSdk);
 const alipayReady = hasAny(alipayTemplate) || allPresent(alipaySdk);
@@ -131,6 +134,13 @@ printRow(
 );
 printRow('WeChat template URL is https', wxTemplateHttps, wxTemplateHttps ? '' : `value: ${wxTemplateUrl}`);
 printRow('Alipay template URL is https', aliTemplateHttps, aliTemplateHttps ? '' : `value: ${aliTemplateUrl}`);
+printRow(
+  'R2 download acceleration',
+  true,
+  downloadAccelerationConfigured
+    ? 'configured'
+    : (downloadAccelerationDisabled ? 'disabled' : `optional; missing: ${missing(r2Keys).join(', ')}`)
+);
 printRow('WeChat provider ready', wechatReady, wechatReady ? '' : `missing sdk: ${missing(wechatSdk).join(', ')}`);
 printRow('Alipay provider ready', alipayReady, alipayReady ? '' : `missing sdk: ${missing(alipaySdk).join(', ')}`);
 printRow(

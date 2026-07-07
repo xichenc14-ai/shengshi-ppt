@@ -351,6 +351,14 @@ function buildPreviewApiPath(
   return `/api/preview/file?${params.toString()}`;
 }
 
+function buildPptxDownloadPath(generationId: string, filename: string): string {
+  const params = new URLSearchParams({
+    generationId,
+    name: filename,
+  });
+  return `/api/export-pptx?${params.toString()}`;
+}
+
 function readResumeState(): PersistedGenerationState | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -1528,10 +1536,11 @@ export default function Home() {
       }
 
       await new Promise(r => setTimeout(r, 500));
+      const pptxDownloadPath = buildPptxDownloadPath(renderResult.gd.generationId, `${outlineResult.title || '省心PPT'}.pptx`);
       setResult({
         title: outlineResult.title,
         slides: slidesForRender,
-        pptxUrl: renderResult.finalExportUrl,
+        pptxUrl: pptxDownloadPath,
         themeId: finalThemeId,
         gammaUrl: renderResult.lastStatusData?.gammaUrl || '',
         actualPages: renderPageCount,
@@ -1552,7 +1561,7 @@ export default function Home() {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${user.id}`,
           },
-          body: JSON.stringify({ action: 'save', title: outlineResult.title, slides: slidesForRender, themeId: finalThemeId, downloadUrl: renderResult.finalExportUrl, pageCount: renderPageCount, imageMode: imgSrc }),
+          body: JSON.stringify({ action: 'save', title: outlineResult.title, slides: slidesForRender, themeId: finalThemeId, downloadUrl: pptxDownloadPath, pageCount: renderPageCount, imageMode: imgSrc }),
         });
       } catch (e) { console.warn('[History] 保存失败:', e); }
     } catch (e: any) {
@@ -1852,10 +1861,11 @@ export default function Home() {
             imageModel: cached.gamma.imageModel,
           });
 
+          const pptxDownloadPath = buildPptxDownloadPath(cached.gamma.generationId, `${cached.gamma.title || '省心PPT'}.pptx`);
           setResult({
             title: cached.gamma.title || '省心PPT',
             slides: cached.gamma.slides || [],
-            pptxUrl: finalExportUrl,
+            pptxUrl: pptxDownloadPath,
             themeId: cached.gamma.themeId || DEFAULT_THEME_ID,
             gammaUrl: statusData?.gammaUrl || '',
             actualPages: Array.isArray(cached.gamma.slides) ? cached.gamma.slides.length : undefined,
@@ -2023,8 +2033,7 @@ export default function Home() {
         }
       }
 
-      const downloadPath =
-        `/api/export-pptx?generationId=${exportGenerationId}&name=${encodeURIComponent(fallbackFilename)}`;
+      const downloadPath = buildPptxDownloadPath(exportGenerationId, fallbackFilename);
       triggerBrowserDownload(downloadPath);
       setAutoDownloadMessage('started');
       window.setTimeout(() => {

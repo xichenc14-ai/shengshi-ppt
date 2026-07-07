@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { action, userId, title, slides, themeId, downloadUrl, pageCount, imageMode, id } = body;
+    const { action, userId, title, slides, themeId, downloadUrl, artifactId, pageCount, imageMode, id } = body;
     const effectiveUserId = userId || sessionUserId;
     if (effectiveUserId !== sessionUserId) return NextResponse.json({ error: '无权限操作该记录' }, { status: 403 });
 
@@ -120,6 +120,7 @@ export async function POST(request: NextRequest) {
           slides: shouldStoreSlides ? (slides || []) : compactSlides,
           theme_id: themeId || null,
           download_url: downloadUrl || null,
+          artifact_id: artifactId || null,
           page_count: pageCount || 0,
           image_mode: imageMode || 'themeAccent',
         })

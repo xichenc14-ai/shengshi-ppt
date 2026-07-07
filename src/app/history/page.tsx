@@ -11,6 +11,7 @@ interface HistoryItem {
   slides: unknown[];
   theme_id: string;
   download_url: string;
+  artifact_id?: string | null;
   page_count: number;
   image_mode: string;
   created_at: string;
@@ -155,7 +156,11 @@ export default function HistoryPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {history.map((item) => (
+            {history.map((item) => {
+              const downloadHref = item.artifact_id
+                ? `/api/artifacts/${encodeURIComponent(item.artifact_id)}/download`
+                : item.download_url;
+              return (
               <div key={item.id} className="premium-card rounded-xl border border-gray-100 p-4 hover:border-indigo-100 transition-all group">
                 <div className="flex items-start gap-3">
                   {/* Thumbnail placeholder */}
@@ -177,9 +182,9 @@ export default function HistoryPage() {
 
                   {/* Actions */}
                   <div className="flex-shrink-0 flex items-center gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
-                    {item.download_url && (
+                    {downloadHref && (
                       <a
-                        href={item.download_url}
+                        href={downloadHref}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="w-8 h-8 rounded-lg bg-green-50 text-green-600 flex items-center justify-center hover:bg-green-100 transition-all"
@@ -202,7 +207,8 @@ export default function HistoryPage() {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

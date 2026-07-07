@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { getAllKeys, recordKeyFailure, selectBestKey } from '@/lib/gamma-key-pool';
 import { getGammaAdditionalExportUnsupportedMessage } from '@/lib/gamma-export';
+import { getSession } from '@/lib/session';
+import {
+  artifactObjectExists,
+  buildArtifactObjectKey,
+  createArtifactSignedDownloadUrl,
+  isArtifactAccelerationEnabled,
+  putArtifactObject,
+  sanitizeDownloadFilename,
+  sha256Hex,
+} from '@/lib/artifact-storage';
 
 export const runtime = 'nodejs';
 
@@ -10,6 +21,25 @@ const FORMAT = 'pptx' as const;
 const MIME_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 const MIN_PPTX_BYTES = 1024;
 const RETRYABLE_STATUS_CODES = new Set([401, 403, 404, 429, 500, 502, 503, 504]);
+
+type ArtifactRow = {
+  id: string;
+  user_id?: string | null;
+  generation_id: string;
+  format: 'pptx';
+  object_key: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  sha256?: string | null;
+  status: 'pending' | 'ready' | 'failed';
+};
+
+type GammaStatusData = {
+  status?: string;
+  error?: string;
+  exportUrl?: string;
+};
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -45,6 +75,100 @@ async function getOrderedKeys() {
   return [first, ...allKeys.filter((key) => key.key !== first.key)];
 }
 
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
+
+async function getOptionalSessionUserId(): Promise<string | null> {
+  try {
+    const session = await getSession();
+    return session.isLoggedIn ? (session.user?.id || null) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function findReadyArtifact(generationId: string): Promise<ArtifactRow | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+
+  const { data, error } = await sb
+    .from('generation_artifacts')
+    .select('*')
+    .eq('generation_id', generationId)
+    .eq('format', FORMAT)
+    .eq('status', 'ready')
+    .maybeSingle();
+
+  if (error) {
+    if (String(error.message || '').includes("Could not find the table 'public.generation_artifacts'")) {
+      console.warn('[ExportPPTX] generation_artifacts 表不存在，回退旧下载链路');
+      return null;
+    }
+    throw error;
+  }
+
+  const artifact = data as ArtifactRow | null;
+  if (!artifact?.object_key) return null;
+  if (!(await artifactObjectExists(artifact.object_key))) {
+    console.warn('[ExportPPTX] artifact 元数据存在但 R2 对象不存在，重新镜像:', artifact.object_key);
+    return null;
+  }
+  return artifact;
+}
+
+async function saveReadyArtifact(args: {
+  generationId: string;
+  objectKey: string;
+  filename: string;
+  sizeBytes: number;
+  sha256: string;
+}): Promise<ArtifactRow | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+
+  const userId = await getOptionalSessionUserId();
+  const { data, error } = await sb
+    .from('generation_artifacts')
+    .upsert({
+      user_id: userId,
+      generation_id: args.generationId,
+      format: FORMAT,
+      object_key: args.objectKey,
+      filename: args.filename,
+      mime_type: MIME_TYPE,
+      size_bytes: args.sizeBytes,
+      sha256: args.sha256,
+      status: 'ready',
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'generation_id,format' })
+    .select('*')
+    .single();
+
+  if (error) {
+    if (String(error.message || '').includes("Could not find the table 'public.generation_artifacts'")) {
+      console.warn('[ExportPPTX] generation_artifacts 表不存在，已上传但未记录元数据');
+      return null;
+    }
+    throw error;
+  }
+
+  return data as ArtifactRow;
+}
+
+async function redirectToArtifact(artifact: Pick<ArtifactRow, 'object_key' | 'filename' | 'mime_type'>) {
+  const signedUrl = await createArtifactSignedDownloadUrl({
+    key: artifact.object_key,
+    filename: artifact.filename,
+    contentType: artifact.mime_type || MIME_TYPE,
+  });
+  return NextResponse.redirect(signedUrl, { status: 307 });
+}
+
 /**
  * PPTX 下载代理 API (D5: 统一错误处理)
  * 
@@ -72,7 +196,7 @@ export async function GET(req: NextRequest) {
   try {
     const orderedKeys = await getOrderedKeys();
     let apiKey = orderedKeys[0]?.key || '';
-    let statusData: any = null;
+    let statusData: GammaStatusData | null = null;
     let lastStatus = 502;
     let lastErrorMessage = '查询失败';
 
@@ -151,6 +275,15 @@ export async function GET(req: NextRequest) {
     }
 
     console.log('[ExportPPTX] 获取到PPTX URL:', pptxUrl.substring(0, 80));
+    const safeFilename = sanitizeDownloadFilename(filename, `省心PPT.${FORMAT}`);
+
+    if (isArtifactAccelerationEnabled()) {
+      const existingArtifact = await findReadyArtifact(generationId);
+      if (existingArtifact) {
+        console.log('[ExportPPTX] R2 artifact 命中:', existingArtifact.object_key);
+        return redirectToArtifact(existingArtifact);
+      }
+    }
 
     // Step 3: 后端代理下载PPTX（解决跨域/302问题）
     const downloadPptx = (withApiKey = false) => fetch(pptxUrl, {
@@ -203,8 +336,36 @@ export async function GET(req: NextRequest) {
       }, { status: 502 });
     }
 
+    if (isArtifactAccelerationEnabled()) {
+      try {
+        const sha256 = sha256Hex(buffer);
+        const objectKey = buildArtifactObjectKey(FORMAT, generationId, sha256);
+        const stored = await putArtifactObject({
+          key: objectKey,
+          body: buffer,
+          contentType: MIME_TYPE,
+          filename: safeFilename,
+        });
+        const artifact = await saveReadyArtifact({
+          generationId,
+          objectKey,
+          filename: safeFilename,
+          sizeBytes: stored.sizeBytes,
+          sha256: stored.sha256,
+        });
+
+        console.log('[ExportPPTX] R2 artifact 已入库:', objectKey, 'bytes=', stored.sizeBytes);
+        return redirectToArtifact(artifact || {
+          object_key: objectKey,
+          filename: safeFilename,
+          mime_type: MIME_TYPE,
+        });
+      } catch (artifactError) {
+        console.error('[ExportPPTX] R2 artifact 入库失败，回退旧代理链路:', getErrorMessage(artifactError));
+      }
+    }
+
     // Step 4: 返回PPTX文件
-    const safeFilename = filename.replace(/[^\w\u4e00-\u9fff.\-]/g, '_');
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {

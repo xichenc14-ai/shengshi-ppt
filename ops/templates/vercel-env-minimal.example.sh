@@ -15,6 +15,13 @@ PAYMENT_NOTIFY_URL="https://your-domain.com/api/payment"
 PAYMENT_NOTIFY_SECRET="replace_with_long_random_secret"
 ALLOWED_CALLBACK_IPS="1.2.3.4,5.6.7."
 
+# 可选：Cloudflare R2 PPTX 下载加速
+DOWNLOAD_ACCELERATION_ENABLED="true"
+R2_ACCOUNT_ID=""
+R2_ACCESS_KEY_ID=""
+R2_SECRET_ACCESS_KEY=""
+R2_BUCKET="xinppt-artifacts"
+
 # 最小上线路径（Template模式）
 PAYMENT_WECHAT_URL_TEMPLATE="https://pay.example.com/wx?order={orderNo}&amount={amountFen}"
 PAYMENT_ALIPAY_URL_TEMPLATE="https://pay.example.com/ali?order={orderNo}&amount={amountFen}"
@@ -58,6 +65,13 @@ add_env PAYMENT_NOTIFY_SECRET "$PAYMENT_NOTIFY_SECRET"
 add_env ALLOWED_CALLBACK_IPS "$ALLOWED_CALLBACK_IPS"
 add_env PAYMENT_WECHAT_URL_TEMPLATE "$PAYMENT_WECHAT_URL_TEMPLATE"
 add_env PAYMENT_ALIPAY_URL_TEMPLATE "$PAYMENT_ALIPAY_URL_TEMPLATE"
+if [[ -n "$R2_ACCOUNT_ID" && -n "$R2_ACCESS_KEY_ID" && -n "$R2_SECRET_ACCESS_KEY" && -n "$R2_BUCKET" ]]; then
+  add_env DOWNLOAD_ACCELERATION_ENABLED "$DOWNLOAD_ACCELERATION_ENABLED"
+  add_env R2_ACCOUNT_ID "$R2_ACCOUNT_ID"
+  add_env R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
+  add_env R2_SECRET_ACCESS_KEY "$R2_SECRET_ACCESS_KEY"
+  add_env R2_BUCKET "$R2_BUCKET"
+fi
 
 echo "[OK] 注入完成。请执行："
 echo "  npm run -s env:commercial:doctor"
