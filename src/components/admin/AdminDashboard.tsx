@@ -2,6 +2,33 @@
 
 import React from 'react';
 import Link from 'next/link';
+import {
+  Activity,
+  BarChart3,
+  Download,
+  FileText,
+  KeyRound,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Users,
+  WalletCards,
+} from 'lucide-react';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart as RechartsBarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import Navbar from '@/components/Navbar';
 import { APP_VERSION } from '@/lib/version';
 import { useAuth } from '@/lib/auth-context';
@@ -59,18 +86,53 @@ type FeedbackRow = {
 };
 
 type Tab = 'users' | 'payments' | 'usage' | 'feedback' | 'gamma' | 'audit';
+type PeriodKey = 'day' | 'week' | 'month';
+type IconComponent = React.ComponentType<{ size?: number; strokeWidth?: number; className?: string; 'aria-hidden'?: boolean | 'true' | 'false' }>;
+type MetricBucket = {
+  key: string;
+  label: string;
+  registrations: number;
+  visitors: number;
+  generations: number;
+  creditsUsed: number;
+  paidOrders: number;
+  subscriptions: number;
+  revenueYuan: number;
+  subscriptionRevenueYuan: number;
+  feedback: number;
+};
 type AdminSummary = {
   total_users: number;
   paid_users: number;
   active_members: number;
   total_revenue_yuan: number;
+  paid_orders: number;
+  subscription_orders: number;
+  subscription_revenue_yuan: number;
   total_generation: number;
   total_download: number;
+  total_credits_used: number;
+  paid_conversion_rate: number;
   admin_user_credits: number;
   feedback_total: number;
   feedback_positive: number;
   feedback_negative: number;
   feedback_avg_rating: number;
+  metrics?: {
+    series: Record<PeriodKey, MetricBucket[]>;
+    current: Record<PeriodKey, MetricBucket>;
+    previous: Record<PeriodKey, MetricBucket>;
+    visitor_source: string;
+  };
+  plan_distribution?: Array<{ name: string; value: number }>;
+  top_credit_users?: Array<{
+    id: string;
+    nickname: string;
+    phone: string;
+    plan_type: string;
+    total_credits_used: number;
+    generation_count: number;
+  }>;
   admin_gamma_quota_groups?: Array<{
     tag: string;
     remaining: number;
@@ -104,6 +166,210 @@ function fmtDate(v?: string | null): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+function fmtNumber(v: number | undefined | null): string {
+  const n = Number(v || 0);
+  return Number.isFinite(n) ? n.toLocaleString('zh-CN') : '0';
+}
+
+function fmtMoney(v: number | undefined | null): string {
+  const n = Number(v || 0);
+  return Number.isFinite(n) ? n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';
+}
+
+function metricDelta(current: number, previous: number): { text: string; tone: string } {
+  const diff = Number(current || 0) - Number(previous || 0);
+  if (diff === 0) return { text: '持平', tone: 'text-slate-400' };
+  const sign = diff > 0 ? '+' : '';
+  if (!previous) return { text: `${sign}${fmtNumber(diff)}`, tone: diff > 0 ? 'text-emerald-600' : 'text-rose-500' };
+  const pct = (diff / previous) * 100;
+  return {
+    text: `${sign}${fmtNumber(diff)} / ${sign}${pct.toFixed(1)}%`,
+    tone: diff > 0 ? 'text-emerald-600' : 'text-rose-500',
+  };
+}
+
+function periodText(period: PeriodKey): string {
+  if (period === 'week') return '本周';
+  if (period === 'month') return '本月';
+  return '今日';
+}
+
+const PLAN_COLORS = ['#64748b', '#2563eb', '#16a34a'];
+
+function AdminMetricCard({
+  title,
+  value,
+  previous,
+  suffix,
+  money = false,
+  icon: Icon,
+}: {
+  title: string;
+  value: number;
+  previous: number;
+  suffix?: string;
+  money?: boolean;
+  icon: IconComponent;
+}) {
+  const delta = metricDelta(value, previous);
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-slate-500">{title}</p>
+        <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+          <Icon size={18} strokeWidth={2.2} aria-hidden="true" />
+        </span>
+      </div>
+      <p className="mt-3 text-3xl font-black tracking-tight text-slate-950">
+        {money ? `¥${fmtMoney(value)}` : fmtNumber(value)}
+        {suffix && <span className="ml-1 text-base font-bold text-slate-500">{suffix}</span>}
+      </p>
+      <p className={`mt-2 text-xs font-bold ${delta.tone}`}>较上周期 {delta.text}</p>
+    </div>
+  );
+}
+
+function AdminMiniStat({ label, value, icon: Icon }: { label: string; value: string; icon: IconComponent }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex items-center gap-2 text-slate-500">
+        <Icon size={15} strokeWidth={2.2} aria-hidden="true" />
+        <span className="text-xs font-semibold">{label}</span>
+      </div>
+      <p className="mt-1 text-xl font-black text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function AdminOverviewCharts({ summary, period }: { summary: AdminSummary | null; period: PeriodKey }) {
+  const data = summary?.metrics?.series?.[period] || [];
+  const planData = (summary?.plan_distribution || []).filter((item) => item.value > 0);
+  const topUsers = summary?.top_credit_users || [];
+
+  return (
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(360px,0.85fr)]">
+      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-base font-black text-slate-950">运营趋势</h2>
+            <p className="mt-1 text-xs font-semibold text-slate-400">
+              访客按登录访客口径统计，接入访问日志表后可切换为 UV。
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-slate-500">
+            <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-[#2563eb]" />注册</span>
+            <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-[#16a34a]" />访客</span>
+            <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-[#dc2626]" />生成</span>
+            <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-[#9333ea]" />订阅</span>
+          </div>
+        </div>
+        <div className="mt-4 h-[310px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
+              <defs>
+                <linearGradient id="adminRegistrations" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#2563eb" stopOpacity={0.24} />
+                  <stop offset="95%" stopColor="#2563eb" stopOpacity={0.02} />
+                </linearGradient>
+                <linearGradient id="adminVisitors" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#16a34a" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#16a34a" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip
+                contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', boxShadow: '0 12px 30px rgba(15,23,42,0.08)' }}
+                formatter={(value: unknown, name: unknown) => {
+                  const names: Record<string, string> = { registrations: '注册', visitors: '访客', generations: '生成', subscriptions: '订阅' };
+                  const metricName = String(name || '');
+                  return [fmtNumber(Number(value || 0)), names[metricName] || metricName];
+                }}
+              />
+              <Area type="monotone" dataKey="registrations" stroke="#2563eb" strokeWidth={2.4} fill="url(#adminRegistrations)" />
+              <Area type="monotone" dataKey="visitors" stroke="#16a34a" strokeWidth={2.4} fill="url(#adminVisitors)" />
+              <Line type="monotone" dataKey="generations" stroke="#dc2626" strokeWidth={2.4} dot={false} />
+              <Line type="monotone" dataKey="subscriptions" stroke="#9333ea" strokeWidth={2.4} dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-base font-black text-slate-950">收入趋势</h2>
+          <div className="mt-4 h-[160px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <RechartsBarChart data={data} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
+                <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }}
+                  formatter={(value: unknown, name: unknown) => {
+                    const metricName = String(name || '');
+                    return [`¥${fmtMoney(Number(value || 0))}`, metricName === 'subscriptionRevenueYuan' ? '订阅收入' : '总收入'];
+                  }}
+                />
+                <Bar dataKey="revenueYuan" fill="#0f766e" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="subscriptionRevenueYuan" fill="#9333ea" radius={[4, 4, 0, 0]} />
+              </RechartsBarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="text-base font-black text-slate-950">会员结构</h2>
+            <div className="mt-3 flex items-center gap-4">
+              <div className="h-[120px] w-[120px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={planData} dataKey="value" nameKey="name" innerRadius={36} outerRadius={56} paddingAngle={2}>
+                      {planData.map((entry, index) => (
+                        <Cell key={entry.name} fill={PLAN_COLORS[index % PLAN_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value: unknown, name: unknown) => [fmtNumber(Number(value || 0)), String(name || '')]} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="min-w-0 flex-1 space-y-2">
+                {(summary?.plan_distribution || []).map((item, index) => (
+                  <div key={item.name} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="inline-flex items-center gap-2 font-semibold text-slate-600">
+                      <i className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: PLAN_COLORS[index % PLAN_COLORS.length] }} />
+                      {item.name}
+                    </span>
+                    <span className="font-black text-slate-900">{fmtNumber(item.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="text-base font-black text-slate-950">高消耗用户</h2>
+            <div className="mt-3 space-y-2">
+              {topUsers.slice(0, 5).map((u) => (
+                <div key={u.id} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-slate-800">{u.nickname}</p>
+                    <p className="text-[11px] font-semibold text-slate-400">{u.phone || u.id.slice(0, 8)} · {u.generation_count} 次</p>
+                  </div>
+                  <p className="shrink-0 text-sm font-black text-slate-950">{fmtNumber(u.total_credits_used)}</p>
+                </div>
+              ))}
+              {topUsers.length === 0 && <p className="py-5 text-center text-sm font-semibold text-slate-400">暂无消耗记录</p>}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function AdminPage() {
   const { user, loading: authLoading, openLogin } = useAuth();
   const [loading, setLoading] = React.useState(true);
@@ -116,6 +382,7 @@ export default function AdminPage() {
   const [usage, setUsage] = React.useState<UsageRow[]>([]);
   const [feedback, setFeedback] = React.useState<FeedbackRow[]>([]);
   const [tab, setTab] = React.useState<Tab>('users');
+  const [period, setPeriod] = React.useState<PeriodKey>('day');
   const [queryInput, setQueryInput] = React.useState('');
   const [planFilterInput, setPlanFilterInput] = React.useState<'all' | 'free' | 'plus' | 'pro'>('all');
   const [appliedQuery, setAppliedQuery] = React.useState('');
@@ -335,13 +602,40 @@ export default function AdminPage() {
     window.dispatchEvent(new Event('sx-admin-orders-refresh'));
   };
 
+  const emptyMetric: MetricBucket = {
+    key: '',
+    label: '',
+    registrations: 0,
+    visitors: 0,
+    generations: 0,
+    creditsUsed: 0,
+    paidOrders: 0,
+    subscriptions: 0,
+    revenueYuan: 0,
+    subscriptionRevenueYuan: 0,
+    feedback: 0,
+  };
+  const currentMetric = summary?.metrics?.current?.[period] || emptyMetric;
+  const previousMetric = summary?.metrics?.previous?.[period] || emptyMetric;
+  const adminTabs: Array<[Tab, string, IconComponent]> = [
+    ['users', '用户', Users],
+    ['payments', '订单', WalletCards],
+    ['usage', '流水', Activity],
+    ['feedback', '反馈', FileText],
+    ['gamma', 'Gamma Key', KeyRound],
+    ['audit', '审计', ShieldCheck],
+  ];
+
   return (
     <div className="min-h-screen sx-shell">
       <Navbar />
 
       <div className="max-w-7xl mx-auto px-4 md:px-8 py-6 md:py-10 space-y-5">
         <section className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl md:text-3xl font-black text-slate-900">后台管理</h1>
+          <div>
+            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-950">后台管理</h1>
+            <p className="mt-1 text-sm font-semibold text-slate-500">运营、用户、订单和额度统一看板</p>
+          </div>
           <div className="flex items-center gap-2">
             <input
               ref={importInputRef}
@@ -350,26 +644,29 @@ export default function AdminPage() {
               className="hidden"
               onChange={(e) => void handleImportFile(e.currentTarget.files?.[0] || null)}
             />
-            <a href={exportCsvHref} className="inline-flex items-center px-4 py-2 rounded-xl border border-indigo-200 text-indigo-700 bg-white/80 hover:bg-indigo-50 text-sm font-bold">
+            <a href={exportCsvHref} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+              <Download size={16} strokeWidth={2.2} aria-hidden="true" />
               导出CSV
             </a>
             <button
               disabled={importLoading}
               onClick={() => importInputRef.current?.click()}
-              className="inline-flex items-center px-4 py-2 rounded-xl border border-emerald-200 text-emerald-700 bg-white/80 hover:bg-emerald-50 text-sm font-bold disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
             >
+              <FileText size={16} strokeWidth={2.2} aria-hidden="true" />
               导入CSV
             </button>
             {importPreview && importPreview.dryRun && (
               <button
                 disabled={importLoading || importPreview.changed <= 0}
                 onClick={executeImport}
-                className="inline-flex items-center px-4 py-2 rounded-xl sx-primary-btn text-white text-sm font-bold disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-lg sx-primary-btn px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
               >
+                <RefreshCw size={16} strokeWidth={2.2} aria-hidden="true" />
                 执行导入
               </button>
             )}
-            <Link href="/account" className="inline-flex items-center px-4 py-2 rounded-xl border border-indigo-200 text-indigo-700 bg-white/70 hover:bg-indigo-50 text-sm font-bold">
+            <Link href="/account" className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
               返回用户中心
             </Link>
           </div>
@@ -395,46 +692,70 @@ export default function AdminPage() {
           </section>
         )}
 
-        <section className="grid grid-cols-2 lg:grid-cols-5 xl:grid-cols-10 gap-3">
-          {[
-            ['总用户', summary?.total_users ?? 0],
-            ['付费用户', summary?.paid_users ?? 0],
-            ['有效会员', summary?.active_members ?? 0],
-            ['累计营收(元)', summary?.total_revenue_yuan ?? 0],
-            ['生成次数', summary?.total_generation ?? 0],
-            ['下载次数', summary?.total_download ?? 0],
-            ['管理员账户积分', summary?.admin_user_credits ?? 0],
-            ['反馈总数', summary?.feedback_total ?? 0],
-            ['好评/差评', `${summary?.feedback_positive ?? 0}/${summary?.feedback_negative ?? 0}`],
-            ['平均评分', summary?.feedback_avg_rating ?? 0],
-          ].map(([label, value]) => (
-            <div key={String(label)} className="sx-glass rounded-[18px] p-4">
-              <p className="text-xs text-slate-500">{label}</p>
-              <p className="mt-2 text-2xl font-black text-slate-900">{loading ? '...' : String(value)}</p>
-            </div>
-          ))}
-        </section>
-
-        <section className="sx-glass rounded-[24px] p-4 md:p-5">
-          <div className="flex flex-wrap items-center gap-2">
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="flex items-center gap-2">
+            <BarChart3 size={18} strokeWidth={2.3} className="text-slate-700" aria-hidden="true" />
+            <span className="text-sm font-black text-slate-900">统计周期</span>
+          </div>
+          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-1">
             {[
-              ['users', '用户套餐与到期'],
-              ['payments', '付费记录'],
-              ['usage', '生成/下载记录'],
-              ['feedback', '用户反馈'],
-              ['gamma', 'Gamma Key'],
-              ['audit', '审计日志'],
-            ].map(([k, label]) => (
+              ['day', '每日'],
+              ['week', '每周'],
+              ['month', '每月'],
+            ].map(([key, label]) => (
               <button
-                key={k}
-                onClick={() => setTab(k as Tab)}
-                className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${
-                  tab === k ? 'sx-primary-btn text-white border-transparent' : 'bg-white border-indigo-200 text-indigo-700'
+                key={key}
+                onClick={() => setPeriod(key as PeriodKey)}
+                className={`min-w-16 rounded-md px-3 py-1.5 text-sm font-bold transition ${
+                  period === key ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
                 {label}
               </button>
             ))}
+          </div>
+        </section>
+
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <AdminMetricCard title={`${periodText(period)}注册`} value={loading ? 0 : currentMetric.registrations} previous={previousMetric.registrations} icon={Users} />
+          <AdminMetricCard title={`${periodText(period)}访客`} value={loading ? 0 : currentMetric.visitors} previous={previousMetric.visitors} icon={Activity} />
+          <AdminMetricCard title={`${periodText(period)}生成PPT`} value={loading ? 0 : currentMetric.generations} previous={previousMetric.generations} icon={FileText} />
+          <AdminMetricCard title={`${periodText(period)}消耗积分`} value={loading ? 0 : currentMetric.creditsUsed} previous={previousMetric.creditsUsed} icon={WalletCards} />
+          <AdminMetricCard title={`${periodText(period)}会员订阅`} value={loading ? 0 : currentMetric.subscriptions} previous={previousMetric.subscriptions} icon={ShieldCheck} />
+          <AdminMetricCard title={`${periodText(period)}收入`} value={loading ? 0 : currentMetric.revenueYuan} previous={previousMetric.revenueYuan} money icon={WalletCards} />
+        </section>
+
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-10">
+          <AdminMiniStat label="总用户" value={loading ? '...' : fmtNumber(summary?.total_users)} icon={Users} />
+          <AdminMiniStat label="付费用户" value={loading ? '...' : fmtNumber(summary?.paid_users)} icon={ShieldCheck} />
+          <AdminMiniStat label="有效会员" value={loading ? '...' : fmtNumber(summary?.active_members)} icon={ShieldCheck} />
+          <AdminMiniStat label="付费转化" value={loading ? '...' : `${summary?.paid_conversion_rate ?? 0}%`} icon={Activity} />
+          <AdminMiniStat label="累计营收" value={loading ? '...' : `¥${fmtMoney(summary?.total_revenue_yuan)}`} icon={WalletCards} />
+          <AdminMiniStat label="订阅订单" value={loading ? '...' : fmtNumber(summary?.subscription_orders)} icon={FileText} />
+          <AdminMiniStat label="订阅收入" value={loading ? '...' : `¥${fmtMoney(summary?.subscription_revenue_yuan)}`} icon={WalletCards} />
+          <AdminMiniStat label="累计生成" value={loading ? '...' : fmtNumber(summary?.total_generation)} icon={FileText} />
+          <AdminMiniStat label="累计下载" value={loading ? '...' : fmtNumber(summary?.total_download)} icon={Download} />
+          <AdminMiniStat label="Gamma额度" value={loading ? '...' : fmtNumber(summary?.admin_user_credits)} icon={KeyRound} />
+        </section>
+
+        <AdminOverviewCharts summary={summary} period={period} />
+
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+          <div className="flex flex-wrap items-center gap-2">
+            {adminTabs.map(([k, label, TabIcon]) => {
+              return (
+              <button
+                key={k}
+                onClick={() => setTab(k as Tab)}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-bold transition-all ${
+                  tab === k ? 'sx-primary-btn border-transparent text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-950'
+                }`}
+              >
+                <TabIcon size={15} strokeWidth={2.2} aria-hidden="true" />
+                {label}
+              </button>
+              );
+            })}
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <input
                 value={queryInput}
@@ -443,19 +764,22 @@ export default function AdminPage() {
                   if (e.key === 'Enter') applyUserFilters();
                 }}
                 placeholder="搜昵称/手机号/用户ID"
-                className="w-[210px] px-3 py-2 rounded-xl border border-indigo-200 bg-white text-sm outline-none focus:border-indigo-400"
+                className="w-[210px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
               />
               <select
                 value={planFilterInput}
                 onChange={(e) => setPlanFilterInput(e.target.value as 'all' | 'free' | 'plus' | 'pro')}
-                className="px-3 py-2 rounded-xl border border-indigo-200 bg-white text-sm text-slate-700 outline-none focus:border-indigo-400"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-slate-400"
               >
                 <option value="all">全部套餐</option>
                 <option value="free">免费用户</option>
                 <option value="plus">省心会员</option>
                 <option value="pro">尊享会员</option>
               </select>
-              <button onClick={applyUserFilters} className="px-4 py-2 rounded-xl sx-primary-btn text-white text-sm font-bold">筛选</button>
+              <button onClick={applyUserFilters} className="inline-flex items-center gap-1.5 rounded-lg sx-primary-btn px-3 py-2 text-sm font-bold text-white">
+                <Search size={15} strokeWidth={2.2} aria-hidden="true" />
+                筛选
+              </button>
             </div>
           </div>
 

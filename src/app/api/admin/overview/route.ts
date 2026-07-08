@@ -50,6 +50,188 @@ function isMissingTableError(error: unknown, tableName: string): boolean {
   );
 }
 
+const ADMIN_TIME_ZONE = 'Asia/Shanghai';
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+type PeriodKey = 'day' | 'week' | 'month';
+type MetricBucket = {
+  key: string;
+  label: string;
+  registrations: number;
+  visitors: number;
+  generations: number;
+  creditsUsed: number;
+  paidOrders: number;
+  subscriptions: number;
+  revenueYuan: number;
+  subscriptionRevenueYuan: number;
+  feedback: number;
+};
+
+function formatInAdminTz(date: Date, options: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: ADMIN_TIME_ZONE, ...options }).format(date);
+}
+
+function dayKeyFromDate(date: Date): string {
+  return formatInAdminTz(date, { year: 'numeric', month: '2-digit', day: '2-digit' });
+}
+
+function monthKeyFromDate(date: Date): string {
+  return formatInAdminTz(date, { year: 'numeric', month: '2-digit' });
+}
+
+function parseIsoDate(value: unknown): Date | null {
+  if (!value) return null;
+  const d = new Date(String(value));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function mondayStart(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay() || 7;
+  d.setDate(d.getDate() - day + 1);
+  return d;
+}
+
+function weekKeyFromDate(date: Date): string {
+  return dayKeyFromDate(mondayStart(date));
+}
+
+function periodKey(date: Date, period: PeriodKey): string {
+  if (period === 'month') return monthKeyFromDate(date);
+  if (period === 'week') return weekKeyFromDate(date);
+  return dayKeyFromDate(date);
+}
+
+function periodLabel(key: string, period: PeriodKey): string {
+  if (period === 'month') return key.slice(2).replace('-', '/');
+  if (period === 'week') return `${key.slice(5).replace('-', '/')}周`;
+  return key.slice(5).replace('-', '/');
+}
+
+function createBucket(key: string, period: PeriodKey): MetricBucket {
+  return {
+    key,
+    label: periodLabel(key, period),
+    registrations: 0,
+    visitors: 0,
+    generations: 0,
+    creditsUsed: 0,
+    paidOrders: 0,
+    subscriptions: 0,
+    revenueYuan: 0,
+    subscriptionRevenueYuan: 0,
+    feedback: 0,
+  };
+}
+
+function recentPeriodKeys(period: PeriodKey, count: number, now = new Date()): string[] {
+  const keys: string[] = [];
+  const cursor = new Date(now);
+  if (period === 'month') {
+    cursor.setDate(1);
+    cursor.setHours(0, 0, 0, 0);
+    for (let i = count - 1; i >= 0; i -= 1) {
+      const d = new Date(cursor);
+      d.setMonth(cursor.getMonth() - i);
+      keys.push(monthKeyFromDate(d));
+    }
+    return keys;
+  }
+  if (period === 'week') {
+    const base = mondayStart(cursor);
+    for (let i = count - 1; i >= 0; i -= 1) {
+      const d = new Date(base);
+      d.setDate(base.getDate() - i * 7);
+      keys.push(weekKeyFromDate(d));
+    }
+    return keys;
+  }
+  for (let i = count - 1; i >= 0; i -= 1) {
+    const d = new Date(cursor.getTime() - i * DAY_MS);
+    keys.push(dayKeyFromDate(d));
+  }
+  return keys;
+}
+
+function isGenerationTransaction(tx: Record<string, any>): boolean {
+  const type = String(tx.type || '').toLowerCase();
+  const desc = String(tx.description || '');
+  return type.includes('generation') || type.includes('outline') || desc.includes('生成PPT') || desc.startsWith('生成结算-') || desc.startsWith('hold-');
+}
+
+function buildMetricSeries(args: {
+  users: Array<Record<string, any>>;
+  transactions: Array<Record<string, any>>;
+  orders: Array<Record<string, any>>;
+  feedbackRows: Array<Record<string, any>>;
+  isPaidOrder: (status: string | null | undefined) => boolean;
+}) {
+  const periods: Array<{ key: PeriodKey; count: number }> = [
+    { key: 'day', count: 30 },
+    { key: 'week', count: 12 },
+    { key: 'month', count: 12 },
+  ];
+  const now = new Date();
+  const series = Object.fromEntries(
+    periods.map(({ key, count }) => [
+      key,
+      recentPeriodKeys(key, count, now).map((bucketKey) => createBucket(bucketKey, key)),
+    ])
+  ) as Record<PeriodKey, MetricBucket[]>;
+
+  const increment = (dateValue: unknown, field: keyof Omit<MetricBucket, 'key' | 'label'>, amount = 1) => {
+    const date = parseIsoDate(dateValue);
+    if (!date) return;
+    for (const { key: period } of periods) {
+      const bucket = series[period].find((item) => item.key === periodKey(date, period));
+      if (bucket) bucket[field] = Number((bucket[field] + amount).toFixed(2));
+    }
+  };
+
+  for (const user of args.users) {
+    increment(user.created_at, 'registrations', 1);
+    increment(user.last_login_at, 'visitors', 1);
+  }
+
+  for (const tx of args.transactions) {
+    if (!isGenerationTransaction(tx)) continue;
+    increment(tx.created_at, 'generations', 1);
+    const amount = Number(tx.amount || 0);
+    if (amount < 0) increment(tx.created_at, 'creditsUsed', Math.abs(amount));
+  }
+
+  for (const order of args.orders) {
+    if (!args.isPaidOrder(order.status)) continue;
+    const paidAt = order.paid_at || order.created_at;
+    const amountYuan = Number(order.amount || 0) / 100;
+    increment(paidAt, 'paidOrders', 1);
+    increment(paidAt, 'revenueYuan', amountYuan);
+    if (String(order.product_type || '') === 'subscription') {
+      increment(paidAt, 'subscriptions', 1);
+      increment(paidAt, 'subscriptionRevenueYuan', amountYuan);
+    }
+  }
+
+  for (const row of args.feedbackRows) {
+    increment(row.created_at, 'feedback', 1);
+  }
+
+  const current = {
+    day: series.day[series.day.length - 1] || createBucket(dayKeyFromDate(now), 'day'),
+    week: series.week[series.week.length - 1] || createBucket(weekKeyFromDate(now), 'week'),
+    month: series.month[series.month.length - 1] || createBucket(monthKeyFromDate(now), 'month'),
+  };
+  const previous = {
+    day: series.day[series.day.length - 2] || createBucket('', 'day'),
+    week: series.week[series.week.length - 2] || createBucket('', 'week'),
+    month: series.month[series.month.length - 2] || createBucket('', 'month'),
+  };
+
+  return { series, current, previous, visitor_source: 'last_login_at' };
+}
+
 async function fetchPaged(
   buildQuery: () => {
     range: (from: number, to: number) => Promise<{ data: unknown[] | null; error: unknown }>;
@@ -214,6 +396,8 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    const allNormalizedUsers = normalizedUsers;
+
     if (planFilter && planFilter !== 'all') {
       normalizedUsers = normalizedUsers.filter((u) => normalizePlanType(u.plan_type) === normalizePlanType(planFilter));
     }
@@ -225,23 +409,55 @@ export async function GET(request: NextRequest) {
     }
 
     const nowTs = Date.now();
-    const allNormalizedUsers = normalizedUsers;
     const gammaStatus = await getKeyPoolStatus().catch(() => null);
     const adminGammaCredits = gammaStatus?.adminTotalRemaining ?? (await getSharedKeyPoolRemaining().catch(() => 0));
+    const metricSeries = buildMetricSeries({
+      users,
+      transactions,
+      orders,
+      feedbackRows: effectiveFeedbackRows,
+      isPaidOrder,
+    });
+    const planDistribution = allNormalizedUsers.reduce((acc, u) => {
+      acc[u.plan_type] = (acc[u.plan_type] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    const topCreditUsers = [...allNormalizedUsers]
+      .sort((a, b) => b.total_credits_used - a.total_credits_used)
+      .slice(0, 8)
+      .map((u) => ({
+        id: u.id,
+        nickname: u.nickname,
+        phone: u.phone,
+        plan_type: u.plan_type,
+        total_credits_used: u.total_credits_used,
+        generation_count: u.generation_count,
+      }));
+    const paidUsersAll = allNormalizedUsers.filter((u) => u.plan_type !== 'free').length;
+    const paidOrders = orders.filter((order) => isPaidOrder(order.status));
+    const subscriptionOrders = paidOrders.filter((order) => String(order.product_type || '') === 'subscription');
+    const subscriptionRevenueYuan = Number(
+      subscriptionOrders.reduce((sum, order) => sum + Number(order.amount || 0) / 100, 0).toFixed(2)
+    );
 
     const summary = {
-      total_users: normalizedUsers.length,
-      paid_users: normalizedUsers.filter((u) => u.plan_type !== 'free').length,
-      active_members: normalizedUsers.filter((u) => {
+      total_users: allNormalizedUsers.length,
+      paid_users: paidUsersAll,
+      active_members: allNormalizedUsers.filter((u) => {
         if (u.plan_type === 'free') return false;
         if (!u.plan_expires_at) return true;
         return new Date(u.plan_expires_at).getTime() > nowTs;
       }).length,
       total_revenue_yuan: Number(
-        normalizedUsers.reduce((sum, u) => sum + u.paid_amount_yuan, 0).toFixed(2)
+        allNormalizedUsers.reduce((sum, u) => sum + u.paid_amount_yuan, 0).toFixed(2)
       ),
-      total_generation: normalizedUsers.reduce((sum, u) => sum + u.generation_count, 0),
-      total_download: normalizedUsers.reduce((sum, u) => sum + u.download_count, 0),
+      paid_orders: paidOrders.length,
+      subscription_orders: subscriptionOrders.length,
+      subscription_revenue_yuan: subscriptionRevenueYuan,
+      total_generation: allNormalizedUsers.reduce((sum, u) => sum + u.generation_count, 0),
+      total_download: allNormalizedUsers.reduce((sum, u) => sum + u.download_count, 0),
+      total_credits_used: allNormalizedUsers.reduce((sum, u) => sum + u.total_credits_used, 0),
+      paid_conversion_rate: allNormalizedUsers.length > 0 ? Number(((paidUsersAll / allNormalizedUsers.length) * 100).toFixed(1)) : 0,
       admin_user_credits: adminGammaCredits,
       admin_gamma_pool_credits: adminGammaCredits,
       admin_gamma_quota_groups: gammaStatus?.quotaGroups || [],
@@ -266,6 +482,13 @@ export async function GET(request: NextRequest) {
         const avg = rated.reduce((sum, r) => sum + Number(r.rating || 0), 0) / rated.length;
         return Number(avg.toFixed(2));
       })(),
+      metrics: metricSeries,
+      plan_distribution: [
+        { name: '免费用户', value: planDistribution.free || 0 },
+        { name: '省心会员', value: planDistribution.plus || 0 },
+        { name: '尊享会员', value: planDistribution.pro || 0 },
+      ],
+      top_credit_users: topCreditUsers,
     };
 
     normalizedUsers = normalizedUsers.slice(0, userLimit);
