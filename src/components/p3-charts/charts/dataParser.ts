@@ -1,9 +1,9 @@
 /**
  * dataParser.ts — Excel/CSV 数据解析器
- * 支持从 Excel (.xlsx/.xls) 和 CSV 文件中解析图表数据
+ * 支持从 Excel (.xlsx) 和 CSV 文件中解析图表数据
  */
 
-import * as XLSX from 'xlsx';
+import { readSheet } from 'read-excel-file/browser';
 
 // ============ 类型定义 ============
 
@@ -109,52 +109,30 @@ function parseCSVLine(line: string): string[] {
 // ============ Excel 解析 ============
 
 /**
- * 解析 Excel 文件（.xlsx / .xls）
+ * 解析 Excel 文件（.xlsx）
  * @param arrayBuffer 文件二进制数据
  * @param options 解析选项
  */
-export function parseExcel(arrayBuffer: ArrayBuffer, options: Partial<ParseOptions> = {}): ParseResult {
+export async function parseExcel(arrayBuffer: ArrayBuffer, options: Partial<ParseOptions> = {}): Promise<ParseResult> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
-
-  // 默认取第一个 sheet
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
-
-  return parseSheet(sheet, opts, sheetName);
+  const rows = await readSheet(arrayBuffer);
+  return parseSheet(rows as unknown[][], opts, 'Sheet1');
 }
 
 /**
  * 解析 Excel Sheet 为通用数据
  */
 export function parseSheet(
-  sheet: XLSX.WorkSheet,
+  sheetRows: unknown[][],
   options: Partial<ParseOptions> = {},
   sheetName?: string
 ): ParseResult {
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
-  // 转换为行数据
-  const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1');
-  const allRows: string[][] = [];
-
-  for (let R = range.s.r; R <= range.e.r; R++) {
-    const row: string[] = [];
-    for (let C = range.s.c; C <= range.e.c; C++) {
-      const addr = XLSX.utils.encode_cell({ r: R, c: C });
-      const cell = sheet[addr];
-      if (!cell) {
-        row.push('');
-      } else if (cell.t === 'n' || cell.t === 's' || cell.t === 'str') {
-        row.push(String(cell.v ?? ''));
-      } else if (cell.t === 'd') {
-        row.push(String((cell.v as Date).toLocaleDateString()));
-      } else {
-        row.push(String(cell.v ?? ''));
-      }
-    }
-    allRows.push(row);
-  }
+  const allRows = sheetRows.map((row) => row.map((cell) => {
+    if (cell instanceof Date) return cell.toLocaleDateString();
+    return String(cell ?? '');
+  }));
 
   if (allRows.length === 0) {
     return { headers: [], data: [], sheetName };
@@ -250,14 +228,19 @@ export async function parseFile(file: File, options: Partial<ParseOptions> = {})
     return result;
   }
 
-  if (extension === 'xlsx' || extension === 'xls') {
+  if (extension === 'xlsx') {
     const buffer = await file.arrayBuffer();
     const result = parseExcel(buffer, options);
-    result.fileName = file.name;
-    return result;
+    const parsed = await result;
+    parsed.fileName = file.name;
+    return parsed;
   }
 
-  throw new Error(`Unsupported file type: .${extension}. Supported: .csv, .xlsx, .xls`);
+  if (extension === 'xls') {
+    throw new Error('暂不支持旧版 .xls，请另存为 .xlsx 或 CSV 后导入');
+  }
+
+  throw new Error(`Unsupported file type: .${extension}. Supported: .csv, .xlsx`);
 }
 
 /**
@@ -265,7 +248,7 @@ export async function parseFile(file: File, options: Partial<ParseOptions> = {})
  */
 export function isExcelFile(file: File): boolean {
   const ext = file.name.split('.').pop()?.toLowerCase();
-  return ext === 'xlsx' || ext === 'xls';
+  return ext === 'xlsx';
 }
 
 /**

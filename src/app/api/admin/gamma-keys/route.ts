@@ -24,6 +24,15 @@ function isMissingTable(error: unknown): boolean {
   return msg.includes('admin_gamma_keys') || msg.toLowerCase().includes('does not exist');
 }
 
+async function reloadPoolResult(): Promise<{ reloaded: boolean; reloadError?: string }> {
+  try {
+    await reloadKeyPool();
+    return { reloaded: true };
+  } catch (e) {
+    return { reloaded: false, reloadError: e instanceof Error ? e.message : 'Gamma Key 池刷新失败' };
+  }
+}
+
 function publicKeyShape(key: Record<string, any>) {
   return {
     id: key.id,
@@ -102,7 +111,7 @@ export async function POST(request: NextRequest) {
         if (error) return NextResponse.json({ error: error.message || '迁移失败' }, { status: 500 });
       }
 
-      await reloadKeyPool().catch(() => {});
+      const reload = await reloadPoolResult();
       await writeAdminAuditLog(sb as never, request, {
         operatorUserId: auth.userId,
         operatorPhone: auth.phone,
@@ -117,6 +126,7 @@ export async function POST(request: NextRequest) {
         success: true,
         imported: rows.length,
         skipped: envKeys.length - rows.length,
+        ...reload,
         ...status,
         keys: status.keys.map((key) => publicKeyShape(key as never)),
       });
@@ -149,7 +159,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message || '保存失败' }, { status: 500 });
     }
 
-    await reloadKeyPool().catch(() => {});
+    const reload = await reloadPoolResult();
     await writeAdminAuditLog(sb as never, request, {
       operatorUserId: auth.userId,
       operatorPhone: auth.phone,
@@ -160,7 +170,7 @@ export async function POST(request: NextRequest) {
       reason: String(body?.reason || '新增 Gamma Key').slice(0, 200),
     });
 
-    return NextResponse.json({ success: true, key: data });
+    return NextResponse.json({ success: true, ...reload, key: data });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : '保存失败';
     return NextResponse.json({ error: message }, { status: 500 });

@@ -3,6 +3,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  inspectEnabledPaymentProviders,
+  parseSupportedPaymentMethods,
+} from './commercial-payment-readiness.mjs';
 
 function loadEnvFile(path) {
   if (!existsSync(path)) return;
@@ -53,29 +57,23 @@ const core = [
   'PAYMENT_NOTIFY_SECRET',
   'ALLOWED_CALLBACK_IPS',
 ];
-const wechatSdk = ['WECHAT_PAY_MCH_ID', 'WECHAT_PAY_APP_ID', 'WECHAT_PAY_API_V3_KEY'];
-const alipaySdk = ['ALIPAY_APP_ID', 'ALIPAY_PRIVATE_KEY', 'ALIPAY_PUBLIC_KEY'];
-const wechatTemplate = ['PAYMENT_WECHAT_URL_TEMPLATE', 'PAYMENT_WECHAT_QRCODE_TEMPLATE'];
-const alipayTemplate = ['PAYMENT_ALIPAY_URL_TEMPLATE', 'PAYMENT_ALIPAY_QRCODE_TEMPLATE'];
-
 const missingCore = core.filter((k) => !isPresent(k));
 const notifyHttps = /^https:\/\//i.test(process.env.PAYMENT_NOTIFY_URL || '');
-const wechatReady = wechatTemplate.some(isPresent) || wechatSdk.every(isPresent);
-const alipayReady = alipayTemplate.some(isPresent) || alipaySdk.every(isPresent);
-const missingWechatSdk = wechatSdk.filter((k) => !isPresent(k));
-const missingAlipaySdk = alipaySdk.filter((k) => !isPresent(k));
+const providerReadiness = inspectEnabledPaymentProviders();
+const providersReady = providerReadiness.every((item) => item.ready);
+const supportedProviders = parseSupportedPaymentMethods();
 const minimalTemplateKeys = [
   ...core,
-  'PAYMENT_WECHAT_URL_TEMPLATE',
-  'PAYMENT_ALIPAY_URL_TEMPLATE',
+  ...supportedProviders.map((provider) => provider === 'wechat' ? 'PAYMENT_WECHAT_URL_TEMPLATE' : 'PAYMENT_ALIPAY_URL_TEMPLATE'),
 ];
 const missingMinimalTemplate = minimalTemplateKeys.filter((k) => !isPresent(k));
 
 print('=== Commercial Env Doctor ===', [
   `Core ready: ${missingCore.length === 0 ? 'YES' : 'NO'}`,
   `Notify URL https: ${notifyHttps ? 'YES' : 'NO'}`,
-  `WeChat ready: ${wechatReady ? 'YES' : 'NO'}`,
-  `Alipay ready: ${alipayReady ? 'YES' : 'NO'}`,
+  `Payment methods: ${supportedProviders.join(', ')}`,
+  `Payment providers ready: ${providersReady ? 'YES' : 'NO'}`,
+  ...providerReadiness.map((item) => `- ${item.provider}: ${item.ready ? item.mode : `missing ${item.missing.join(', ')}`}`),
 ]);
 
 if (missingCore.length > 0) {
@@ -86,32 +84,34 @@ if (missingCore.length > 0) {
 if (!notifyHttps) {
   print('Fix Notify URL', ['- PAYMENT_NOTIFY_URL must start with https://']);
 }
-if (!wechatReady) {
-  print('Fix WeChat (choose one path)', [
-    '- Template path: set PAYMENT_WECHAT_URL_TEMPLATE or PAYMENT_WECHAT_QRCODE_TEMPLATE',
-    `- SDK path missing: ${missingWechatSdk.join(', ')}`,
-  ]);
-  print('Fix WeChat (Vercel CLI examples)', [
-    vercelCmd('PAYMENT_WECHAT_URL_TEMPLATE', 'https://pay.example.com/wx?order={orderNo}&amount={amountFen}'),
-    vercelCmd('PAYMENT_WECHAT_QRCODE_TEMPLATE', 'https://pay.example.com/wx-qr?order={orderNo}'),
-    ...missingWechatSdk.map((k) => vercelCmd(k, `<${k}>`)),
-  ]);
-}
-if (!alipayReady) {
-  print('Fix Alipay (choose one path)', [
-    '- Template path: set PAYMENT_ALIPAY_URL_TEMPLATE or PAYMENT_ALIPAY_QRCODE_TEMPLATE',
-    `- SDK path missing: ${missingAlipaySdk.join(', ')}`,
-  ]);
-  print('Fix Alipay (Vercel CLI examples)', [
-    vercelCmd('PAYMENT_ALIPAY_URL_TEMPLATE', 'https://pay.example.com/ali?order={orderNo}&amount={amountFen}'),
-    vercelCmd('PAYMENT_ALIPAY_QRCODE_TEMPLATE', 'https://pay.example.com/ali-qr?order={orderNo}'),
-    ...missingAlipaySdk.map((k) => vercelCmd(k, `<${k}>`)),
-  ]);
+for (const provider of providerReadiness.filter((item) => !item.ready)) {
+  if (provider.provider === 'wechat') {
+    print('Fix WeChat (choose one path)', [
+      '- XunhuPay path: set XUNHU_PAY_APPID and XUNHU_PAY_SECRET',
+      '- Template path: set PAYMENT_WECHAT_URL_TEMPLATE or PAYMENT_WECHAT_QRCODE_TEMPLATE',
+      `- Missing candidates: ${provider.missing.join(', ')}`,
+    ]);
+    print('Fix WeChat (Vercel CLI examples)', [
+      vercelCmd('XUNHU_PAY_APPID', '<XUNHU_PAY_APPID>'),
+      vercelCmd('XUNHU_PAY_SECRET', '<XUNHU_PAY_SECRET>'),
+      vercelCmd('PAYMENT_WECHAT_URL_TEMPLATE', 'https://pay.example.com/wx?order={orderNo}&amount={amountFen}'),
+    ]);
+  } else {
+    print('Fix Alipay (choose one path)', [
+      '- Template path: set PAYMENT_ALIPAY_URL_TEMPLATE or PAYMENT_ALIPAY_QRCODE_TEMPLATE',
+      '- SDK path: set ALIPAY_APP_ID, ALIPAY_PRIVATE_KEY, ALIPAY_PUBLIC_KEY',
+      `- Missing candidates: ${provider.missing.join(', ')}`,
+    ]);
+    print('Fix Alipay (Vercel CLI examples)', [
+      vercelCmd('PAYMENT_ALIPAY_URL_TEMPLATE', 'https://pay.example.com/ali?order={orderNo}&amount={amountFen}'),
+      ...provider.missing.map((k) => vercelCmd(k, `<${k}>`)),
+    ]);
+  }
 }
 
-if (missingMinimalTemplate.length > 0) {
+if (!providersReady && missingMinimalTemplate.length > 0) {
   print('Minimal Go-Live Path (Template mode)', [
-    '- Fastest production path: fill core + one WeChat template + one Alipay template',
+    '- Fastest production path: fill core + one template per enabled payment method',
     `- Missing for minimal path: ${missingMinimalTemplate.join(', ')}`,
   ]);
   print('Minimal Path (Vercel CLI)', missingMinimalTemplate.map((k) => {
@@ -125,7 +125,7 @@ if (missingMinimalTemplate.length > 0) {
   }));
 }
 
-const ok = missingCore.length === 0 && notifyHttps && wechatReady && alipayReady;
+const ok = missingCore.length === 0 && notifyHttps && providersReady;
 print('Next Commands', [
   '- npm run -s env:commercial',
   '- npm run -s preflight:commercial',

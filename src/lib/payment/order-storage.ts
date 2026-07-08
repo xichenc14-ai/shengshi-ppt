@@ -22,7 +22,7 @@ async function runWithMissingColumnRetry(
   payload: Record<string, unknown>,
   run: (nextPayload: Record<string, unknown>) => Promise<{ error: SupabaseError | null }>
 ): Promise<{ error: SupabaseError | null; payload: Record<string, unknown>; stripped: string[] }> {
-  let nextPayload = { ...payload };
+  const nextPayload = { ...payload };
   const stripped: string[] = [];
 
   for (let attempt = 0; attempt < 8; attempt += 1) {

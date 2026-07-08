@@ -717,7 +717,6 @@ export default function Home() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${user.id}`,
       },
       body: JSON.stringify({
         action: 'estimate_generation',
@@ -746,7 +745,7 @@ export default function Home() {
     if (!user) throw new Error('请先登录');
     const res = await fetch('/api/user', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${user.id}` },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'hold_generation', userId: user.id, ...payload }),
     });
     const data = await res.json();
@@ -772,7 +771,6 @@ export default function Home() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${user.id}`,
       },
       body: JSON.stringify({
         action: 'settle_generation',
@@ -1559,7 +1557,6 @@ export default function Home() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${user.id}`,
           },
           body: JSON.stringify({ action: 'save', title: outlineResult.title, slides: slidesForRender, themeId: finalThemeId, downloadUrl: pptxDownloadPath, pageCount: renderPageCount, imageMode: imgSrc }),
         });

@@ -85,7 +85,7 @@ function getSupabase() {
   return createClient(url, key);
 }
 
-async function getOptionalSessionUserId(): Promise<string | null> {
+async function getRequiredSessionUserId(): Promise<string | null> {
   try {
     const session = await getSession();
     return session.isLoggedIn ? (session.user?.id || null) : null;
@@ -94,7 +94,7 @@ async function getOptionalSessionUserId(): Promise<string | null> {
   }
 }
 
-async function findReadyArtifact(generationId: string): Promise<ArtifactRow | null> {
+async function findReadyArtifact(generationId: string, userId: string): Promise<ArtifactRow | null> {
   const sb = getSupabase();
   if (!sb) return null;
 
@@ -116,6 +116,9 @@ async function findReadyArtifact(generationId: string): Promise<ArtifactRow | nu
 
   const artifact = data as ArtifactRow | null;
   if (!artifact?.object_key) return null;
+  if (artifact.user_id && artifact.user_id !== userId) {
+    throw new Error('FORBIDDEN_ARTIFACT');
+  }
   if (!(await artifactObjectExists(artifact.object_key))) {
     console.warn('[ExportPPTX] artifact 元数据存在但 R2 对象不存在，重新镜像:', artifact.object_key);
     return null;
@@ -125,6 +128,7 @@ async function findReadyArtifact(generationId: string): Promise<ArtifactRow | nu
 
 async function saveReadyArtifact(args: {
   generationId: string;
+  userId: string;
   objectKey: string;
   filename: string;
   sizeBytes: number;
@@ -133,11 +137,10 @@ async function saveReadyArtifact(args: {
   const sb = getSupabase();
   if (!sb) return null;
 
-  const userId = await getOptionalSessionUserId();
   const { data, error } = await sb
     .from('generation_artifacts')
     .upsert({
-      user_id: userId,
+      user_id: args.userId,
       generation_id: args.generationId,
       format: FORMAT,
       object_key: args.objectKey,
@@ -188,6 +191,15 @@ export async function GET(req: NextRequest) {
   const generationId = searchParams.get('generationId');
   const filename = searchParams.get('name') || `省心PPT.${FORMAT}`;
 
+  const sessionUserId = await getRequiredSessionUserId();
+  if (!sessionUserId) {
+    return NextResponse.json({
+      generationId: generationId || '',
+      status: 'failed',
+      error: { code: 'UNAUTHENTICATED', message: '请先登录' },
+    }, { status: 401 });
+  }
+
   if (!generationId) {
     return NextResponse.json({
       generationId: '',
@@ -199,7 +211,7 @@ export async function GET(req: NextRequest) {
 
   try {
     if (isArtifactAccelerationEnabled()) {
-      const existingArtifact = await findReadyArtifact(generationId);
+      const existingArtifact = await findReadyArtifact(generationId, sessionUserId);
       if (existingArtifact) {
         console.log('[ExportPPTX] R2 artifact 命中:', existingArtifact.object_key);
         return redirectToArtifact({
@@ -356,6 +368,7 @@ export async function GET(req: NextRequest) {
         try {
           artifact = await saveReadyArtifact({
             generationId,
+            userId: sessionUserId,
             objectKey,
             filename: safeFilename,
             sizeBytes: stored.sizeBytes,
@@ -391,6 +404,13 @@ export async function GET(req: NextRequest) {
     const errorMessage = getErrorMessage(e);
     const errorName = e instanceof Error ? e.name : '';
     console.error('[ExportPPTX] Error:', errorMessage);
+    if (errorMessage === 'FORBIDDEN_ARTIFACT') {
+      return NextResponse.json({
+        generationId,
+        status: 'failed',
+        error: { code: 'FORBIDDEN', message: '无权限下载该文件' },
+      }, { status: 403 });
+    }
     if (errorName === 'AbortError' || errorName === 'TimeoutError') {
       return NextResponse.json({
         generationId,

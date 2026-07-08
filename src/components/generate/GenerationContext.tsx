@@ -306,7 +306,6 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       const gRes = await fetch('/api/gamma-direct', {
         method: 'POST', headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${user.id}`,
         },
         body: JSON.stringify({ inputText, themeId: directTheme, numCards: pages, imageSource: directImgMode, tone: directTone, textMode: directTextMode, exportAs: 'pptx' }),
       });

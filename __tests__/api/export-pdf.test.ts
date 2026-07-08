@@ -19,6 +19,13 @@ vi.mock('@/lib/slides-pdf', () => ({
   renderSlidesPdfBuffer: renderSlidesPdfBufferMock,
 }));
 
+vi.mock('@/lib/session', () => ({
+  getSession: vi.fn().mockResolvedValue({
+    isLoggedIn: true,
+    user: { id: 'user-1', phone: '13800138000', nickname: '测试用户', credits: 1000, plan_type: 'pro' },
+  }),
+}));
+
 import { GET, POST } from '@/app/api/export-pdf/route';
 
 function mockRequest(url: string) {

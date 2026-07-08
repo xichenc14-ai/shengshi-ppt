@@ -47,6 +47,13 @@ vi.mock('@/lib/rate-limit', () => ({
   isIPBlocked: vi.fn().mockReturnValue(false),
 }));
 
+vi.mock('@/lib/session', () => ({
+  getSession: vi.fn().mockResolvedValue({
+    isLoggedIn: true,
+    user: { id: 'user-1', phone: '13800138000', nickname: '测试用户', credits: 1000, plan_type: 'pro' },
+  }),
+}));
+
 // Mock global fetch
 const mockFetch = vi.fn();
 global.fetch = mockFetch;

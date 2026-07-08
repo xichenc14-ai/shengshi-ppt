@@ -9,12 +9,28 @@ import { isPaymentFeatureEnabledServer } from '@/lib/payment-feature';
 import { canCreatePlanOrder, fulfillPaidOrder, normalizePlanId, PLAN_PRICES, reconcileUserEntitlements } from '@/lib/payment/subscription';
 import { insertOrderCompat, updateOrderCompat } from '@/lib/payment/order-storage';
 import { isXunhuPaidResult, queryXunhuOrder, xunhuStatusToOrderStatus } from '@/lib/payment/xunhu';
+import { getSession } from '@/lib/session';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
+}
+
+async function requireSessionUser(requestedUserId?: unknown): Promise<
+  | { ok: true; userId: string }
+  | { ok: false; response: NextResponse }
+> {
+  const session = await getSession();
+  if (!session.isLoggedIn || !session.user?.id) {
+    return { ok: false, response: NextResponse.json({ error: '请先登录' }, { status: 401 }) };
+  }
+  const userId = typeof requestedUserId === 'string' ? requestedUserId.trim() : '';
+  if (userId && userId !== session.user.id) {
+    return { ok: false, response: NextResponse.json({ error: '无权限操作该用户订单' }, { status: 403 }) };
+  }
+  return { ok: true, userId: session.user.id };
 }
 
 function amountYuanToFen(value: string | undefined): number | null {
@@ -89,7 +105,10 @@ export async function POST(req: NextRequest) {
       if (!isPaymentFeatureEnabledServer()) {
         return NextResponse.json({ error: '支付通道申请中，暂不可下单' }, { status: 503 });
       }
-      const { payMethod, userId, billing = 'monthly' } = body;
+      const { payMethod, billing = 'monthly' } = body;
+      const auth = await requireSessionUser(body?.userId);
+      if (!auth.ok) return auth.response;
+      const userId = auth.userId;
       const planId = normalizePlanId(String(body.planId || ''));
       const purchaseMode = String(body.purchaseMode || 'upgrade') === 'renew' ? 'renew' : 'upgrade';
       const createOrderLimit = rateLimit(`payment:create_order:${clientIP}:${userId || 'anon'}`, { windowMs: 60 * 1000, maxRequests: 6 });
@@ -113,9 +132,9 @@ export async function POST(req: NextRequest) {
       const isAnnual = billing === 'annual';
       const amount = isAnnual ? plan.annual : plan.monthly;
       const billingLabel = isAnnual ? '年付' : '月付';
-      const targetUserId = userId || '00000000-0000-0000-000000000000';
+      const targetUserId = userId;
 
-      if (targetUserId && targetUserId !== '00000000-0000-0000-000000000000') {
+      if (targetUserId) {
         await reconcileUserEntitlements(sb, targetUserId);
 
         const { data: currentUser } = await sb
@@ -208,7 +227,7 @@ export async function POST(req: NextRequest) {
         orderNo,
         amountFen: Math.round(amount * 100),
         subject: `${plan.name}（${billingLabel}）`,
-        userId: userId || '',
+        userId,
         notifyUrl,
       });
 
@@ -418,6 +437,11 @@ export async function GET(req: NextRequest) {
   if (!orderNo) return NextResponse.json({ error: '缺少订单号' }, { status: 400 });
 
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.user?.id) {
+      return NextResponse.json({ error: '请先登录' }, { status: 401 });
+    }
+
     // 检查超时订单并自动标记
     const { data: order } = await sb
       .from('orders')
@@ -426,6 +450,9 @@ export async function GET(req: NextRequest) {
       .single();
 
     if (!order) return NextResponse.json({ error: '订单不存在' }, { status: 404 });
+    if (order.user_id && order.user_id !== session.user.id) {
+      return NextResponse.json({ error: '无权限查询该订单' }, { status: 403 });
+    }
 
     const existingMetadata = (order.metadata || {}) as Record<string, unknown>;
     if (order.status === 'paid') {

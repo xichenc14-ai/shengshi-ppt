@@ -2,28 +2,16 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import {
+  inspectEnabledPaymentProviders,
+  parseSupportedPaymentMethods,
+} from './commercial-payment-readiness.mjs';
 
 const requiredEnv = [
   'NEXT_PUBLIC_SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
   'PAYMENT_NOTIFY_URL',
 ];
-
-const wechatEnvFallback = ['WECHAT_PAY_MCH_ID', 'WECHAT_PAY_APP_ID', 'WECHAT_PAY_API_V3_KEY'];
-const alipayEnvFallback = ['ALIPAY_APP_ID', 'ALIPAY_PRIVATE_KEY', 'ALIPAY_PUBLIC_KEY'];
-
-const templateEnv = {
-  wechat: ['PAYMENT_WECHAT_URL_TEMPLATE', 'PAYMENT_WECHAT_QRCODE_TEMPLATE', 'WECHAT_PAY_URL_TEMPLATE', 'WECHAT_QRCODE_URL_TEMPLATE'],
-  alipay: ['PAYMENT_ALIPAY_URL_TEMPLATE', 'PAYMENT_ALIPAY_QRCODE_TEMPLATE', 'ALIPAY_PAY_URL_TEMPLATE', 'ALIPAY_QRCODE_URL_TEMPLATE'],
-};
-
-function hasAnyEnv(keys) {
-  return keys.some((k) => Boolean(process.env[k]));
-}
-
-function missingEnv(keys) {
-  return keys.filter((k) => !process.env[k]);
-}
 
 function runStep(name, cmd, args) {
   process.stdout.write(`\n[preflight] ${name}...\n`);
@@ -71,16 +59,12 @@ if (!/^https:\/\//i.test(process.env.PAYMENT_NOTIFY_URL || '')) {
 }
 ok('PAYMENT_NOTIFY_URL 为 https');
 
-const wechatReady = hasAnyEnv(templateEnv.wechat) || missingEnv(wechatEnvFallback).length === 0;
-const alipayReady = hasAnyEnv(templateEnv.alipay) || missingEnv(alipayEnvFallback).length === 0;
-
-if (!wechatReady) {
-  fail(`微信支付未就绪：模板变量为空且 SDK 环境缺失 [${missingEnv(wechatEnvFallback).join(', ')}]`);
+const providerReadiness = inspectEnabledPaymentProviders();
+const notReadyProviders = providerReadiness.filter((item) => !item.ready);
+if (notReadyProviders.length > 0) {
+  fail(`支付渠道未就绪：${notReadyProviders.map((item) => `${item.provider} missing [${item.missing.join(', ')}]`).join('; ')}`);
 }
-if (!alipayReady) {
-  fail(`支付宝支付未就绪：模板变量为空且 SDK 环境缺失 [${missingEnv(alipayEnvFallback).join(', ')}]`);
-}
-ok('支付提供方配置就绪');
+ok(`支付提供方配置就绪：${parseSupportedPaymentMethods().join(', ')}`);
 
 const nextConfig = readFileSync('next.config.ts', 'utf8');
 if (/ignoreBuildErrors\s*:\s*true/.test(nextConfig)) {

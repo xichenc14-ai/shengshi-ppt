@@ -254,6 +254,91 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (action === 'set_entitlement') {
+      const requestedPlanType = String(body?.planType || '').trim();
+      if (!['free', 'plus', 'pro', 'shengxin', 'advanced', 'basic', 'standard', 'vip', 'supreme', 'enterprise'].includes(requestedPlanType)) {
+        return NextResponse.json({ error: '套餐类型无效' }, { status: 400 });
+      }
+      const planType = normalizePlanType(requestedPlanType);
+      const reason = safeReason(body?.reason);
+      const currentCredits = Number(user.credits || 0);
+      const nextCreditsRaw = Number(body?.credits ?? body?.targetCredits ?? currentCredits);
+      if (!Number.isFinite(nextCreditsRaw) || nextCreditsRaw < 0) {
+        return NextResponse.json({ error: '积分额度无效' }, { status: 400 });
+      }
+      const nextCredits = Math.floor(nextCreditsRaw);
+      const expireAtISO = planType === 'free'
+        ? null
+        : (toIsoDateEnd(String(body?.expireAt || body?.expiresAt || '')) || addOneMonthISO());
+      const startedAt = planType === 'free' ? null : new Date().toISOString();
+
+      const updateResult = await updateUserCompat(sb, targetUserId, {
+        plan_type: storagePlanType(planType),
+        credits: nextCredits,
+        plan_started_at: startedAt,
+        plan_expires_at: expireAtISO,
+        last_entitlement_sync_at: new Date().toISOString(),
+      });
+      if (updateResult.error) {
+        return NextResponse.json({ error: `权益更新失败: ${updateResult.error.message || ''}` }, { status: 500 });
+      }
+
+      const delta = nextCredits - currentCredits;
+      if (delta !== 0) {
+        await sb.from('credit_transactions').insert({
+          user_id: targetUserId,
+          amount: delta,
+          balance_after: nextCredits,
+          type: 'admin_set_entitlement',
+          description: `后台一键设置权益积分-${reason}`,
+        });
+      }
+
+      if (planType !== 'free') {
+        const orderNo = `admin_ent_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+        await sb.from('orders').insert({
+          user_id: targetUserId,
+          order_no: orderNo,
+          product_type: 'subscription',
+          product_name: '后台一键设置权益',
+          amount: 0,
+          status: 'completed',
+          pay_method: 'admin',
+          metadata: {
+            manualExpireAt: expireAtISO,
+            reason,
+            operator: auth.userId,
+            planType,
+            storagePlanType: storagePlanType(planType),
+            action,
+          },
+          paid_at: startedAt,
+        });
+      }
+
+      await writeAdminAuditLog(sb as never, request, {
+        operatorUserId: auth.userId,
+        operatorPhone: auth.phone,
+        action: 'user_set_entitlement',
+        targetType: 'user',
+        targetId: targetUserId,
+        before: { plan_type: user.plan_type, credits: currentCredits },
+        after: { plan_type: planType, plan_expires_at: expireAtISO, credits: nextCredits, delta },
+        reason,
+      });
+
+      const snapshot = await readUserSnapshot(sb, targetUserId);
+      return NextResponse.json({
+        success: true,
+        action,
+        plan_type: planType,
+        plan_expires_at: expireAtISO,
+        credits: nextCredits,
+        delta,
+        user: snapshot,
+      });
+    }
+
     if (action === 'set_plan') {
       const requestedPlanType = String(body?.planType || '').trim();
       if (!['free', 'plus', 'pro', 'shengxin', 'advanced', 'basic', 'standard', 'vip', 'supreme', 'enterprise'].includes(requestedPlanType)) {

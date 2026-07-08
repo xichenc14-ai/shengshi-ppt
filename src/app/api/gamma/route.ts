@@ -4,6 +4,7 @@ import { selectBestKey, updateKeyBalance, recordKeyFailure, getAllKeys } from '@
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
 import { buildGammaImageOptions, normalizeUserInput } from '@/lib/adapters/ppt-param-adapter';
 import { resolveSmartThemeId } from '@/lib/smart-theme-matcher';
+import { getSession } from '@/lib/session';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -18,6 +19,11 @@ const GAMMA_VISUAL_LAYOUT_RULES = `【Gamma原生可视化映射-最高优先级
 - iconGrid 页面必须用图标语义、数字徽章、色块卡片或形状组合增强层次；每个要点要有可见视觉标记，禁止整页只有普通文本。
 - 只有 chartSpec 中存在真实数据时才生成图表；禁止自造百分比、金额、趋势数据。
 - 如果某种图表或逻辑图无法生成，降级为图标卡片/数字徽章/色块分组，不能降级为纯文字白板。`;
+
+async function requireLoggedIn() {
+  const session = await getSession();
+  return Boolean(session.isLoggedIn && session.user?.id);
+}
 
 function normalizePptxSafeInstructions(instructions: string): string {
   const withoutFragileIconBlocks = String(instructions || '')
@@ -378,6 +384,10 @@ function buildContentImageGuidance(params: {
 
 // POST: 创建 Gamma 生成任务
 export async function POST(request: NextRequest) {
+  if (!(await requireLoggedIn())) {
+    return NextResponse.json({ error: '请先登录' }, { status: 401 });
+  }
+
   const ip = getClientIP(request);
   if (isIPBlocked(ip)) {
     return NextResponse.json({ error: '请求受限' }, { status: 403 });
@@ -656,6 +666,10 @@ export async function POST(request: NextRequest) {
 
 // GET: 查询 Gamma 生成状态(前端轮询)
 export async function GET(request: NextRequest) {
+  if (!(await requireLoggedIn())) {
+    return NextResponse.json({ error: '请先登录' }, { status: 401 });
+  }
+
   // 🚨 D3 Fix Q6: 添加 rateLimit 保护（与 POST 一致）
   const ip = getClientIP(request);
   if (isIPBlocked(ip)) {

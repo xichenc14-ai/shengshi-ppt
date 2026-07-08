@@ -36,6 +36,20 @@ function normalizeExtractedText(raw: string): string {
     .trim();
 }
 
+function formatSpreadsheetCell(cell: unknown): string {
+  if (cell instanceof Date) return cell.toISOString().slice(0, 10);
+  if (cell === null || cell === undefined) return '';
+  return String(cell);
+}
+
+function rowsToCsv(rows: unknown[][]): string {
+  return rows.map((row) => row.map((cell) => {
+    const text = formatSpreadsheetCell(cell);
+    if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+    return text;
+  }).join(',')).join('\n');
+}
+
 function decodeXmlEntities(text: string): string {
   return text
     .replace(/&#x0*A;/gi, '\n')
@@ -199,19 +213,19 @@ export async function POST(request: NextRequest) {
       if (skipTables) {
         text = `[表格文件已上传: ${fileName}，默认未展开表格明细。若需解析表格，请在需求中明确说明“处理表格数据”。]`;
       } else {
-      try {
-        const XLSX = await import('xlsx');
-        const workbook = XLSX.read(buffer, { type: 'buffer' });
-        const sheets: string[] = [];
-        for (const name of workbook.SheetNames) {
-          const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[name]);
-          if (csv.trim()) sheets.push(`【${name}】\n${csv}`);
+        try {
+          const readExcelFile = (await import('read-excel-file/node')).default;
+          const workbook = await readExcelFile(buffer);
+          const sheets: string[] = [];
+          for (const sheet of workbook) {
+            const csv = rowsToCsv(sheet.data as unknown[][]);
+            if (csv.trim()) sheets.push(`【${sheet.sheet}】\n${csv}`);
+          }
+          text = sheets.join('\n\n') || `[Excel: ${fileName}，无数据]`;
+        } catch (e: unknown) {
+          failed = true;
+          error = `Excel解析失败: ${getErrorMessage(e) || '未知错误'}`;
         }
-        text = sheets.join('\n\n') || `[Excel: ${fileName}，无数据]`;
-      } catch (e: unknown) {
-        failed = true;
-        error = `Excel解析失败: ${getErrorMessage(e) || '未知错误'}`;
-      }
       }
     } else if (lowerFileName.endsWith('.docx')) {
       try {

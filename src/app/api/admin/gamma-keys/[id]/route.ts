@@ -35,6 +35,15 @@ function publicKeyShape(row: Record<string, any> | null) {
   };
 }
 
+async function reloadPoolResult(): Promise<{ reloaded: boolean; reloadError?: string }> {
+  try {
+    await reloadKeyPool();
+    return { reloaded: true };
+  } catch (e) {
+    return { reloaded: false, reloadError: e instanceof Error ? e.message : 'Gamma Key 池刷新失败' };
+  }
+}
+
 export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -134,7 +143,7 @@ export async function PATCH(
       .single();
     if (error || !after) return NextResponse.json({ error: error?.message || '更新失败' }, { status: 500 });
 
-    await reloadKeyPool().catch(() => {});
+    const reload = await reloadPoolResult();
     await writeAdminAuditLog(sb as never, request, {
       operatorUserId: auth.userId,
       operatorPhone: auth.phone,
@@ -146,7 +155,7 @@ export async function PATCH(
       reason,
     });
 
-    return NextResponse.json({ success: true, key: publicKeyShape(after) });
+    return NextResponse.json({ success: true, ...reload, key: publicKeyShape(after) });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : '更新失败';
     return NextResponse.json({ error: message }, { status: 500 });
@@ -168,7 +177,7 @@ export async function DELETE(
   const { data: before } = await sb.from('admin_gamma_keys').select('*').eq('id', id).single();
   const { error } = await sb.from('admin_gamma_keys').delete().eq('id', id);
   if (error) return NextResponse.json({ error: error.message || '删除失败' }, { status: 500 });
-  await reloadKeyPool().catch(() => {});
+  const reload = await reloadPoolResult();
   await writeAdminAuditLog(sb as never, request, {
     operatorUserId: auth.userId,
     operatorPhone: auth.phone,
@@ -178,5 +187,5 @@ export async function DELETE(
     before: publicKeyShape((before || null) as Record<string, any> | null),
     reason: '删除 Gamma Key',
   });
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, ...reload });
 }

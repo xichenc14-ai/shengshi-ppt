@@ -1,12 +1,21 @@
 /**
  * data-import.ts
  * Excel / CSV 数据导入解析
- * 使用 xlsx (SheetJS) 库
  */
 
-import * as XLSX from 'xlsx';
+import { readSheet } from 'read-excel-file/browser';
 import type { ImportedData } from './chart-types';
 export type { ImportedData } from './chart-types';
+
+type SpreadsheetRow = unknown[];
+
+function toArrayBufferFromBase64(input: string): ArrayBuffer {
+  const binary = atob(input.replace(/\s/g, ''));
+  const buf = new ArrayBuffer(binary.length);
+  const arr = new Uint8Array(buf);
+  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+  return buf;
+}
 
 /**
  * parseExcel — 解析 Excel 文件内容（粘贴文本或文件内容）
@@ -19,15 +28,8 @@ export async function parseExcel(input: string): Promise<ImportedData> {
     const isBase64 = trimmed.length > 500 && /^[A-Za-z0-9+/=]+$/.test(trimmed.replace(/\s/g, ''));
 
     if (isBase64) {
-      const binary = atob(trimmed);
-      const buf = new ArrayBuffer(binary.length);
-      const arr = new Uint8Array(buf);
-      for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
-      const wb = XLSX.read(arr, { type: 'array' });
-      const name = wb.SheetNames[0];
-      const sheet = wb.Sheets[name];
-      const json = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as unknown[][];
-      return parse2DArray(json);
+      const rows = await readSheet(toArrayBufferFromBase64(trimmed));
+      return parse2DArray(rows as SpreadsheetRow[]);
     }
 
     // Raw text — split by newlines
@@ -120,10 +122,6 @@ function parse2DArray(rows: unknown[][]): ImportedData {
  * parseExcelFile — 解析浏览器 File 对象
  */
 export async function parseExcelFile(file: File): Promise<ImportedData> {
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: 'array' });
-  const name = wb.SheetNames[0];
-  const sheet = wb.Sheets[name];
-  const json = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as unknown[][];
-  return parse2DArray(json);
+  const rows = await readSheet(await file.arrayBuffer());
+  return parse2DArray(rows as SpreadsheetRow[]);
 }

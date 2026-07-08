@@ -1,8 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 import { POST, GET } from '@/app/api/gamma/route';
 import fs from 'fs';
 import path from 'path';
+
+vi.mock('@/lib/session', () => ({
+  getSession: vi.fn().mockResolvedValue({
+    isLoggedIn: true,
+    user: { id: 'user-1', phone: '13800138000', nickname: '测试用户', credits: 1000, plan_type: 'pro' },
+  }),
+}));
 
 // ===== 真实 Gamma API 端到端测试 =====
 // 不用 mock，直接调真实 API，验证完整生成链路

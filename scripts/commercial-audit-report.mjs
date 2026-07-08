@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inspectEnabledPaymentProviders } from './commercial-payment-readiness.mjs';
 
 function loadEnvFile(path) {
   if (!existsSync(path)) return;
@@ -44,14 +45,6 @@ function runCheck(name, cmd, args, envExtra = {}) {
   };
 }
 
-function hasAnyEnv(keys) {
-  return keys.some((k) => Boolean(process.env[k]));
-}
-
-function missingEnv(keys) {
-  return keys.filter((k) => !process.env[k]);
-}
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 
@@ -80,24 +73,13 @@ envChecks.push({
   detail: process.env.PAYMENT_NOTIFY_URL || 'missing',
 });
 
-const wechatTemplate = ['PAYMENT_WECHAT_URL_TEMPLATE', 'PAYMENT_WECHAT_QRCODE_TEMPLATE', 'WECHAT_PAY_URL_TEMPLATE', 'WECHAT_QRCODE_URL_TEMPLATE'];
-const alipayTemplate = ['PAYMENT_ALIPAY_URL_TEMPLATE', 'PAYMENT_ALIPAY_QRCODE_TEMPLATE', 'ALIPAY_PAY_URL_TEMPLATE', 'ALIPAY_QRCODE_URL_TEMPLATE'];
-const wechatSdk = ['WECHAT_PAY_MCH_ID', 'WECHAT_PAY_APP_ID', 'WECHAT_PAY_API_V3_KEY'];
-const alipaySdk = ['ALIPAY_APP_ID', 'ALIPAY_PRIVATE_KEY', 'ALIPAY_PUBLIC_KEY'];
-
-const wechatReady = hasAnyEnv(wechatTemplate) || missingEnv(wechatSdk).length === 0;
-const alipayReady = hasAnyEnv(alipayTemplate) || missingEnv(alipaySdk).length === 0;
-
-envChecks.push({
-  name: 'WECHAT_PROVIDER_READY',
-  ok: wechatReady,
-  detail: wechatReady ? 'ok' : `missing: ${missingEnv(wechatSdk).join(', ')}`,
-});
-envChecks.push({
-  name: 'ALIPAY_PROVIDER_READY',
-  ok: alipayReady,
-  detail: alipayReady ? 'ok' : `missing: ${missingEnv(alipaySdk).join(', ')}`,
-});
+for (const provider of inspectEnabledPaymentProviders()) {
+  envChecks.push({
+    name: `${provider.provider.toUpperCase()}_PROVIDER_READY`,
+    ok: provider.ready,
+    detail: provider.ready ? provider.mode : `missing: ${provider.missing.join(', ')}`,
+  });
+}
 
 const checks = [
   runCheck('lint', 'npm', ['run', '-s', 'lint']),

@@ -19,6 +19,31 @@ vi.mock('@/lib/gamma-key-pool', () => ({
   recordKeyFailure: vi.fn(),
 }));
 
+vi.mock('@/lib/session', () => ({
+  getSession: vi.fn().mockResolvedValue({
+    isLoggedIn: true,
+    user: { id: 'user-1', phone: '13800138000', nickname: '测试用户', credits: 1000, plan_type: 'pro' },
+  }),
+}));
+
+vi.mock('@supabase/supabase-js', () => {
+  const query = {
+    select: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+    upsert: vi.fn(() => query),
+    single: vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: "Could not find the table 'public.generation_artifacts'" },
+    }),
+  };
+  return {
+    createClient: vi.fn(() => ({
+      from: vi.fn(() => query),
+    })),
+  };
+});
+
 vi.mock('@/lib/artifact-storage', () => ({
   artifactObjectExists: vi.fn().mockResolvedValue(false),
   buildArtifactObjectKey: vi.fn((format: string, generationId: string, sha256: string) => (

@@ -86,6 +86,16 @@ type AdminReadiness = {
   checks?: Record<string, unknown>;
 };
 
+type AdminImportPreview = {
+  dryRun: boolean;
+  totalRows: number;
+  scannedRows: number;
+  changed: number;
+  missing: number;
+  failed: number;
+  results?: Array<Record<string, unknown>>;
+};
+
 function fmtDate(v?: string | null): string {
   if (!v) return '-';
   const d = new Date(v);
@@ -117,6 +127,11 @@ export default function AdminPage() {
   const [nextPlan, setNextPlan] = React.useState<'free' | 'plus' | 'pro'>('plus');
   const [setExpireDate, setSetExpireDate] = React.useState('');
   const [adminReason, setAdminReason] = React.useState('');
+  const [importLoading, setImportLoading] = React.useState(false);
+  const [importCsv, setImportCsv] = React.useState('');
+  const [importFileName, setImportFileName] = React.useState('');
+  const [importPreview, setImportPreview] = React.useState<AdminImportPreview | null>(null);
+  const importInputRef = React.useRef<HTMLInputElement>(null);
 
   const loadData = React.useCallback(async () => {
     if (authLoading) return;
@@ -180,6 +195,43 @@ export default function AdminPage() {
     if (appliedPlanFilter !== 'all') qs.set('plan', appliedPlanFilter);
     return `/api/admin/export?${qs.toString()}`;
   }, [appliedQuery, appliedPlanFilter]);
+
+  const runImport = async (csv: string, dryRun: boolean) => {
+    setImportLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      const res = await fetch('/api/admin/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csv, dryRun, reason: dryRun ? '后台CSV导入预览' : '后台CSV导入执行' }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || '导入失败');
+      setImportPreview(data);
+      setNotice(dryRun ? '导入预览已生成，请确认后执行' : '导入已执行');
+      if (!dryRun) await loadData();
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : '导入失败');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleImportFile = async (file: File | null) => {
+    if (!file) return;
+    const text = await file.text();
+    setImportCsv(text);
+    setImportFileName(file.name);
+    setImportPreview(null);
+    await runImport(text, true);
+  };
+
+  const executeImport = async () => {
+    if (!importCsv || !importPreview) return;
+    if (!window.confirm(`确认执行导入？将更新 ${importPreview.changed} 个用户，缺失 ${importPreview.missing} 个用户会跳过。`)) return;
+    await runImport(importCsv, false);
+  };
 
   const applyUserFilters = () => {
     const nextQuery = queryInput.trim();
@@ -291,9 +343,32 @@ export default function AdminPage() {
         <section className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl md:text-3xl font-black text-slate-900">后台管理</h1>
           <div className="flex items-center gap-2">
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => void handleImportFile(e.currentTarget.files?.[0] || null)}
+            />
             <a href={exportCsvHref} className="inline-flex items-center px-4 py-2 rounded-xl border border-indigo-200 text-indigo-700 bg-white/80 hover:bg-indigo-50 text-sm font-bold">
               导出CSV
             </a>
+            <button
+              disabled={importLoading}
+              onClick={() => importInputRef.current?.click()}
+              className="inline-flex items-center px-4 py-2 rounded-xl border border-emerald-200 text-emerald-700 bg-white/80 hover:bg-emerald-50 text-sm font-bold disabled:opacity-50"
+            >
+              导入CSV
+            </button>
+            {importPreview && importPreview.dryRun && (
+              <button
+                disabled={importLoading || importPreview.changed <= 0}
+                onClick={executeImport}
+                className="inline-flex items-center px-4 py-2 rounded-xl sx-primary-btn text-white text-sm font-bold disabled:opacity-50"
+              >
+                执行导入
+              </button>
+            )}
             <Link href="/account" className="inline-flex items-center px-4 py-2 rounded-xl border border-indigo-200 text-indigo-700 bg-white/70 hover:bg-indigo-50 text-sm font-bold">
               返回用户中心
             </Link>
@@ -309,6 +384,14 @@ export default function AdminPage() {
         {readiness && !readiness.ready && (
           <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
             后台上线检查未完成：{(readiness.missing || []).join('、') || '存在未完成项'}
+          </section>
+        )}
+
+        {importPreview && (
+          <section className="rounded-2xl border border-emerald-100 bg-white/80 px-4 py-3 text-sm text-slate-700">
+            <span className="font-black text-slate-900">{importFileName || 'CSV导入'}</span>
+            <span className="ml-2">扫描 {importPreview.scannedRows}/{importPreview.totalRows} 行，需更新 {importPreview.changed} 个，缺失 {importPreview.missing} 个，失败 {importPreview.failed} 个。</span>
+            {importPreview.dryRun && <span className="ml-2 text-amber-700 font-semibold">当前只是预览，点击“执行导入”才会写入。</span>}
           </section>
         )}
 
@@ -447,13 +530,6 @@ export default function AdminPage() {
                         <option value="plus">省心会员</option>
                         <option value="pro">尊享会员</option>
                       </select>
-                      <button
-                        disabled={actionLoading}
-                        onClick={() => runAdminAction({ action: 'set_plan', planType: nextPlan, reason: adminReason }, '会员已更新')}
-                        className="mt-2 w-full py-2 rounded-lg sx-primary-btn text-white text-sm font-bold disabled:opacity-50"
-                      >
-                        保存会员
-                      </button>
                     </div>
 
                     <div className="rounded-xl border border-indigo-100 p-3 bg-white">
@@ -465,16 +541,6 @@ export default function AdminPage() {
                         className="mt-2 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
                       />
                       <p className="mt-2 text-xs text-slate-500">保存后用户积分将等于该数值，不是增加该数值</p>
-                      <button
-                        disabled={actionLoading}
-                        onClick={() => runAdminAction(
-                          { action: 'set_credits', credits: Number(creditTarget || '0'), reason: adminReason },
-                          '积分已设置'
-                        )}
-                        className="mt-2 w-full py-2 rounded-lg sx-primary-btn text-white text-sm font-bold disabled:opacity-50"
-                      >
-                        保存积分
-                      </button>
                     </div>
 
                     <div className="rounded-xl border border-indigo-100 p-3 bg-white">
@@ -485,16 +551,7 @@ export default function AdminPage() {
                         onChange={(e) => setSetExpireDate(e.target.value)}
                         className="mt-2 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
                       />
-                      <button
-                        disabled={actionLoading}
-                        onClick={() => runAdminAction(
-                          { action: 'set_plan_date', planType: nextPlan, expireAt: setExpireDate, reason: adminReason },
-                          '到期日期已更新'
-                        )}
-                        className="mt-2 w-full py-2 rounded-lg sx-primary-btn text-white text-sm font-bold disabled:opacity-50"
-                      >
-                        保存日期
-                      </button>
+                      <p className="mt-2 text-xs text-slate-500">免费用户会自动清空到期日</p>
                     </div>
                   </div>
 
@@ -507,6 +564,16 @@ export default function AdminPage() {
                       className="mt-2 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
                     />
                   </div>
+                  <button
+                    disabled={actionLoading}
+                    onClick={() => runAdminAction(
+                      { action: 'set_entitlement', planType: nextPlan, expireAt: setExpireDate, credits: Number(creditTarget || '0'), reason: adminReason },
+                      '权益、到期日和积分已保存'
+                    )}
+                    className="mt-3 w-full py-2.5 rounded-lg sx-primary-btn text-white text-sm font-black disabled:opacity-50"
+                  >
+                    确定保存权益
+                  </button>
                 </div>
               )}
             </>

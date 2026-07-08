@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
-import { createClient } from '@supabase/supabase-js';
 import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
 import { selectBestKey, updateKeyBalance, recordKeyFailure } from '@/lib/gamma-key-pool';
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
@@ -30,32 +29,13 @@ function normalizePptxSafeInstructions(instructions: string): string {
   return `${withoutFragileIconBlocks.trim()}\n\n${PPTX_SAFE_ICON_RULES}\n\n${GAMMA_VISUAL_LAYOUT_RULES}`;
 }
 
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
-}
-
 async function resolveAuthUser(req: NextRequest) {
   const session = await getSession();
   if (session?.isLoggedIn && session?.user?.id) {
     return session.user;
   }
 
-  const auth = req.headers.get('authorization') || '';
-  const match = auth.match(/^Bearer\s+(.+)$/i);
-  const hintedUserId = match?.[1]?.trim() || req.headers.get('x-user-id') || '';
-  if (!hintedUserId) return null;
-
-  const sb = getSupabase();
-  if (!sb) return null;
-  const { data: user } = await sb
-    .from('users')
-    .select('id,phone,nickname,avatar,credits,plan_type')
-    .eq('id', hintedUserId)
-    .single();
-  return user || null;
+  return null;
 }
 
 function buildUploadedFilesInstruction(uploadedFiles: unknown): string {

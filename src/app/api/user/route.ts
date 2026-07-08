@@ -110,6 +110,29 @@ async function checkUserIsAdmin(sb: ReturnType<typeof getSupabase>, userId: stri
   } catch { return false; }
 }
 
+async function requireOwnedUser(requestedUserId?: unknown): Promise<
+  | { ok: true; userId: string; isAdmin: boolean }
+  | { ok: false; response: NextResponse }
+> {
+  const session = await getSession();
+  if (!session.isLoggedIn || !session.user?.id) {
+    return { ok: false, response: NextResponse.json({ error: '请先登录' }, { status: 401 }) };
+  }
+
+  const targetUserId = typeof requestedUserId === 'string' && requestedUserId.trim()
+    ? requestedUserId.trim()
+    : session.user.id;
+  if (targetUserId !== session.user.id) {
+    return { ok: false, response: NextResponse.json({ error: '无权限操作该用户' }, { status: 403 }) };
+  }
+
+  return {
+    ok: true,
+    userId: session.user.id,
+    isAdmin: isAdminIdentity({ id: session.user.id, phone: session.user.phone }),
+  };
+}
+
 // ==================== GET: 检查手机号是否注册 ====================
 export async function GET(req: NextRequest) {
   const ip = getClientIP(req);
@@ -563,8 +586,10 @@ export async function POST(req: NextRequest) {
 
     // ===== 更新用户资料 =====
     if (action === 'update_profile') {
-      const { userId, nickname, avatar } = body;
-      if (!userId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+      const auth = await requireOwnedUser(body?.userId);
+      if (!auth.ok) return auth.response;
+      const userId = auth.userId;
+      const { nickname, avatar } = body;
       const nextName = typeof nickname === 'string' ? nickname.trim() : '';
       const nextAvatar = typeof avatar === 'string' ? avatar.trim().slice(0, 512) : '';
       if (nextName && (nextName.length < 2 || nextName.length > 20)) {
@@ -592,8 +617,11 @@ export async function POST(req: NextRequest) {
 
     // ===== 修改密码（登录后） =====
     if (action === 'change_password') {
-      const { userId, oldPassword, newPassword } = body;
-      if (!userId || !oldPassword || !newPassword) {
+      const auth = await requireOwnedUser(body?.userId);
+      if (!auth.ok) return auth.response;
+      const userId = auth.userId;
+      const { oldPassword, newPassword } = body;
+      if (!oldPassword || !newPassword) {
         return NextResponse.json({ error: '参数不完整' }, { status: 400 });
       }
       if (newPassword.length < 8) return NextResponse.json({ error: '新密码至少8位' }, { status: 400 });
@@ -622,8 +650,10 @@ export async function POST(req: NextRequest) {
 
     // ===== 发送更换手机号验证码（发到新手机号） =====
     if (action === 'send_change_phone_code') {
-      const { userId, newPhone } = body;
-      if (!userId || !newPhone) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+      const auth = await requireOwnedUser(body?.userId);
+      if (!auth.ok) return auth.response;
+      const { newPhone } = body;
+      if (!newPhone) return NextResponse.json({ error: '参数错误' }, { status: 400 });
       if (!/^1[3-9]\d{9}$/.test(newPhone)) {
         return NextResponse.json({ error: '新手机号格式不正确' }, { status: 400 });
       }
@@ -698,8 +728,11 @@ export async function POST(req: NextRequest) {
 
     // ===== 更换绑定手机号 =====
     if (action === 'change_phone') {
-      const { userId, newPhone, code } = body;
-      if (!userId || !newPhone || !code) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+      const auth = await requireOwnedUser(body?.userId);
+      if (!auth.ok) return auth.response;
+      const userId = auth.userId;
+      const { newPhone, code } = body;
+      if (!newPhone || !code) return NextResponse.json({ error: '参数错误' }, { status: 400 });
       if (!/^1[3-9]\d{9}$/.test(newPhone)) {
         return NextResponse.json({ error: '新手机号格式不正确' }, { status: 400 });
       }
@@ -752,13 +785,15 @@ export async function POST(req: NextRequest) {
 
    // ===== 生成预算预检 =====
    if (action === 'estimate_generation') {
-      if (sb && await checkUserIsAdmin(sb, String(body?.userId || ''))) {
+      const auth = await requireOwnedUser(body?.userId);
+      if (!auth.ok) return auth.response;
+      const userId = auth.userId;
+      if (auth.isAdmin && sb && await checkUserIsAdmin(sb, userId)) {
         const breakdown = estimateGenerationCredits({ numPages: body?.numPages || 10, imageSource: body?.imageSource || 'themeAccent', imageModel: body?.imageModel, estimatedImages: body?.estimatedImages || 0 });
         const balance = await getSharedKeyPoolRemaining().catch(() => 0);
         return NextResponse.json({ success: true, estimate: true, needed: 0, balance, sufficient: true, breakdown, note: '管理员账户使用共享服务额度' });
       }
-      const { userId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
-      if (!userId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+      const { numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
 
       const breakdown = estimateGenerationCredits({ numPages, imageSource, imageModel, estimatedImages });
       const { data: user } = await sb.from('users').select('credits').eq('id', userId).single();
@@ -775,13 +810,16 @@ export async function POST(req: NextRequest) {
 
     // ===== 生成前预扣积分（v10.95.17） =====
     if (action === 'hold_generation') {
-      if (sb && await checkUserIsAdmin(sb, String(body?.userId || ''))) {
+      const auth = await requireOwnedUser(body?.userId);
+      if (!auth.ok) return auth.response;
+      const userId = auth.userId;
+      if (auth.isAdmin && sb && await checkUserIsAdmin(sb, userId)) {
         const breakdown = estimateGenerationCredits({ numPages: body?.numPages || 10, imageSource: body?.imageSource || 'themeAccent', imageModel: body?.imageModel, estimatedImages: body?.estimatedImages || 0 });
         const balance = await getSharedKeyPoolRemaining().catch(() => 0);
         return NextResponse.json({ success: true, holdAmount: 0, balance, breakdown, note: '管理员账户不占用平台积分' });
       }
-      const { userId, generationId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
-      if (!userId || !generationId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+      const { generationId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
+      if (!generationId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
       const breakdown = estimateGenerationCredits({ numPages, imageSource, imageModel, estimatedImages });
       const holdAmount = breakdown.totalCredits;
@@ -828,13 +866,16 @@ export async function POST(req: NextRequest) {
 
     // ===== 生成完成后结算（幂等） =====
     if (action === 'settle_generation') {
-      if (sb && await checkUserIsAdmin(sb, String(body?.userId || ''))) {
+      const auth = await requireOwnedUser(body?.userId);
+      if (!auth.ok) return auth.response;
+      const userId = auth.userId;
+      if (auth.isAdmin && sb && await checkUserIsAdmin(sb, userId)) {
         const breakdown = estimateGenerationCredits({ numPages: body?.numPages || 10, imageSource: body?.imageSource || 'themeAccent', imageModel: body?.imageModel, estimatedImages: body?.estimatedImages || 0 });
         const balance = await getSharedKeyPoolRemaining().catch(() => 0);
         return NextResponse.json({ success: true, creditsUsed: 0, balance, compensated: false, breakdown, note: '管理员账户不占用平台积分，使用共享服务额度' });
       }
-      const { userId, generationId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
-      if (!userId || !generationId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+      const { generationId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
+      if (!generationId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
       const breakdown = estimateGenerationCredits({ numPages, imageSource, imageModel, estimatedImages });
       const totalCredit = breakdown.totalCredits;
@@ -990,8 +1031,10 @@ export async function POST(req: NextRequest) {
 
     // ===== 兼容旧扣分入口 =====
     if (action === 'deduct') {
-      const { userId, numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
-      if (!userId) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+      const auth = await requireOwnedUser(body?.userId);
+      if (!auth.ok) return auth.response;
+      const userId = auth.userId;
+      const { numPages = 10, imageSource = 'themeAccent', imageModel, estimatedImages = 0 } = body;
 
       const breakdown = estimateGenerationCredits({ numPages, imageSource, imageModel, estimatedImages });
       const totalCredit = breakdown.totalCredits;
@@ -1038,9 +1081,36 @@ export async function POST(req: NextRequest) {
 
     // ===== 积分回滚（生成失败/超时时返还） =====
     if (action === 'rollback') {
-      const { userId, credits, reason } = body;
-      if (!userId || typeof credits !== 'number' || credits <= 0) {
+      const auth = await requireOwnedUser(body?.userId);
+      if (!auth.ok) return auth.response;
+      const userId = auth.userId;
+      const generationId = String(body?.generationId || '').trim();
+      const reason = String(body?.reason || '生成失败').slice(0, 80);
+      if (!generationId) {
         return NextResponse.json({ error: '参数错误' }, { status: 400 });
+      }
+      const holdDesc = `hold-${generationId}`;
+      const { data: holdTx } = await sb
+        .from('credit_transactions')
+        .select('id,amount')
+        .eq('user_id', userId)
+        .eq('type', 'hold')
+        .eq('description', holdDesc)
+        .maybeSingle();
+      const rollbackDesc = `回滚-${generationId}`;
+      const { data: existingRollback } = await sb
+        .from('credit_transactions')
+        .select('balance_after')
+        .eq('user_id', userId)
+        .eq('type', 'rollback')
+        .eq('description', rollbackDesc)
+        .maybeSingle();
+      if (existingRollback) {
+        return NextResponse.json({ success: true, alreadyRolledBack: true, balance: Number(existingRollback.balance_after || 0) });
+      }
+      const credits = Math.abs(Number((holdTx as { amount?: number } | null)?.amount || 0));
+      if (!holdTx || credits <= 0) {
+        return NextResponse.json({ error: '未找到可回滚的预扣记录' }, { status: 404 });
       }
       const { data: updated, error: updErr } = await sb
         .from('users').select('credits').eq('id', userId).single();
@@ -1052,8 +1122,11 @@ export async function POST(req: NextRequest) {
       try {
         await sb.from('credit_transactions').insert({
           user_id: userId, amount: credits, balance_after: newBal,
-          type: 'rollback', description: `回滚-${reason || '生成失败'}-返还${credits}积分`,
+          type: 'rollback', description: rollbackDesc,
         });
+        await sb.from('credit_transactions').update({
+          description: `${holdDesc}-已回滚-${reason}`,
+        }).eq('id', (holdTx as { id: string }).id);
       } catch {}
       return NextResponse.json({ success: true, balance: newBal });
     }

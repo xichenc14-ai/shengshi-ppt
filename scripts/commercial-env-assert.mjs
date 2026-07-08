@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from 'node:fs';
+import {
+  getTemplateUrlProblems,
+  inspectEnabledPaymentProviders,
+  parseSupportedPaymentMethods,
+} from './commercial-payment-readiness.mjs';
 
 function loadEnvFile(path) {
   if (!existsSync(path)) return;
@@ -86,28 +91,17 @@ if (invalidIpTokens.length > 0) {
   process.exit(1);
 }
 
-const wxTemplateReady = Boolean(process.env.PAYMENT_WECHAT_URL_TEMPLATE || process.env.PAYMENT_WECHAT_QRCODE_TEMPLATE);
-const aliTemplateReady = Boolean(process.env.PAYMENT_ALIPAY_URL_TEMPLATE || process.env.PAYMENT_ALIPAY_QRCODE_TEMPLATE);
-
-const wxTemplateUrl = process.env.PAYMENT_WECHAT_URL_TEMPLATE || '';
-const aliTemplateUrl = process.env.PAYMENT_ALIPAY_URL_TEMPLATE || '';
-if (wxTemplateUrl && !/^https:\/\//i.test(wxTemplateUrl)) {
-  console.error('[ASSERT] PAYMENT_WECHAT_URL_TEMPLATE 必须为 https');
-  process.exit(1);
-}
-if (aliTemplateUrl && !/^https:\/\//i.test(aliTemplateUrl)) {
-  console.error('[ASSERT] PAYMENT_ALIPAY_URL_TEMPLATE 必须为 https');
+const templateUrlProblems = getTemplateUrlProblems();
+if (templateUrlProblems.length > 0) {
+  console.error('[ASSERT] 支付模板 URL 必须为 https:', templateUrlProblems.map((p) => p.key).join(', '));
   process.exit(1);
 }
 
-if (!wxTemplateReady) {
-  console.error('[ASSERT] 微信模板变量未配置（PAYMENT_WECHAT_URL_TEMPLATE / PAYMENT_WECHAT_QRCODE_TEMPLATE）');
+const providerReadiness = inspectEnabledPaymentProviders();
+const notReady = providerReadiness.filter((item) => !item.ready);
+if (notReady.length > 0) {
+  console.error('[ASSERT] 已启用支付渠道未就绪:', notReady.map((item) => `${item.provider} missing ${item.missing.join(', ')}`).join('; '));
   process.exit(1);
 }
 
-if (!aliTemplateReady) {
-  console.error('[ASSERT] 支付宝模板变量未配置（PAYMENT_ALIPAY_URL_TEMPLATE / PAYMENT_ALIPAY_QRCODE_TEMPLATE）');
-  process.exit(1);
-}
-
-console.log('[ASSERT] 最小上线路径变量已就绪');
+console.log(`[ASSERT] 最小上线路径变量已就绪；支付渠道: ${parseSupportedPaymentMethods().join(', ')}`);

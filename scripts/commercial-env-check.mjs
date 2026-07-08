@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 
 import { existsSync, readFileSync } from 'node:fs';
+import {
+  getTemplateUrlProblems,
+  inspectEnabledPaymentProviders,
+  parseSupportedPaymentMethods,
+} from './commercial-payment-readiness.mjs';
 
 function loadEnvFile(path) {
   if (!existsSync(path)) return;
@@ -80,23 +85,6 @@ const coreRequired = [
 const adminRequiredAny = ['ADMIN_USER_PHONES', 'ADMIN_USER_IDS'];
 const adminRequired = ['ADMIN_SECRET_ENCRYPTION_KEY'];
 
-const wechatTemplate = [
-  'PAYMENT_WECHAT_URL_TEMPLATE',
-  'PAYMENT_WECHAT_QRCODE_TEMPLATE',
-  'WECHAT_PAY_URL_TEMPLATE',
-  'WECHAT_QRCODE_URL_TEMPLATE',
-];
-
-const alipayTemplate = [
-  'PAYMENT_ALIPAY_URL_TEMPLATE',
-  'PAYMENT_ALIPAY_QRCODE_TEMPLATE',
-  'ALIPAY_PAY_URL_TEMPLATE',
-  'ALIPAY_QRCODE_URL_TEMPLATE',
-];
-
-const wechatSdk = ['WECHAT_PAY_MCH_ID', 'WECHAT_PAY_APP_ID', 'WECHAT_PAY_API_V3_KEY'];
-const alipaySdk = ['ALIPAY_APP_ID', 'ALIPAY_PRIVATE_KEY', 'ALIPAY_PUBLIC_KEY'];
-
 const coreReady = allPresent(coreRequired);
 const adminIdentityReady = hasAny(adminRequiredAny);
 const adminSecretReady = allPresent(adminRequired);
@@ -108,16 +96,13 @@ const callbackIpTokens = parseCsv(process.env.ALLOWED_CALLBACK_IPS || '');
 const callbackIpConfigured = callbackIpTokens.length > 0;
 const callbackIpValid = callbackIpConfigured && callbackIpTokens.every((token) => isValidIpToken(token));
 const invalidCallbackIpTokens = callbackIpTokens.filter((token) => !isValidIpToken(token));
-const wxTemplateUrl = process.env.PAYMENT_WECHAT_URL_TEMPLATE || process.env.WECHAT_PAY_URL_TEMPLATE || '';
-const aliTemplateUrl = process.env.PAYMENT_ALIPAY_URL_TEMPLATE || process.env.ALIPAY_PAY_URL_TEMPLATE || '';
-const wxTemplateHttps = !wxTemplateUrl || /^https:\/\//i.test(wxTemplateUrl);
-const aliTemplateHttps = !aliTemplateUrl || /^https:\/\//i.test(aliTemplateUrl);
+const templateUrlProblems = getTemplateUrlProblems();
+const templateUrlsHttps = templateUrlProblems.length === 0;
 const r2Keys = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'];
 const downloadAccelerationConfigured = allPresent(r2Keys);
 const downloadAccelerationDisabled = process.env.DOWNLOAD_ACCELERATION_ENABLED === 'false';
-
-const wechatReady = hasAny(wechatTemplate) || allPresent(wechatSdk);
-const alipayReady = hasAny(alipayTemplate) || allPresent(alipaySdk);
+const providerReadiness = inspectEnabledPaymentProviders();
+const providersReady = providerReadiness.every((item) => item.ready);
 
 process.stdout.write('\n=== Commercial Environment Readiness ===\n');
 printRow('Core variables', coreReady, coreReady ? '' : `missing: ${missing(coreRequired).join(', ')}`);
@@ -132,8 +117,11 @@ printRow(
     ? `${callbackIpTokens.length} entries`
     : (callbackIpConfigured ? `invalid: ${invalidCallbackIpTokens.join(', ')}` : 'value: (empty)')
 );
-printRow('WeChat template URL is https', wxTemplateHttps, wxTemplateHttps ? '' : `value: ${wxTemplateUrl}`);
-printRow('Alipay template URL is https', aliTemplateHttps, aliTemplateHttps ? '' : `value: ${aliTemplateUrl}`);
+printRow(
+  'Payment template URLs are https',
+  templateUrlsHttps,
+  templateUrlsHttps ? '' : `invalid: ${templateUrlProblems.map((p) => p.key).join(', ')}`
+);
 printRow(
   'R2 download acceleration',
   true,
@@ -141,8 +129,11 @@ printRow(
     ? 'configured'
     : (downloadAccelerationDisabled ? 'disabled' : `optional; missing: ${missing(r2Keys).join(', ')}`)
 );
-printRow('WeChat provider ready', wechatReady, wechatReady ? '' : `missing sdk: ${missing(wechatSdk).join(', ')}`);
-printRow('Alipay provider ready', alipayReady, alipayReady ? '' : `missing sdk: ${missing(alipaySdk).join(', ')}`);
+printRow(
+  `Payment providers ready (${parseSupportedPaymentMethods().join(', ')})`,
+  providersReady,
+  providerReadiness.map((item) => `${item.provider}:${item.ready ? item.mode : `missing ${item.missing.join(', ')}`}`).join('; ')
+);
 printRow(
   'Automatic refund switch',
   true,
@@ -157,10 +148,8 @@ const ok = coreReady
   && notifyHttps
   && notifySecretStrong
   && callbackIpValid
-  && wxTemplateHttps
-  && aliTemplateHttps
-  && wechatReady
-  && alipayReady;
+  && templateUrlsHttps
+  && providersReady;
 process.stdout.write(`\nOverall: ${ok ? 'READY' : 'NOT_READY'}\n`);
 
 process.exit(ok ? 0 : 1);

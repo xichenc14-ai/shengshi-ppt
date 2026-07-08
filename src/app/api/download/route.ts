@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getClientIP, rateLimit } from '@/lib/rate-limit';
+import { getSession } from '@/lib/session';
 
 type MutableUserCounters = {
   plan_type?: string | null;
@@ -21,6 +22,18 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+async function requireOwnedUser(requestedUserId: string | null | undefined) {
+  const session = await getSession();
+  if (!session.isLoggedIn || !session.user?.id) {
+    return { ok: false as const, response: NextResponse.json({ error: '请先登录' }, { status: 401 }) };
+  }
+  const userId = requestedUserId || session.user.id;
+  if (userId !== session.user.id) {
+    return { ok: false as const, response: NextResponse.json({ error: '无权限访问该用户下载记录' }, { status: 403 }) };
+  }
+  return { ok: true as const, userId };
+}
+
 // GET: 检查下载能力（当前下载不再单独计费）
 export async function GET(request: NextRequest) {
   const ip = getClientIP(request);
@@ -31,13 +44,13 @@ export async function GET(request: NextRequest) {
   if (!sb) return NextResponse.json({ error: '服务未配置' }, { status: 503 });
 
   const { searchParams } = new URL(request.url);
-  const userId = searchParams.get('userId');
+  const auth = await requireOwnedUser(searchParams.get('userId'));
+  if (!auth.ok) return auth.response;
+  const userId = auth.userId;
   const rawFormat = (searchParams.get('format') || 'pptx').toLowerCase();
   if (rawFormat !== 'pptx' && rawFormat !== 'pdf') {
     return NextResponse.json({ error: '仅支持 PPTX / PDF 下载' }, { status: 410 });
   }
-
-  if (!userId) return NextResponse.json({ error: '缺少用户ID' }, { status: 400 });
 
   try {
     // 获取用户信息
@@ -73,19 +86,20 @@ export async function POST(request: NextRequest) {
 
   try {
     const { action, userId, pageCount, format: rawFormat } = await request.json();
+    const auth = await requireOwnedUser(typeof userId === 'string' ? userId : null);
+    if (!auth.ok) return auth.response;
+    const targetUserId = auth.userId;
     const format = (rawFormat || 'pptx').toLowerCase();
     if (format !== 'pptx' && format !== 'pdf') {
       return NextResponse.json({ error: '仅支持 PPTX / PDF 下载' }, { status: 410 });
     }
 
     if (action === 'record') {
-      if (!userId) return NextResponse.json({ error: '缺少用户ID' }, { status: 400 });
-
       // 获取用户当前计数
       const { data: user, error } = await sb
         .from('users')
         .select('id, plan_type, download_count_month, ppt_trial_count_month, download_reset_month')
-        .eq('id', userId)
+        .eq('id', targetUserId)
         .single();
 
       if (error || !user) return NextResponse.json({ error: '用户不存在' }, { status: 404 });
@@ -96,14 +110,14 @@ export async function POST(request: NextRequest) {
       }
 
       if (Object.keys(updates).length > 0) {
-        await sb.from('users').update(updates).eq('id', userId);
+        await sb.from('users').update(updates).eq('id', targetUserId);
       }
 
       // 统一记录下载行为（便于后台审计）
       try {
         const latestBalance = Number((user as MutableUserCounters).credits || 0);
         await sb.from('credit_transactions').insert({
-          user_id: userId,
+          user_id: targetUserId,
           amount: 0,
           balance_after: latestBalance,
           type: user.plan_type === 'free' ? 'download_trial' : 'download_member',

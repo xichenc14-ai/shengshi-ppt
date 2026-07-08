@@ -34,6 +34,7 @@ const eslintConfig = defineConfig([
     "docs/**",
     "projects/**",
     "scripts/**",
+    "public/pdfjs/**",
     "gen_p2_mask.js",
     "solutions/**",
     "supabase/.temp/**",

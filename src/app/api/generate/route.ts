@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Presentation } from '@/lib/types';
 import { estimateGenerationCredits } from '@/lib/generation-credits';
+import { getSession } from '@/lib/session';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -126,9 +127,17 @@ export async function POST(request: NextRequest) {
   let sb: ReturnType<typeof getSupabase> | null = null;
 
   try {
+    const session = await getSession();
+    if (!session.isLoggedIn || !session.user?.id) {
+      return NextResponse.json({ error: '请先登录' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { topic, slideCount = 8, style = 'professional', userId: uid, imageSource, imageModel, estimatedImages } = body;
-    userId = uid;
+    if (uid && uid !== session.user.id) {
+      return NextResponse.json({ error: '无权限操作该用户' }, { status: 403 });
+    }
+    userId = session.user.id;
 
     if (!topic || topic.trim().length === 0) {
       return NextResponse.json({ error: '请输入PPT主题' }, { status: 400 });

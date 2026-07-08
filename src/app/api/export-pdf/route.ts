@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GET as exportPptxGET } from '@/app/api/export-pptx/route';
 import { convertPptxToPdf } from '@/lib/pdf-converter';
 import { renderSlidesPdfBuffer } from '@/lib/slides-pdf';
+import { getSession } from '@/lib/session';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -19,8 +20,17 @@ function resolvePdfFilename(raw: string | null): string {
   return safe.toLowerCase().endsWith('.pdf') ? safe : `${safe}.pdf`;
 }
 
+async function requireLoggedIn() {
+  const session = await getSession();
+  return Boolean(session.isLoggedIn && session.user?.id);
+}
+
 export async function POST(request: NextRequest) {
   try {
+    if (!(await requireLoggedIn())) {
+      return NextResponse.json({ error: '请先登录' }, { status: 401 });
+    }
+
     const body = await request.json();
     const title = String(body?.title || '省心PPT').trim() || '省心PPT';
     const themeId = typeof body?.themeId === 'string' ? body.themeId : 'consultant';
@@ -55,6 +65,10 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  if (!(await requireLoggedIn())) {
+    return NextResponse.json({ error: '请先登录' }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const generationId = searchParams.get('generationId');
   const filename = resolvePdfFilename(searchParams.get('name'));

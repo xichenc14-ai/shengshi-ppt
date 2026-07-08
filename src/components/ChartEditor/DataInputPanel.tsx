@@ -6,7 +6,7 @@
 'use client';
 
 import React, { useState, useCallback, useRef } from 'react';
-import { parseExcel, parseCSV } from '@/lib/data-import';
+import { parseExcel, parseCSV, parseExcelFile } from '@/lib/data-import';
 import type { ChartDataPoint } from '@/lib/chart-types';
 
 interface DataInputPanelProps {
@@ -82,8 +82,8 @@ export function DataInputPanel({ value, onChange, chartType }: DataInputPanelPro
     if (!file) return;
     setError('');
     try {
-      const text = await file.text();
       if (file.name.endsWith('.csv')) {
+        const text = await file.text();
         const result = parseCSV(text);
         const points = result.categories.map((cat, i) => ({
           name: cat,
@@ -91,14 +91,16 @@ export function DataInputPanel({ value, onChange, chartType }: DataInputPanelPro
         }));
         onChange(points);
         setImportInfo(`已导入 ${result.categories.length} 行`);
-      } else {
-        const result = await parseExcel(text);
+      } else if (file.name.endsWith('.xlsx')) {
+        const result = await parseExcelFile(file);
         const points = result.categories.map((cat, i) => ({
           name: cat,
           value: result.series[0]?.data[i] ?? 0,
         }));
         onChange(points);
         setImportInfo(`已导入 ${result.categories.length} 行，${result.series.length} 个系列`);
+      } else {
+        throw new Error('仅支持 .csv 或 .xlsx 文件');
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : '文件解析失败';
@@ -227,8 +229,8 @@ export function DataInputPanel({ value, onChange, chartType }: DataInputPanelPro
             >
               选择文件
             </button>
-            <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileChange} />
-            <span className="text-xs text-gray-400 self-center">支持 .csv .xlsx .xls</span>
+            <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={handleFileChange} />
+            <span className="text-xs text-gray-400 self-center">支持 .csv .xlsx</span>
           </div>
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
