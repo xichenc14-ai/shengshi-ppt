@@ -230,9 +230,9 @@ export async function inspectSMSProviderReadiness(): Promise<{ ready: boolean; d
  *
  * 阿里云官方 SDK 的旧 httpx 传输层在 Vercel 香港冷启动后持续出现 ConnectTimeout。
  * 这里仍使用阿里云公开的 RPC HMAC-SHA1 签名协议，但绕过不稳定的传输层。请求不做
- * 自动重试，避免“服务端已接收、客户端超时”时重复发送验证码。使用官方 RPC
- * 支持的 GET 签名请求；实测同一出口下 GET 明显快于空 body POST，且不会触发
- * Vercel 到 DYPNS 的 POST 长连接黑洞。
+ * 自动重试，避免“服务端已接收、客户端超时”时重复发送验证码。验证码发送使用
+ * 官方 RPC 表单 POST，把手机号、模板参数和签名放在请求体，避免 Vercel 出站链路
+ * 将带敏感参数的长查询串丢弃；无副作用的校验探针仍使用 GET。
  */
 async function callAliyunRPC(
   action: 'SendSmsVerifyCode' | 'CheckSmsVerifyCode',
@@ -260,17 +260,24 @@ async function callAliyunRPC(
     .sort()
     .map((key) => `${aliyunPercentEncode(key)}=${aliyunPercentEncode(parameters[key])}`)
     .join('&');
-  const httpMethod = 'GET';
+  const httpMethod = action === 'SendSmsVerifyCode' ? 'POST' : 'GET';
   const stringToSign = `${httpMethod}&${aliyunPercentEncode('/')}&${aliyunPercentEncode(canonicalQuery)}`;
   const signature = createHmac('sha1', `${accessKeySecret}&`)
     .update(stringToSign, 'utf8')
     .digest('base64');
   const endpoint = getAliyunEndpoint();
+  const signedParameters = `${canonicalQuery}&Signature=${aliyunPercentEncode(signature)}`;
   const response = await fetch(
-    `https://${endpoint}/?${canonicalQuery}&Signature=${aliyunPercentEncode(signature)}`,
+    httpMethod === 'POST'
+      ? `https://${endpoint}/`
+      : `https://${endpoint}/?${signedParameters}`,
     {
       method: httpMethod,
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        ...(httpMethod === 'POST' ? { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' } : {}),
+      },
+      ...(httpMethod === 'POST' ? { body: signedParameters } : {}),
       cache: 'no-store',
       signal: AbortSignal.timeout(getAliyunTimeoutMs()),
     },
@@ -342,7 +349,8 @@ async function sendViaAliyunAuth(phone: string, suppliedCode?: string, options: 
       retryAfter: aliyunRetryAfter(bodyObj),
     };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : 'unknown';
+    const cause = e instanceof Error && e.cause instanceof Error ? `; cause=${e.cause.name}:${e.cause.message}` : '';
+    const msg = `${e instanceof Error ? e.message : 'unknown'}${cause}`;
     const safeMsg = sanitizeAliyunErrorMessage(msg, phone);
     console.error('[SMS] 阿里云短信认证异常:', safeMsg);
     return { success: false, error: `阿里云短信异常: ${safeMsg}`, errorCode: 'PROVIDER_TRANSPORT_ERROR' };

@@ -143,6 +143,12 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
         setLoading(false);
         return;
       }
+      if (data.deliveryState === 'unknown') {
+        setError(data.message || '短信发送状态未确认，请稍后再试。');
+        applyRetryAfter(data.retryAfter || 60);
+        setLoading(false);
+        return;
+      }
       setCountdown(Number(data.retryAfter) > 0 ? Math.ceil(Number(data.retryAfter)) : 60);
       setPhoneStep('verify');
       // 自动聚焦第一个验证码输入框
@@ -170,6 +176,12 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
       if (data.error) {
         setError(data.error);
         applyRetryAfter(data.retryAfter);
+        setLoading(false);
+        return;
+      }
+      if (data.deliveryState === 'unknown') {
+        setError(data.message || '短信发送状态未确认，请稍后再试。');
+        applyRetryAfter(data.retryAfter || 60);
         setLoading(false);
         return;
       }

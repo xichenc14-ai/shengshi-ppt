@@ -32,7 +32,7 @@ describe('sms-client aliyun_auth native RPC transport', () => {
     process.env = { ...ORIGINAL_ENV };
   });
 
-  it('signs SendSmsVerifyCode with ASCII ordering and sends the application-generated code', async () => {
+  it('signs SendSmsVerifyCode as a form POST and sends the application-generated code', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse({
       Code: 'OK',
       Success: true,
@@ -52,24 +52,26 @@ describe('sms-client aliyun_auth native RPC transport', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const requestBody = new URLSearchParams(String(requestInit.body));
     expect(requestUrl.origin).toBe('https://dypnsapi.aliyuncs.com');
-    expect(requestUrl.searchParams.get('Action')).toBe('SendSmsVerifyCode');
-    expect(requestUrl.searchParams.get('PhoneNumber')).toBe('13800138000');
-    expect(requestUrl.searchParams.get('SignName')).toBe('速通互联验证码');
-    expect(requestUrl.searchParams.get('OutId')).toBe('f3b0cb3e-4f7a-4900-9a14-1fc27505230e');
-    expect(JSON.parse(String(requestUrl.searchParams.get('TemplateParam')))).toMatchObject({ code: '123456', min: '5' });
+    expect(requestBody.get('Action')).toBe('SendSmsVerifyCode');
+    expect(requestBody.get('PhoneNumber')).toBe('13800138000');
+    expect(requestBody.get('SignName')).toBe('速通互联验证码');
+    expect(requestBody.get('OutId')).toBe('f3b0cb3e-4f7a-4900-9a14-1fc27505230e');
+    expect(JSON.parse(String(requestBody.get('TemplateParam')))).toMatchObject({ code: '123456', min: '5' });
 
-    const signature = requestUrl.searchParams.get('Signature');
-    requestUrl.searchParams.delete('Signature');
-    const parameters = [...requestUrl.searchParams.entries()]
+    const signature = requestBody.get('Signature');
+    requestBody.delete('Signature');
+    const parameters = [...requestBody.entries()]
       .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
       .map(([key, value]) => `${rfc3986(key)}=${rfc3986(value)}`)
       .join('&');
     const expectedSignature = createHmac('sha1', 'test-access-secret&')
-      .update(`GET&${rfc3986('/')}&${rfc3986(parameters)}`)
+      .update(`POST&${rfc3986('/')}&${rfc3986(parameters)}`)
       .digest('base64');
     expect(signature).toBe(expectedSignature);
-    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'GET' });
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'POST' });
   });
 
   it('uses a signed RPC verification call for readiness instead of a HEAD probe', async () => {
