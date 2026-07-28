@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
-import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
+import { distributedRateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
 import { selectBestKey, updateKeyBalance, recordKeyFailure } from '@/lib/gamma-key-pool';
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
 import { buildGammaImageOptions, normalizeUserInput } from '@/lib/adapters/ppt-param-adapter';
 import { checkPermission } from '@/lib/membership';
 import { estimateGenerationCredits } from '@/lib/generation-credits';
+import { claimGenerationRequest, markGenerationFailed, markGenerationStarted } from '@/lib/generation-idempotency';
+import { getRequestId, logOperationalEvent, sendOperationalAlert } from '@/lib/observability';
+import { getGenerationDailyGlobalLimit, isGenerationEnabled, isUserInGenerationRollout } from '@/lib/runtime-flags';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -29,7 +32,7 @@ function normalizePptxSafeInstructions(instructions: string): string {
   return `${withoutFragileIconBlocks.trim()}\n\n${PPTX_SAFE_ICON_RULES}\n\n${GAMMA_VISUAL_LAYOUT_RULES}`;
 }
 
-async function resolveAuthUser(req: NextRequest) {
+async function resolveAuthUser() {
   const session = await getSession();
   if (session?.isLoggedIn && session?.user?.id) {
     return session.user;
@@ -176,8 +179,9 @@ const INSTRUCTION_TEMPLATES: Record<string, string> = {
 
 // POST: 专业模式 - 调用 Gamma API 创建生成任务
 export async function POST(request: NextRequest) {
+  const requestId = getRequestId(request);
   // ===== Layer 1: Auth Guard（session + header fallback） =====
-  const authedUser = await resolveAuthUser(request);
+  const authedUser = await resolveAuthUser();
   if (!authedUser?.id) {
     console.log('[GammaDirect] AUTH_FAILED: not logged in');
     return NextResponse.json({ error: '请先登录', code: 'UNAUTHENTICATED' }, { status: 401 });
@@ -186,13 +190,20 @@ export async function POST(request: NextRequest) {
   const userCredits = authedUser.credits || 0;
   const userPlanType = authedUser.plan_type || 'free';
   console.log(`[GammaDirect] AUTH_OK userId=${userId} credits=${userCredits} plan=${userPlanType}`);
+  let claimedRequestId: string | undefined;
+  if (!isGenerationEnabled()) {
+    return NextResponse.json({ error: '生成服务维护中，请稍后再试', code: 'GENERATION_DISABLED' }, { status: 503 });
+  }
+  if (!isUserInGenerationRollout(userId)) {
+    return NextResponse.json({ error: '生成服务正在灰度开放，请稍后再试', code: 'GENERATION_ROLLOUT' }, { status: 503 });
+  }
 
   // ===== Layer 2: IP Rate Limit =====
   const ip = getClientIP(request);
   if (isIPBlocked(ip)) {
     return NextResponse.json({ error: '请求受限' }, { status: 403 });
   }
-  const { allowed } = rateLimit(`gamma_direct:${ip}`, getRateLimitConfig('/api/gamma-direct'));
+  const { allowed } = await distributedRateLimit(`gamma_direct:${ip}`, getRateLimitConfig('/api/gamma-direct'));
   if (!allowed) {
     return NextResponse.json({ error: '生成请求过于频繁,请稍后再试' }, { status: 429 });
   }
@@ -208,6 +219,7 @@ export async function POST(request: NextRequest) {
       visualMetaphor,
       strictPreserve = false,
       uploadedFiles,
+      clientRequestId,
     } = body;
 
     // 🚨 D1: Normalize aliased fields → canonical PptUserInput
@@ -293,6 +305,41 @@ export async function POST(request: NextRequest) {
       }, { status: 402 });
     }
     console.log(`[GammaDirect] CREDIT_CHECK_OK userId=${userId} required=${creditEstimate.totalCredits} balance=${userCredits}`);
+
+    const claim = await claimGenerationRequest(userId, clientRequestId, 'gamma-direct');
+    if (claim.kind === 'replay') {
+      logOperationalEvent('info', 'generation.idempotent_replay', {
+        requestId, userId, taskId: claim.generationId, route: '/api/gamma-direct',
+      });
+      return NextResponse.json({
+        generationId: claim.generationId,
+        taskId: claim.generationId,
+        status: 'processing',
+        replayed: true,
+        artifact: { pollingUrl: `/api/gamma?id=${claim.generationId}` },
+      });
+    }
+    if (claim.kind === 'in_progress') {
+      return NextResponse.json({
+        error: '相同生成请求正在创建中，请稍后继续查询',
+        code: 'GENERATION_REQUEST_IN_PROGRESS',
+      }, { status: 409 });
+    }
+    if (claim.kind === 'claimed') claimedRequestId = claim.id;
+
+    // Only a new provider task consumes the global budget. Idempotent replays
+    // above are recovery reads and must remain available when the budget closes.
+    const globalLimit = await distributedRateLimit('generation:global:daily', {
+      windowMs: 24 * 60 * 60 * 1000,
+      maxRequests: getGenerationDailyGlobalLimit(),
+    });
+    if (!globalLimit.allowed) {
+      await markGenerationFailed(claimedRequestId, 'GLOBAL_BUDGET_EXHAUSTED');
+      await sendOperationalAlert('generation.global_budget_exhausted', {
+        requestId, userId, route: '/api/gamma-direct', status: 429,
+      });
+      return NextResponse.json({ error: '今日生成服务额度已达安全上限，请稍后再试', code: 'GLOBAL_BUDGET_EXHAUSTED' }, { status: 429 });
+    }
 
     // ===== Layer 6: Gamma API Call (existing code unchanged) =====
 
@@ -382,6 +429,7 @@ export async function POST(request: NextRequest) {
       const errText = await createRes.text();
       console.error('[GammaDirect] API error:', createRes.status, errText);
       await recordKeyFailure(apiKey);
+      await markGenerationFailed(claimedRequestId, `gamma_http_${createRes.status}`);
       console.log(`[GammaDirect] ERROR reason=gamma_api_failed code=GAMMA_API_ERROR status=${createRes.status}`);
       return NextResponse.json({
         error: `生成服务调用失败: ${createRes.status}`,
@@ -391,6 +439,15 @@ export async function POST(request: NextRequest) {
 
     const createData = await createRes.json();
     const generationId = createData.generationId || createData.id;
+    if (!generationId) {
+      await markGenerationFailed(claimedRequestId, 'missing_generation_id');
+      throw new Error('生成服务未返回任务ID');
+    }
+    await markGenerationStarted(claimedRequestId, generationId);
+    logOperationalEvent('info', 'generation.created', {
+      requestId, userId, taskId: generationId, route: '/api/gamma-direct', status: 200,
+      metadata: { pageCount, mode: 'direct' },
+    });
 
     // 🚨 V8: 记录积分信息（如果有返回）
     if (createData.credits) {
@@ -412,8 +469,11 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : '生成失败';
-    console.error('Gamma direct error:', error);
-    console.log(`[GammaDirect] ERROR reason=${message} code=INTERNAL_ERROR status=500`);
-    return NextResponse.json({ error: message }, { status: 500 });
+    await markGenerationFailed(claimedRequestId, 'internal_error');
+    await sendOperationalAlert('generation.create_failed', {
+      requestId, userId, route: '/api/gamma-direct', status: 500,
+      metadata: { error: message },
+    });
+    return NextResponse.json({ error: message, requestId }, { status: 500 });
   }
 }

@@ -90,12 +90,13 @@ export function useGammaGeneration(): UseGammaGenerationReturn {
       setStepText('AI 正在渲染 PPT 页面...');
 
       let gRes: Response;
+      const clientRequestId = crypto.randomUUID();
       if (gammaPayload) {
         // 省心模式：传完整 payload
         gRes = await fetch('/api/gamma', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(gammaPayload),
+          body: JSON.stringify({ ...gammaPayload, clientRequestId }),
         });
       } else {
         // 专业模式
@@ -103,6 +104,7 @@ export function useGammaGeneration(): UseGammaGenerationReturn {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            clientRequestId,
             inputText,
             themeId,
             numCards,

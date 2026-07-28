@@ -9,8 +9,8 @@ const mockUser = {
   id: 'u_e2e_gamma_resume',
   phone: '13800000001',
   nickname: 'E2E',
-  credits: 999,
-  plan_type: 'supreme',
+  credits: 9999,
+  plan_type: 'pro',
 };
 
 const outlineData = {
@@ -77,10 +77,21 @@ async function run() {
   });
 
   await context.route('**/api/user', async (route) => {
+    let action = '';
+    try {
+      action = JSON.parse(route.request().postData() || '{}').action || '';
+    } catch {}
+    const response = action === 'estimate_generation'
+      ? { needed: 20, balance: 9999, sufficient: true }
+      : action === 'hold_generation'
+        ? { holdAmount: 20, balance: 9979 }
+        : action === 'settle_generation'
+          ? { creditsUsed: 20, balance: 9979, alreadySettled: false }
+          : { balance: 9999 };
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ balance: 900 }),
+      body: JSON.stringify(response),
     });
   });
 
@@ -150,23 +161,34 @@ async function run() {
   const confirmBtn = page.getByRole('button', { name: /下一步：生成PPT|确认生成 PPT|确认并生成PPT/ });
   await confirmBtn.click();
 
-  await page.waitForFunction((k) => {
-    const raw = localStorage.getItem(k);
-    if (!raw) return false;
-    try {
-      return JSON.parse(raw)?.stage === 'gamma';
-    } catch {
-      return false;
-    }
-  }, RESUME_KEY, { timeout: 8000 });
+  try {
+    await page.waitForFunction((k) => {
+      const raw = sessionStorage.getItem(k);
+      if (!raw) return false;
+      try {
+        return JSON.parse(raw)?.stage === 'gamma';
+      } catch {
+        return false;
+      }
+    }, RESUME_KEY, { timeout: 8000 });
+  } catch (err) {
+    const resumeRaw = await page.evaluate((k) => sessionStorage.getItem(k), RESUME_KEY);
+    const bodyText = await page.locator('body').innerText().catch(() => '');
+    await page.screenshot({ path: 'tmp/e2e-gamma-stage-failed.png', fullPage: true });
+    console.error(`debug: gammaPostCalls=${gammaPostCalls}`);
+    console.error(`debug: gammaStatusCalls=${gammaStatusCalls}`);
+    console.error(`debug: resumeRaw=${resumeRaw}`);
+    console.error(`debug: body=${bodyText.slice(0, 1800)}`);
+    throw err;
+  }
 
   await page.waitForTimeout(500);
   await page.reload({ waitUntil: 'domcontentloaded' });
 
   try {
-    await page.getByRole('button', { name: '下载 PPTX' }).waitFor({ timeout: 25000 });
+    await page.getByRole('button', { name: /下载 PPTX|导出 PPTX/ }).waitFor({ timeout: 25000 });
   } catch (err) {
-    const resumeRaw = await page.evaluate((k) => localStorage.getItem(k), RESUME_KEY);
+    const resumeRaw = await page.evaluate((k) => sessionStorage.getItem(k), RESUME_KEY);
     const bodyText = await page.locator('body').innerText().catch(() => '');
     await page.screenshot({ path: 'tmp/e2e-gamma-resume-failed.png', fullPage: true });
     console.error(`debug: gammaPostCalls=${gammaPostCalls}`);
@@ -176,7 +198,7 @@ async function run() {
     throw err;
   }
 
-  const resumeStateAfter = await page.evaluate((k) => localStorage.getItem(k), RESUME_KEY);
+  const resumeStateAfter = await page.evaluate((k) => sessionStorage.getItem(k), RESUME_KEY);
   assert.equal(resumeStateAfter, null, 'resume state should be cleared after gamma restore');
   assert.equal(gammaPostCalls, 1, `expected gamma POST once, got ${gammaPostCalls}`);
   assert.ok(gammaStatusCalls >= 3, `expected gamma status polls >= 3, got ${gammaStatusCalls}`);

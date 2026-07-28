@@ -3,6 +3,7 @@ import { GET as exportPptxGET } from '@/app/api/export-pptx/route';
 import { convertPptxToPdf } from '@/lib/pdf-converter';
 import { renderSlidesPdfBuffer } from '@/lib/slides-pdf';
 import { getSession } from '@/lib/session';
+import { distributedRateLimit, getClientIP } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -29,6 +30,13 @@ export async function POST(request: NextRequest) {
   try {
     if (!(await requireLoggedIn())) {
       return NextResponse.json({ error: '请先登录' }, { status: 401 });
+    }
+    const pdfLimit = await distributedRateLimit(`export_pdf_post:${getClientIP(request)}`, {
+      windowMs: 60_000,
+      maxRequests: 8,
+    });
+    if (!pdfLimit.allowed) {
+      return NextResponse.json({ error: 'PDF 导出请求过于频繁，请稍后再试' }, { status: 429 });
     }
 
     const body = await request.json();

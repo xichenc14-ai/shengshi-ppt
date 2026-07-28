@@ -5,11 +5,14 @@
 //   ALIYUN_ACCESS_KEY_ID=xxx  ALIYUN_ACCESS_KEY_SECRET=xxx
 //   ALIYUN_SMS_SIGN_NAME=速通互联验证码  ALIYUN_SMS_TEMPLATE_CODE=100001
 
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+
 type SMSProvider = 'aliyun_auth' | 'luosimao' | 'tencent';
 
 export const REMOTE_SMS_CODE_MARKER = '__REMOTE_SMS_PROVIDER_VERIFY__';
+const LOCAL_SMS_CODE_HASH_PREFIX = '__LOCAL_SMS_CODE_HMAC_V1__:';
 
-interface SMSSendResult {
+export interface SMSSendResult {
   success: boolean;
   code?: string;       // 本地可校验验证码；DYPNS 可能不返回真实验证码
   remoteVerify?: boolean; // true 表示验证码需回源到服务商校验
@@ -17,35 +20,10 @@ interface SMSSendResult {
   errorCode?: string;
   retryAfter?: number;
   messageId?: string;
+  providerRequestId?: string;
 }
 
-type OpenApiModule = {
-  Config: new (config: Record<string, unknown>) => unknown;
-};
-
-type DypnsModule = {
-  default?: {
-    default?: new (config: unknown) => {
-      sendSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
-      sendSmsVerifyCodeWithOptions?: (request: unknown, runtime: Record<string, unknown>) => Promise<{ body?: unknown }>;
-      checkSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
-      checkSmsVerifyCodeWithOptions?: (request: unknown, runtime: Record<string, unknown>) => Promise<{ body?: unknown }>;
-    };
-  } | (new (config: unknown) => {
-    sendSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
-    sendSmsVerifyCodeWithOptions?: (request: unknown, runtime: Record<string, unknown>) => Promise<{ body?: unknown }>;
-    checkSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
-    checkSmsVerifyCodeWithOptions?: (request: unknown, runtime: Record<string, unknown>) => Promise<{ body?: unknown }>;
-  });
-  Client?: new (config: unknown) => {
-    sendSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
-    sendSmsVerifyCodeWithOptions?: (request: unknown, runtime: Record<string, unknown>) => Promise<{ body?: unknown }>;
-    checkSmsVerifyCode: (request: unknown) => Promise<{ body?: unknown }>;
-    checkSmsVerifyCodeWithOptions?: (request: unknown, runtime: Record<string, unknown>) => Promise<{ body?: unknown }>;
-  };
-  SendSmsVerifyCodeRequest: new (payload: Record<string, unknown>) => unknown;
-  CheckSmsVerifyCodeRequest: new (payload: Record<string, unknown>) => unknown;
-};
+export type SMSSendOptions = { outId?: string };
 
 type TencentModule = {
   sms: {
@@ -66,13 +44,6 @@ function getProvider(): SMSProvider {
   return (String(process.env.SMS_PROVIDER || 'aliyun_auth').replace(/^['"]|['"]$/g, '') as SMSProvider);
 }
 
-function resolveDypnsClient(Dypnsapi: DypnsModule) {
-  if (typeof Dypnsapi.default === 'function') return Dypnsapi.default;
-  if (Dypnsapi.default && typeof Dypnsapi.default.default === 'function') return Dypnsapi.default.default;
-  if (typeof Dypnsapi.Client === 'function') return Dypnsapi.Client;
-  throw new Error('Dypnsapi Client constructor not found');
-}
-
 function maskPhone(phone: string): string {
   return phone.replace(/^(\d{3})\d{4}(\d{4})$/, '$1****$2');
 }
@@ -81,10 +52,25 @@ export function normalizeSMSCode(value: unknown): string {
   return String(value ?? '').replace(/\D/g, '').slice(0, 6);
 }
 
-export function getStorableSMSCode(result: SMSSendResult, fallbackCode: string): string {
-  return result.remoteVerify === true
-    ? REMOTE_SMS_CODE_MARKER
-    : (normalizeSMSCode(result.code) || fallbackCode);
+function getLocalCodeHashSecret(): string {
+  // 独立密钥优先；使用 service role 作为兼容兜底，避免生产环境没有新变量时退回明文。
+  return process.env.SMS_CODE_HASH_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+}
+
+function localCodeDigest(phone: string, code: string): string | null {
+  const secret = getLocalCodeHashSecret();
+  if (!secret) return null;
+  return createHmac('sha256', secret)
+    .update(`sms-code:v1:${phone}:${code}`, 'utf8')
+    .digest('hex');
+}
+
+export function getStorableSMSCode(result: SMSSendResult, fallbackCode: string, phone?: string): string {
+  if (result.remoteVerify === true) return REMOTE_SMS_CODE_MARKER;
+  const code = normalizeSMSCode(result.code) || normalizeSMSCode(fallbackCode);
+  if (!phone) return code;
+  const digest = localCodeDigest(phone, code);
+  return digest ? `${LOCAL_SMS_CODE_HASH_PREFIX}${digest}` : code;
 }
 
 export async function verifyStoredSMSCode(
@@ -98,6 +84,16 @@ export async function verifyStoredSMSCode(
     const remote = await verifyRemoteSMSCode(phone, normalizedCode);
     if (!remote.valid) return { valid: false, error: remote.error || '验证码错误或已过期' };
     return { valid: true };
+  }
+  if (storedCode.startsWith(LOCAL_SMS_CODE_HASH_PREFIX)) {
+    const expected = localCodeDigest(phone, normalizedCode);
+    const actual = storedCode.slice(LOCAL_SMS_CODE_HASH_PREFIX.length);
+    if (!expected || actual.length !== expected.length) {
+      return { valid: false, error: '验证码错误或已过期' };
+    }
+    return timingSafeEqual(Buffer.from(actual, 'utf8'), Buffer.from(expected, 'utf8'))
+      ? { valid: true }
+      : { valid: false, error: '验证码错误或已过期' };
   }
   return storedCode === normalizedCode
     ? { valid: true }
@@ -148,66 +144,154 @@ function sanitizeAliyunErrorMessage(message: string, phone?: string): string {
   return safeMessage;
 }
 
-const ALIYUN_RUNTIME_OPTIONS = {
-  autoretry: true,
-  maxAttempts: 3,
-  backoffPolicy: 'fixed',
-  backoffPeriod: 800,
-  connectTimeout: 8000,
-  readTimeout: 12000,
-  keepAlive: false,
-};
+type AliyunRPCValue = string | number | boolean;
 
-function isRetryableAliyunError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /ConnectTimeout|ReadTimeout|Timeout|ETIMEDOUT|ECONNRESET|EAI_AGAIN|ENOTFOUND/i.test(message);
+function aliyunPercentEncode(value: AliyunRPCValue): string {
+  return encodeURIComponent(String(value)).replace(/[!'()*]/g, (character) => (
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  ));
 }
 
-async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms));
+function getAliyunTimeoutMs(): number {
+  const configured = Number(process.env.ALIYUN_SMS_TIMEOUT_MS || 20_000);
+  return Number.isFinite(configured) ? Math.min(25_000, Math.max(5_000, Math.floor(configured))) : 20_000;
 }
 
-async function callAliyunWithRetry<T>(label: string, call: () => Promise<T>): Promise<T> {
-  const attempts = 3;
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+function getAliyunEndpoint(): string {
+  const configured = String(process.env.ALIYUN_DYPNS_ENDPOINT || 'dypnsapi.aliyuncs.com')
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/$/, '');
+  if (!/^[a-z0-9.-]+(?::\d+)?$/i.test(configured)) {
+    throw new Error('ALIYUN_DYPNS_ENDPOINT 配置无效');
+  }
+  return configured;
+}
+
+export async function inspectSMSProviderReadiness(): Promise<{ ready: boolean; detail: string }> {
+  const provider = getProvider();
+  if (provider === 'aliyun_auth') {
+    const configured = Boolean(
+      process.env.ALIYUN_ACCESS_KEY_ID
+      && process.env.ALIYUN_ACCESS_KEY_SECRET
+      && process.env.ALIYUN_SMS_SIGN_NAME
+      && process.env.ALIYUN_SMS_TEMPLATE_CODE,
+    );
+    if (!configured) return { ready: false, detail: 'aliyun_auth_configuration_incomplete' };
+
     try {
-      return await call();
-    } catch (error) {
-      lastError = error;
-      if (attempt >= attempts || !isRetryableAliyunError(error)) break;
-      console.warn(`[SMS] Aliyun DYPNS ${label} transient failure, retrying (${attempt}/${attempts})`);
-      await sleep(800);
+      // HEAD 只能证明 CDN 入口可达，不能证明签名 RPC 请求能完成。使用不会发送短信的
+      // 验证接口同时检查 DNS/TLS、RPC 请求链路、签名、AccessKey 和产品权限。
+      const body = await callAliyunRPC('CheckSmsVerifyCode', {
+        CountryCode: '86',
+        PhoneNumber: '13800138000',
+        VerifyCode: '000000',
+        CaseAuthPolicy: 1,
+      });
+      const code = aliyunErrorCode(body);
+      if (!code || code === 'UNKNOWN') return { ready: false, detail: 'aliyun_auth_rpc_malformed_response' };
+      const normalizedCode = code.toUpperCase();
+      const accessFailure = [
+        'INVALIDACCESSKEYID',
+        'SIGNATUREDOESNOTMATCH',
+        'FORBIDDEN',
+        'FUNCTION_NOT_OPENED',
+        'UNAUTHORIZED',
+      ].some((marker) => normalizedCode.includes(marker));
+      return accessFailure
+        ? { ready: false, detail: `aliyun_auth_rpc_${code}` }
+        : { ready: true, detail: `aliyun_auth_rpc_${code}` };
+    } catch {
+      return { ready: false, detail: 'aliyun_auth_rpc_transport_error' };
     }
   }
-  throw lastError;
+  if (provider === 'luosimao') {
+    return process.env.LUOSIMAO_API_KEY
+      ? { ready: true, detail: 'luosimao_configured' }
+      : { ready: false, detail: 'luosimao_configuration_incomplete' };
+  }
+  if (provider === 'tencent') {
+    const configured = Boolean(
+      process.env.TENCENT_SECRET_ID
+      && process.env.TENCENT_SECRET_KEY
+      && process.env.TENCENT_SMS_APP_ID
+      && process.env.TENCENT_SMS_SIGN
+      && process.env.TENCENT_SMS_TEMPLATE_ID,
+    );
+    return configured
+      ? { ready: true, detail: 'tencent_configured' }
+      : { ready: false, detail: 'tencent_configuration_incomplete' };
+  }
+  return { ready: false, detail: 'unsupported_sms_provider' };
 }
 
-async function createAliyunAuthClient() {
+/**
+ * 使用平台原生 fetch 调用阿里云 RPC API。
+ *
+ * 阿里云官方 SDK 的旧 httpx 传输层在 Vercel 香港冷启动后持续出现 ConnectTimeout。
+ * 这里仍使用阿里云公开的 RPC HMAC-SHA1 签名协议，但绕过不稳定的传输层。请求不做
+ * 自动重试，避免“服务端已接收、客户端超时”时重复发送验证码。使用官方 RPC
+ * 支持的 GET 签名请求；实测同一出口下 GET 明显快于空 body POST，且不会触发
+ * Vercel 到 DYPNS 的 POST 长连接黑洞。
+ */
+async function callAliyunRPC(
+  action: 'SendSmsVerifyCode' | 'CheckSmsVerifyCode',
+  actionParameters: Record<string, AliyunRPCValue>,
+): Promise<Record<string, unknown>> {
   const accessKeyId = process.env.ALIYUN_ACCESS_KEY_ID;
   const accessKeySecret = process.env.ALIYUN_ACCESS_KEY_SECRET;
-
   if (!accessKeyId || !accessKeySecret) {
-    return { error: 'ALIYUN_ACCESS_KEY_ID / SECRET 未配置' };
+    throw new Error('ALIYUN_ACCESS_KEY_ID / SECRET 未配置');
   }
 
-  const Dypnsapi = await import('@alicloud/dypnsapi20170525') as unknown as DypnsModule;
-  const OpenApi = await import('@alicloud/openapi-client') as unknown as OpenApiModule;
-
-  const config = new OpenApi.Config({
-    accessKeyId,
-    accessKeySecret,
-    endpoint: 'dypnsapi.aliyuncs.com',
-  });
-
-  const DypnsClient = resolveDypnsClient(Dypnsapi);
-  return { Dypnsapi, client: new DypnsClient(config) };
+  const parameters: Record<string, AliyunRPCValue> = {
+    AccessKeyId: accessKeyId,
+    Action: action,
+    Format: 'JSON',
+    SignatureMethod: 'HMAC-SHA1',
+    SignatureNonce: randomUUID(),
+    SignatureVersion: '1.0',
+    Timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    Version: '2017-05-25',
+    ...actionParameters,
+  };
+  // 必须按 ASCII 字节序排序；localeCompare 会把 SignName 错排到 SignatureVersion 后面。
+  const canonicalQuery = Object.keys(parameters)
+    .sort()
+    .map((key) => `${aliyunPercentEncode(key)}=${aliyunPercentEncode(parameters[key])}`)
+    .join('&');
+  const httpMethod = 'GET';
+  const stringToSign = `${httpMethod}&${aliyunPercentEncode('/')}&${aliyunPercentEncode(canonicalQuery)}`;
+  const signature = createHmac('sha1', `${accessKeySecret}&`)
+    .update(stringToSign, 'utf8')
+    .digest('base64');
+  const endpoint = getAliyunEndpoint();
+  const response = await fetch(
+    `https://${endpoint}/?${canonicalQuery}&Signature=${aliyunPercentEncode(signature)}`,
+    {
+      method: httpMethod,
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(getAliyunTimeoutMs()),
+    },
+  );
+  const responseText = await response.text();
+  let body: Record<string, unknown>;
+  try {
+    body = JSON.parse(responseText) as Record<string, unknown>;
+  } catch {
+    throw new Error(`阿里云短信返回非 JSON 响应（HTTP ${response.status}）`);
+  }
+  if (!response.ok && !pickAliyunField(body, 'Code')) {
+    throw new Error(`阿里云短信网络响应异常（HTTP ${response.status}）`);
+  }
+  return body;
 }
 
 // ===== 阿里云短信认证（dypnsapi）=====
 // 个人开发者友好：100次免费套餐包
 // 使用系统赠送签名+模板，API自动生成验证码
-async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
+async function sendViaAliyunAuth(phone: string, suppliedCode?: string, options: SMSSendOptions = {}): Promise<SMSSendResult> {
   const signName = process.env.ALIYUN_SMS_SIGN_NAME;
   const templateCode = process.env.ALIYUN_SMS_TEMPLATE_CODE;
 
@@ -218,60 +302,37 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
     return { success: true, code: fallbackCode, messageId: 'dev-mode' };
   }
 
-  try {
-    const aliyun = await createAliyunAuthClient();
-    if ('error' in aliyun) return { success: false, error: aliyun.error };
-    const { Dypnsapi, client } = aliyun;
-    const request = new Dypnsapi.SendSmsVerifyCodeRequest({
-      countryCode: '86',
-      phoneNumber: phone,
-      signName,
-      templateCode,
-      ...(process.env.ALIYUN_SMS_SCHEME_NAME ? { schemeName: process.env.ALIYUN_SMS_SCHEME_NAME } : {}),
-      // 模板参数：##code## = 系统自动生成验证码，min = 有效时长(分钟)
-      templateParam: JSON.stringify({ code: '##code##', min: '5' }),
-      codeLength: 6,        // 6位验证码
-      validTime: 300,       // 5分钟有效
-      codeType: 1,          // 1=纯数字
-      duplicatePolicy: 1,   // 同一场景保留最新验证码
-      interval: 60,         // 服务商侧发送间隔
-      returnVerifyCode: true, // 返回验证码，方便存储到数据库
-    });
-    const sendRes = await callAliyunWithRetry('send', () => (
-      typeof client.sendSmsVerifyCodeWithOptions === 'function'
-        ? client.sendSmsVerifyCodeWithOptions(request, ALIYUN_RUNTIME_OPTIONS)
-        : client.sendSmsVerifyCode(request)
-    ));
+  const code = normalizeSMSCode(suppliedCode);
+  if (code.length !== 6) return { success: false, error: '验证码生成失败', errorCode: 'INVALID_LOCAL_CODE' };
 
-    const body = (sendRes.body ?? {}) as Record<string, unknown>;
+  try {
+    const body = await callAliyunRPC('SendSmsVerifyCode', {
+      CountryCode: '86',
+      PhoneNumber: phone,
+      SignName: signName,
+      TemplateCode: templateCode,
+      ...(process.env.ALIYUN_SMS_SCHEME_NAME ? { SchemeName: process.env.ALIYUN_SMS_SCHEME_NAME } : {}),
+      // 使用应用生成的固定验证码：新验证码可在本地验证，避免收到短信后再次
+      // 依赖 Vercel → 阿里云 CheckSmsVerifyCode 链路而误判失败。
+      TemplateParam: JSON.stringify({ code, min: '5' }),
+      CodeLength: 6,
+      ValidTime: 300,
+      CodeType: 1,
+      DuplicatePolicy: 1,
+      Interval: 60,
+      ReturnVerifyCode: false,
+      ...(options.outId ? { OutId: options.outId } : {}),
+    });
     logAliyunBody('[SMS] Aliyun DYPNS send response:', body);
-    // SDK 返回结构: body.Code='OK' 或 body.Success=true
-    // 验证码在 body.Model.VerifyCode 或 body.model.verifyCode
-    const bodyObj = body as Record<string, unknown>;
+    const bodyObj = body;
     if (aliyunSuccess(bodyObj)) {
-      // 尝试多种路径提取验证码
       const modelObj = (bodyObj.Model ?? bodyObj.model ?? {}) as Record<string, unknown>;
-      const returnedCode = String(
-        modelObj.VerifyCode
-        ?? modelObj.verifyCode
-        ?? bodyObj.VerifyCode
-        ?? bodyObj.verifyCode
-        ?? ''
-      );
-      console.log('[SMS] Aliyun DYPNS returned verifyCode:', Boolean(returnedCode));
-      if (!returnedCode) {
-        console.warn('[SMS] API 未返回验证码，将使用服务商远端校验，避免本地验证码与短信内容不一致');
-        return {
-          success: true,
-          code: REMOTE_SMS_CODE_MARKER,
-          remoteVerify: true,
-          messageId: String(bodyObj.RequestId ?? bodyObj.requestId ?? ''),
-        };
-      }
       return {
         success: true,
-        code: returnedCode,
-        messageId: String(bodyObj.RequestId ?? bodyObj.requestId ?? ''),
+        code,
+        // BizId 才能与阿里云送达回执关联；RequestId 仅用于接口请求排障。
+        messageId: String(modelObj.BizId ?? modelObj.bizId ?? ''),
+        providerRequestId: String(pickAliyunField(bodyObj, 'RequestId') ?? ''),
       };
     }
     return {
@@ -284,34 +345,19 @@ async function sendViaAliyunAuth(phone: string): Promise<SMSSendResult> {
     const msg = e instanceof Error ? e.message : 'unknown';
     const safeMsg = sanitizeAliyunErrorMessage(msg, phone);
     console.error('[SMS] 阿里云短信认证异常:', safeMsg);
-    if (msg.includes('Cannot find module') || msg.includes('MODULE_NOT_FOUND')) {
-      console.warn('[SMS] dypnsapi SDK 未安装，降级为控制台打印');
-      const fallbackCode = String(Math.floor(100000 + Math.random() * 900000));
-      console.log(`[SMS-DEV] 验证码: ${fallbackCode}，手机号: ${maskPhone(phone)}`);
-      return { success: true, code: fallbackCode, messageId: 'dev-mode' };
-    }
-    return { success: false, error: `阿里云短信异常: ${safeMsg}` };
+    return { success: false, error: `阿里云短信异常: ${safeMsg}`, errorCode: 'PROVIDER_TRANSPORT_ERROR' };
   }
 }
 
 async function verifyViaAliyunAuth(phone: string, code: string): Promise<{ valid: boolean; error?: string }> {
   try {
-    const aliyun = await createAliyunAuthClient();
-    if ('error' in aliyun) return { valid: false, error: aliyun.error };
-    const { Dypnsapi, client } = aliyun;
-    const request = new Dypnsapi.CheckSmsVerifyCodeRequest({
-      phoneNumber: phone,
-      verifyCode: code,
-      countryCode: '86',
-      caseAuthPolicy: 1,
-      ...(process.env.ALIYUN_SMS_SCHEME_NAME ? { schemeName: process.env.ALIYUN_SMS_SCHEME_NAME } : {}),
+    const body = await callAliyunRPC('CheckSmsVerifyCode', {
+      PhoneNumber: phone,
+      VerifyCode: code,
+      CountryCode: '86',
+      CaseAuthPolicy: 1,
+      ...(process.env.ALIYUN_SMS_SCHEME_NAME ? { SchemeName: process.env.ALIYUN_SMS_SCHEME_NAME } : {}),
     });
-    const checkRes = await callAliyunWithRetry('verify', () => (
-      typeof client.checkSmsVerifyCodeWithOptions === 'function'
-        ? client.checkSmsVerifyCodeWithOptions(request, ALIYUN_RUNTIME_OPTIONS)
-        : client.checkSmsVerifyCode(request)
-    ));
-    const body = (checkRes.body ?? {}) as Record<string, unknown>;
     const model = (body.Model ?? body.model ?? {}) as Record<string, unknown>;
     const verifyResult = String(model.VerifyResult ?? model.verifyResult ?? '').toUpperCase();
     if (aliyunSuccess(body) && verifyResult === 'PASS') {
@@ -385,14 +431,14 @@ async function sendViaTencent(phone: string, code: string): Promise<SMSSendResul
 }
 
 // ===== 统一接口 =====
-// 阿里云：API自动生成验证码，返回 code
-// 其他：需要传入 code 参数
-export async function sendSMS(phone: string, code?: string): Promise<SMSSendResult> {
+// 所有服务商均接收应用生成的固定验证码；旧的远端标记仅用于兼容历史记录。
+export async function sendSMS(phone: string, code?: string, options?: SMSSendOptions): Promise<SMSSendResult> {
   const provider = getProvider();
 
   switch (provider) {
     case 'aliyun_auth':
-      return sendViaAliyunAuth(phone);
+      if (!code) return { success: false, error: '阿里云短信需要传入验证码' };
+      return sendViaAliyunAuth(phone, code, options);
     case 'luosimao':
       if (!code) return { success: false, error: 'Luosimao 需要传入验证码' };
       return sendViaLuosimao(phone, code);

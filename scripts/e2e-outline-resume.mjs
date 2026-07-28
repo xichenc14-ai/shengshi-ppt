@@ -9,8 +9,8 @@ const mockUser = {
   id: 'u_e2e_resume',
   phone: '13800000000',
   nickname: 'E2E',
-  credits: 999,
-  plan_type: 'supreme',
+  credits: 9999,
+  plan_type: 'pro',
 };
 
 const outlineData = {
@@ -110,7 +110,7 @@ async function run() {
   await expectEnabled(startButton, 12000, page);
   await startButton.click();
 
-  await page.waitForFunction((k) => !!localStorage.getItem(k), RESUME_KEY, { timeout: 8000 });
+  await page.waitForFunction((k) => !!sessionStorage.getItem(k), RESUME_KEY, { timeout: 8000 });
   await page.waitForTimeout(400);
   await page.reload({ waitUntil: 'domcontentloaded' });
 
@@ -119,7 +119,7 @@ async function run() {
     await page.getByRole('heading', { name: 'AI企业级自动化转型路线图' }).waitFor({ timeout: 15000 });
     await page.getByRole('button', { name: /下一步：生成PPT|确认生成 PPT|确认并生成PPT/ }).waitFor({ timeout: 15000 });
   } catch (err) {
-    const resumeRaw = await page.evaluate((k) => localStorage.getItem(k), RESUME_KEY);
+    const resumeRaw = await page.evaluate((k) => sessionStorage.getItem(k), RESUME_KEY);
     const bodyText = await page.locator('body').innerText().catch(() => '');
     await page.screenshot({ path: 'tmp/e2e-outline-resume-failed.png', fullPage: true });
     console.error(`debug: streamCalls=${streamCalls}`);
@@ -128,7 +128,7 @@ async function run() {
     throw err;
   }
 
-  const resumeStateAfter = await page.evaluate((k) => localStorage.getItem(k), RESUME_KEY);
+  const resumeStateAfter = await page.evaluate((k) => sessionStorage.getItem(k), RESUME_KEY);
   assert.equal(resumeStateAfter, null, 'resume state should be cleared after successful restore');
   assert.ok(streamCalls >= 2, `expected streamCalls >= 2, got ${streamCalls}`);
 

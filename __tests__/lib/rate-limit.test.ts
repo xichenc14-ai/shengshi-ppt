@@ -6,7 +6,13 @@ import {
   checkVerifyAttempts,
   checkSMSRateLimit,
   rollbackSMSRateLimit,
+  distributedRateLimit,
 } from '@/lib/rate-limit';
+import { afterEach, vi } from 'vitest';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe('getRateLimitConfig', () => {
   it('should return config for /api/outline', () => {
@@ -67,6 +73,31 @@ describe('rateLimit', () => {
   });
 });
 
+describe('distributedRateLimit', () => {
+  it('uses the memory limiter outside production', async () => {
+    const result = await distributedRateLimit(`distributed-dev:${Date.now()}`, {
+      maxRequests: 2,
+      windowMs: 60_000,
+    });
+    expect(result.allowed).toBe(true);
+    expect(result.source).toBe('memory');
+  });
+
+  it('uses the conservative local fallback in production when the distributed store is missing', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', '');
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', '');
+
+    const result = await distributedRateLimit('production:no-store', {
+      maxRequests: 10,
+      windowMs: 60_000,
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(result.source).toBe('fallback');
+  });
+});
+
 describe('getClientIP', () => {
   it('should extract IP from x-forwarded-for', () => {
     const req = new Request('http://localhost', {
@@ -112,16 +143,20 @@ describe('checkVerifyAttempts', () => {
 });
 
 describe('checkSMSRateLimit', () => {
-  it('should block a different phone on the same IP within 60 seconds', async () => {
+  it('allows several different phones on a shared IP within 60 seconds', async () => {
     const suffix = Date.now();
     const ip = `sms-shared-ip:${suffix}`;
 
     const first = await checkSMSRateLimit(ip, `138${String(suffix).slice(-8).padStart(8, '0')}`);
-    const second = await checkSMSRateLimit(ip, `139${String(suffix + 1).slice(-8).padStart(8, '0')}`);
+    const results = await Promise.all(Array.from({ length: 4 }, (_, index) => (
+      checkSMSRateLimit(ip, `139${String(suffix + index).slice(-8).padStart(8, '0')}`)
+    )));
 
     expect(first.allowed).toBe(true);
-    expect(second.allowed).toBe(false);
-    expect(second.reason).toBe('请60秒后再试');
+    expect(results.every((result) => result.allowed)).toBe(true);
+    const blocked = await checkSMSRateLimit(ip, `137${String(suffix + 99).slice(-8).padStart(8, '0')}`);
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.reason).toBe('当前网络请求过于频繁，请稍后再试');
   });
 
   it('should still block the same phone within 60 seconds', async () => {
@@ -142,7 +177,7 @@ describe('checkSMSRateLimit', () => {
     const phone = `136${String(suffix).slice(-8).padStart(8, '0')}`;
 
     const first = await checkSMSRateLimit(ip, phone);
-    rollbackSMSRateLimit(ip, phone);
+    await rollbackSMSRateLimit(ip, phone);
     const second = await checkSMSRateLimit(ip, phone);
 
     expect(first.allowed).toBe(true);

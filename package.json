@@ -1,6 +1,6 @@
 {
   "name": "demo",
-  "version": "10.96.5",
+  "version": "10.100.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -10,7 +10,14 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:e2e:outline-resume": "node scripts/e2e-outline-resume.mjs",
+    "test:e2e:gamma-resume": "node scripts/e2e-gamma-resume.mjs",
+    "test:e2e:resume": "npm run -s test:e2e:outline-resume && npm run -s test:e2e:gamma-resume",
     "env:commercial": "node scripts/commercial-env-check.mjs",
+    "db:commercial:check": "node scripts/commercial-db-readiness.mjs",
+    "ops:recovery:check": "node scripts/commercial-recovery-readiness.mjs",
+    "ops:restore:drill": "node scripts/commercial-restore-drill.mjs",
+    "ops:postdeploy:check": "node scripts/commercial-postdeploy-check.mjs",
     "env:sms": "node scripts/sms-env-check.mjs",
     "env:commercial:doctor": "node scripts/commercial-env-doctor.mjs",
     "go-live:commercial": "node scripts/commercial-go-live-check.mjs",
@@ -28,9 +35,6 @@
     "release-gate:nonpayment": "node scripts/nonpayment-release-gate.mjs"
   },
   "dependencies": {
-    "@alicloud/dypnsapi20170525": "^2.0.0",
-    "@alicloud/dysmsapi20170525": "^4.5.1",
-    "@alicloud/openapi-client": "^0.4.15",
     "@aws-sdk/client-s3": "^3.1080.0",
     "@aws-sdk/s3-request-presigner": "^3.1080.0",
     "@phosphor-icons/react": "^2.1.10",
@@ -61,6 +65,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^4.1.5",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "msw": "^2.13.6",

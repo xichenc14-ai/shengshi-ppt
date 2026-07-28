@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getClientIP, rateLimit } from '@/lib/rate-limit';
+import { distributedRateLimit, getClientIP } from '@/lib/rate-limit';
 import { fulfillPaidOrder } from '@/lib/payment/subscription';
 import { getXunhuConfig, isXunhuPaidPayload, verifyXunhuHash, xunhuStatusToOrderStatus, type XunhuNotifyPayload, type XunhuPayload } from '@/lib/payment/xunhu';
 import { updateOrderCompat } from '@/lib/payment/order-storage';
+import { getRequestId, logOperationalEvent, sendOperationalAlert } from '@/lib/observability';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -48,6 +49,7 @@ function amountYuanToFen(value: string | undefined): number | null {
 }
 
 export async function POST(req: NextRequest) {
+  const requestId = getRequestId(req);
   const sb = getSupabase();
   if (!sb) return text('server not configured', 503);
 
@@ -55,7 +57,7 @@ export async function POST(req: NextRequest) {
   if (!config) return text('xunhu not configured', 503);
 
   const clientIP = getClientIP(req) || 'unknown';
-  const limit = rateLimit(`payment:xunhu_notify:${clientIP}`, { windowMs: 60 * 1000, maxRequests: 60 });
+  const limit = await distributedRateLimit(`payment:xunhu_notify:${clientIP}`, { windowMs: 60 * 1000, maxRequests: 60 });
   if (!limit.allowed) return text('rate limited', 429);
 
   try {
@@ -69,7 +71,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (!verifyXunhuHash(payload as XunhuPayload, config.secret)) {
-      console.warn(`[XunhuPay] hash verify failed: order=${orderNo}, ip=${clientIP}`);
+      logOperationalEvent('warn', 'payment.callback_signature_invalid', {
+        requestId, orderNo, route: '/api/payment/xunhu/notify', status: 400,
+      });
       return text('invalid hash', 400);
     }
 
@@ -117,10 +121,15 @@ export async function POST(req: NextRequest) {
       providerMetadata,
       payload.transaction_id || payload.open_order_id || null
     );
+    logOperationalEvent('info', 'payment.callback_fulfilled', {
+      requestId, orderNo, route: '/api/payment/xunhu/notify', status: 200,
+    });
     return text('success');
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'notify failed';
-    console.error('[XunhuPay] notify error:', msg);
+    await sendOperationalAlert('payment.callback_failed', {
+      requestId, route: '/api/payment/xunhu/notify', status: 500, metadata: { error: msg },
+    });
     return text('notify failed', 500);
   }
 }

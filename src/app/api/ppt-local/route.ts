@@ -11,11 +11,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import { registerPptBuffer } from '@/app/api/export/route.utils';
 import { randomUUID } from 'crypto';
+import path from 'path';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
 
-const PYTHON_SCRIPT = '/Users/macmini/shengshi-ppt/scripts/ppt-local/ppt_local_generator.py';
+const PYTHON_SCRIPT = path.join(process.cwd(), 'scripts', 'ppt-local', 'ppt_local_generator.py');
+const MAX_SLIDES = 40;
+const MAX_INPUT_CHARS = 50_000;
 
 interface PptLocalSlide {
   title: string;
@@ -34,8 +37,6 @@ interface PptLocalRequest {
   raw_input?: string;
   use_llm?: boolean;
   // 直接生成模式（跳过 LLM）
-  api_base?: string;
-  api_key?: string;
 }
 
 // 调用 Python 脚本生成 PPTX
@@ -79,13 +80,26 @@ function runPythonScript(payload: object, timeoutMs = 90000): Promise<{ outputPa
 
 // POST — 创建 PPT 生成任务
 export async function POST(request: NextRequest) {
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({
+      error: '本地生成实验接口未纳入商业服务，生产环境已停用',
+      code: 'LOCAL_PPT_DISABLED',
+    }, { status: 410 });
+  }
+
   try {
     const body: PptLocalRequest = await request.json();
-    const { title, slides, theme = 'default', tone = 'professional', raw_input, use_llm = false, api_base, api_key } = body;
+    const { title, slides, theme = 'default', tone = 'professional', raw_input, use_llm = false } = body;
 
     // 基础验证
     if (!title && !raw_input) {
       return NextResponse.json({ error: '缺少 title 或 raw_input 参数' }, { status: 400 });
+    }
+    if (slides && slides.length > MAX_SLIDES) {
+      return NextResponse.json({ error: `最多支持 ${MAX_SLIDES} 页` }, { status: 400 });
+    }
+    if (raw_input && raw_input.length > MAX_INPUT_CHARS) {
+      return NextResponse.json({ error: `输入内容不能超过 ${MAX_INPUT_CHARS} 字符` }, { status: 400 });
     }
 
     // 构建 payload
@@ -109,9 +123,6 @@ export async function POST(request: NextRequest) {
     } else {
       return NextResponse.json({ error: '缺少 slides 或 raw_input' }, { status: 400 });
     }
-
-    if (api_base) payload.api_base = api_base;
-    if (api_key) payload.api_key = api_key;
 
     console.log('[ppt-local] 开始生成 PPTX, title:', payload.title, 'use_llm:', use_llm);
 

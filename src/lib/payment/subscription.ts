@@ -59,6 +59,10 @@ async function runWithMissingColumnRetry(
     if (!missing || !(missing in nextPayload)) {
       return { ...result, payload: nextPayload, stripped };
     }
+    if (process.env.NODE_ENV === 'production') {
+      console.error(`[Membership] production schema mismatch, refusing to strip users.${missing}`);
+      return { ...result, payload: nextPayload, stripped };
+    }
     stripped.push(missing);
     delete nextPayload[missing];
   }

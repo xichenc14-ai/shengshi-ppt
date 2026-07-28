@@ -58,7 +58,7 @@ export default function StreamingOutline({ slides, onComplete }: StreamingOutlin
       setStage(newStage);
       setTipIndex(0);
     }
-  }, [visibleSlides, slides.length]);
+  }, [visibleSlides, slides.length, stage]);
 
   // Cycle tips for current stage
   useEffect(() => {

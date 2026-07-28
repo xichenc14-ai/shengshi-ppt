@@ -13,6 +13,8 @@ import {
   sanitizeDownloadFilename,
   sha256Hex,
 } from '@/lib/artifact-storage';
+import { distributedRateLimit } from '@/lib/rate-limit';
+import { getRequestId, sendOperationalAlert } from '@/lib/observability';
 
 export const runtime = 'nodejs';
 export const preferredRegion = 'hkg1';
@@ -187,6 +189,7 @@ async function redirectToArtifact(artifact: Pick<ArtifactRow, 'object_key' | 'fi
  * { generationId, status: "failed", error: { code, message } }
  */
 export async function GET(req: NextRequest) {
+  const requestId = getRequestId(req);
   const { searchParams } = new URL(req.url);
   const generationId = searchParams.get('generationId');
   const filename = searchParams.get('name') || `省心PPT.${FORMAT}`;
@@ -198,6 +201,17 @@ export async function GET(req: NextRequest) {
       status: 'failed',
       error: { code: 'UNAUTHENTICATED', message: '请先登录' },
     }, { status: 401 });
+  }
+  const exportLimit = await distributedRateLimit(`export_pptx:${sessionUserId}`, {
+    windowMs: 60_000,
+    maxRequests: 12,
+  });
+  if (!exportLimit.allowed) {
+    return NextResponse.json({
+      generationId: generationId || '',
+      status: 'failed',
+      error: { code: 'RATE_LIMITED', message: '导出请求过于频繁，请稍后再试' },
+    }, { status: 429 });
   }
 
   if (!generationId) {
@@ -412,12 +426,25 @@ export async function GET(req: NextRequest) {
       }, { status: 403 });
     }
     if (errorName === 'AbortError' || errorName === 'TimeoutError') {
+      await sendOperationalAlert('export.pptx_timeout', {
+        requestId,
+        taskId: generationId || undefined,
+        route: '/api/export-pptx',
+        status: 504,
+      });
       return NextResponse.json({
         generationId,
         status: 'failed',
         error: { code: 'EXPORT_TIMEOUT', message: 'PPTX下载超时，请重试' },
       }, { status: 504 });
     }
+    await sendOperationalAlert('export.pptx_failed', {
+      requestId,
+      taskId: generationId || undefined,
+      route: '/api/export-pptx',
+      status: 500,
+      metadata: { error: errorMessage },
+    });
     return NextResponse.json({
       generationId,
       status: 'failed',

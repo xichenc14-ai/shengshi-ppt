@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createArtifactSignedDownloadUrl } from '@/lib/artifact-storage';
-import { getClientIP, rateLimit } from '@/lib/rate-limit';
+import { distributedRateLimit, getClientIP } from '@/lib/rate-limit';
 import { getSession } from '@/lib/session';
 
 type ArtifactRow = {
@@ -25,7 +25,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   const ip = getClientIP(request);
-  const { allowed } = rateLimit(`artifact_download:${ip}`, { windowMs: 60000, maxRequests: 30 });
+  const { allowed } = await distributedRateLimit(`artifact_download:${ip}`, { windowMs: 60000, maxRequests: 30 });
   if (!allowed) return NextResponse.json({ error: '请求过于频繁' }, { status: 429 });
 
   const sb = getSupabase();

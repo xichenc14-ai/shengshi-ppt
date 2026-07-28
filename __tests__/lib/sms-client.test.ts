@@ -1,161 +1,130 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createHmac } from 'node:crypto';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ORIGINAL_ENV = { ...process.env };
 
-describe('sms-client aliyun_auth verification contract', () => {
-  afterEach(() => {
+function jsonResponse(body: Record<string, unknown>, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function rfc3986(value: string): string {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (character) => (
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  ));
+}
+
+describe('sms-client aliyun_auth native RPC transport', () => {
+  beforeEach(() => {
     vi.resetModules();
+    process.env.SMS_PROVIDER = 'aliyun_auth';
+    process.env.ALIYUN_ACCESS_KEY_ID = 'test-access-key';
+    process.env.ALIYUN_ACCESS_KEY_SECRET = 'test-access-secret';
+    process.env.ALIYUN_SMS_SIGN_NAME = '速通互联验证码';
+    process.env.ALIYUN_SMS_TEMPLATE_CODE = '100001';
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
     process.env = { ...ORIGINAL_ENV };
   });
 
-  it('uses remote verification marker when Aliyun sends a code but does not return it', async () => {
-    const sendSmsVerifyCode = vi.fn(async (_request: { payload: Record<string, unknown> }) => ({
-      body: {
-        Code: 'OK',
-        Success: true,
-        RequestId: 'req_1',
-        Model: {},
-      },
+  it('signs SendSmsVerifyCode with ASCII ordering and sends the application-generated code', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse({
+      Code: 'OK',
+      Success: true,
+      RequestId: 'req_1',
+      Model: {},
     }));
-    const checkSmsVerifyCode = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
 
-    vi.doMock('@alicloud/openapi-client', () => ({
-      Config: class Config {
-        constructor(public readonly options: Record<string, unknown>) {}
-      },
-    }));
-    const dypnsMock = {
-      Client: class Client {
-        sendSmsVerifyCode = sendSmsVerifyCode;
-        checkSmsVerifyCode = checkSmsVerifyCode;
-      },
-      SendSmsVerifyCodeRequest: class SendSmsVerifyCodeRequest {
-        constructor(public readonly payload: Record<string, unknown>) {}
-      },
-      CheckSmsVerifyCodeRequest: class CheckSmsVerifyCodeRequest {
-        constructor(public readonly payload: Record<string, unknown>) {}
-      },
-    };
-    vi.doMock('@alicloud/dypnsapi20170525', () => ({
-      ...dypnsMock,
-      default: dypnsMock,
-    }));
+    const { sendSMS } = await import('@/lib/sms-client');
+    const result = await sendSMS('13800138000', '123456', { outId: 'f3b0cb3e-4f7a-4900-9a14-1fc27505230e' });
 
-    process.env.SMS_PROVIDER = 'aliyun_auth';
-    process.env.ALIYUN_ACCESS_KEY_ID = 'ak';
-    process.env.ALIYUN_ACCESS_KEY_SECRET = 'sk';
-    process.env.ALIYUN_SMS_SIGN_NAME = '速通互联验证码';
-    process.env.ALIYUN_SMS_TEMPLATE_CODE = '100001';
+    expect(result).toMatchObject({
+      success: true,
+      code: '123456',
+      providerRequestId: 'req_1',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    const { REMOTE_SMS_CODE_MARKER, sendSMS } = await import('@/lib/sms-client');
-    const result = await sendSMS('13800138000', '123456');
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(requestUrl.origin).toBe('https://dypnsapi.aliyuncs.com');
+    expect(requestUrl.searchParams.get('Action')).toBe('SendSmsVerifyCode');
+    expect(requestUrl.searchParams.get('PhoneNumber')).toBe('13800138000');
+    expect(requestUrl.searchParams.get('SignName')).toBe('速通互联验证码');
+    expect(requestUrl.searchParams.get('OutId')).toBe('f3b0cb3e-4f7a-4900-9a14-1fc27505230e');
+    expect(JSON.parse(String(requestUrl.searchParams.get('TemplateParam')))).toMatchObject({ code: '123456', min: '5' });
 
-    expect(result.success).toBe(true);
-    expect(result.remoteVerify).toBe(true);
-    expect(result.code).toBe(REMOTE_SMS_CODE_MARKER);
-    expect(sendSmsVerifyCode).toHaveBeenCalledTimes(1);
-    const request = sendSmsVerifyCode.mock.calls[0]?.[0] as { payload: Record<string, unknown> } | undefined;
-    expect(request?.payload).toMatchObject({
-      countryCode: '86',
-      phoneNumber: '13800138000',
-      signName: '速通互联验证码',
-      templateCode: '100001',
+    const signature = requestUrl.searchParams.get('Signature');
+    requestUrl.searchParams.delete('Signature');
+    const parameters = [...requestUrl.searchParams.entries()]
+      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+      .map(([key, value]) => `${rfc3986(key)}=${rfc3986(value)}`)
+      .join('&');
+    const expectedSignature = createHmac('sha1', 'test-access-secret&')
+      .update(`GET&${rfc3986('/')}&${rfc3986(parameters)}`)
+      .digest('base64');
+    expect(signature).toBe(expectedSignature);
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'GET' });
+  });
+
+  it('uses a signed RPC verification call for readiness instead of a HEAD probe', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse({
+      Code: 'isv.ValidateFail',
+      Success: false,
+      Message: 'verification failed',
+    }, 400));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { inspectSMSProviderReadiness } = await import('@/lib/sms-client');
+    const result = await inspectSMSProviderReadiness();
+
+    expect(result).toEqual({ ready: true, detail: 'aliyun_auth_rpc_isv.ValidateFail' });
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(requestUrl.searchParams.get('Action')).toBe('CheckSmsVerifyCode');
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'GET' });
+  });
+
+  it('fails readiness when signed RPC authentication is rejected', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      Code: 'SignatureDoesNotMatch',
+      Success: false,
+      Message: 'signature mismatch',
+    }, 400)));
+
+    const { inspectSMSProviderReadiness } = await import('@/lib/sms-client');
+    await expect(inspectSMSProviderReadiness()).resolves.toEqual({
+      ready: false,
+      detail: 'aliyun_auth_rpc_SignatureDoesNotMatch',
     });
   });
 
-  it('retries transient Aliyun connection timeouts with bounded runtime options', async () => {
-    const sendSmsVerifyCodeWithOptions = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('ConnectTimeout: Connect HTTPS://dypnsapi.aliyuncs.com failed.'))
-      .mockResolvedValueOnce({
-        body: {
-          Code: 'OK',
-          Success: true,
-          RequestId: 'req_retry',
-          Model: { VerifyCode: '654321' },
-        },
-      });
-
-    vi.doMock('@alicloud/openapi-client', () => ({
-      Config: class Config {
-        constructor(public readonly options: Record<string, unknown>) {}
-      },
-    }));
-    const dypnsMock = {
-      Client: class Client {
-        sendSmsVerifyCode = vi.fn();
-        sendSmsVerifyCodeWithOptions = sendSmsVerifyCodeWithOptions;
-        checkSmsVerifyCode = vi.fn();
-      },
-      SendSmsVerifyCodeRequest: class SendSmsVerifyCodeRequest {
-        constructor(public readonly payload: Record<string, unknown>) {}
-      },
-      CheckSmsVerifyCodeRequest: class CheckSmsVerifyCodeRequest {
-        constructor(public readonly payload: Record<string, unknown>) {}
-      },
-    };
-    vi.doMock('@alicloud/dypnsapi20170525', () => ({
-      ...dypnsMock,
-      default: dypnsMock,
-    }));
-
-    process.env.SMS_PROVIDER = 'aliyun_auth';
-    process.env.ALIYUN_ACCESS_KEY_ID = 'ak';
-    process.env.ALIYUN_ACCESS_KEY_SECRET = 'sk';
-    process.env.ALIYUN_SMS_SIGN_NAME = '速通互联验证码';
-    process.env.ALIYUN_SMS_TEMPLATE_CODE = '100001';
+  it('does not automatically retry an ambiguous provider transport timeout', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
     const { sendSMS } = await import('@/lib/sms-client');
     const result = await sendSMS('13800138000', '123456');
 
-    expect(result.success).toBe(true);
-    expect(result.code).toBe('654321');
-    expect(sendSmsVerifyCodeWithOptions).toHaveBeenCalledTimes(2);
-    expect(sendSmsVerifyCodeWithOptions.mock.calls[0]?.[1]).toMatchObject({
-      connectTimeout: 8000,
-      readTimeout: 12000,
-      maxAttempts: 3,
-    });
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('PROVIDER_TRANSPORT_ERROR');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('returns structured Aliyun body errors instead of collapsing them to unknown', async () => {
-    const sendSmsVerifyCode = vi.fn(async () => ({
-      body: {
-        code: 'biz.FREQUENCY',
-        message: 'check frequency failed',
-        success: false,
-        requestId: 'req_2',
-      },
+  it('returns structured provider frequency errors with retryAfter', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse({
+      code: 'biz.FREQUENCY',
+      message: 'check frequency failed',
+      success: false,
+      requestId: 'req_2',
     }));
-
-    vi.doMock('@alicloud/openapi-client', () => ({
-      Config: class Config {
-        constructor(public readonly options: Record<string, unknown>) {}
-      },
-    }));
-    const dypnsMock = {
-      Client: class Client {
-        sendSmsVerifyCode = sendSmsVerifyCode;
-        checkSmsVerifyCode = vi.fn();
-      },
-      SendSmsVerifyCodeRequest: class SendSmsVerifyCodeRequest {
-        constructor(public readonly payload: Record<string, unknown>) {}
-      },
-      CheckSmsVerifyCodeRequest: class CheckSmsVerifyCodeRequest {
-        constructor(public readonly payload: Record<string, unknown>) {}
-      },
-    };
-    vi.doMock('@alicloud/dypnsapi20170525', () => ({
-      ...dypnsMock,
-      default: dypnsMock,
-    }));
-
-    process.env.SMS_PROVIDER = '"aliyun_auth"';
-    process.env.ALIYUN_ACCESS_KEY_ID = 'ak';
-    process.env.ALIYUN_ACCESS_KEY_SECRET = 'sk';
-    process.env.ALIYUN_SMS_SIGN_NAME = '速通互联验证码';
-    process.env.ALIYUN_SMS_TEMPLATE_CODE = '100001';
+    vi.stubGlobal('fetch', fetchMock);
 
     const { sendSMS } = await import('@/lib/sms-client');
     const result = await sendSMS('13800138000', '123456');
@@ -163,51 +132,24 @@ describe('sms-client aliyun_auth verification contract', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('code=biz.FREQUENCY');
     expect(result.error).toContain('message=check frequency failed');
-    expect(result.error).toContain('requestId=req_2');
     expect(result.errorCode).toBe('biz.FREQUENCY');
     expect(result.retryAfter).toBe(60);
   });
 
   it('accepts Aliyun remote verification PASS responses', async () => {
-    const sendSmsVerifyCode = vi.fn();
-    const checkSmsVerifyCode = vi.fn(async () => ({
-      body: {
-        Code: 'OK',
-        Success: true,
-        Model: { VerifyResult: 'PASS' },
-      },
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse({
+      Code: 'OK',
+      Success: true,
+      Model: { VerifyResult: 'PASS' },
     }));
-
-    vi.doMock('@alicloud/openapi-client', () => ({
-      Config: class Config {
-        constructor(public readonly options: Record<string, unknown>) {}
-      },
-    }));
-    const dypnsMock = {
-      Client: class Client {
-        sendSmsVerifyCode = sendSmsVerifyCode;
-        checkSmsVerifyCode = checkSmsVerifyCode;
-      },
-      SendSmsVerifyCodeRequest: class SendSmsVerifyCodeRequest {
-        constructor(public readonly payload: Record<string, unknown>) {}
-      },
-      CheckSmsVerifyCodeRequest: class CheckSmsVerifyCodeRequest {
-        constructor(public readonly payload: Record<string, unknown>) {}
-      },
-    };
-    vi.doMock('@alicloud/dypnsapi20170525', () => ({
-      ...dypnsMock,
-      default: dypnsMock,
-    }));
-
-    process.env.SMS_PROVIDER = 'aliyun_auth';
-    process.env.ALIYUN_ACCESS_KEY_ID = 'ak';
-    process.env.ALIYUN_ACCESS_KEY_SECRET = 'sk';
+    vi.stubGlobal('fetch', fetchMock);
 
     const { verifyRemoteSMSCode } = await import('@/lib/sms-client');
     const result = await verifyRemoteSMSCode('13800138000', '123456');
 
     expect(result).toEqual({ valid: true });
-    expect(checkSmsVerifyCode).toHaveBeenCalledTimes(1);
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(requestUrl.searchParams.get('Action')).toBe('CheckSmsVerifyCode');
+    expect(requestUrl.searchParams.get('VerifyCode')).toBe('123456');
   });
 });

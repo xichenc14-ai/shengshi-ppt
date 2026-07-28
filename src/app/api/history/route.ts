@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getClientIP, rateLimit } from '@/lib/rate-limit';
+import { distributedRateLimit, getClientIP } from '@/lib/rate-limit';
 import { getSession } from '@/lib/session';
 
 function getSupabase() {
@@ -8,12 +8,6 @@ function getSupabase() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
-}
-
-function readBearerUserId(request: NextRequest): string {
-  const auth = request.headers.get('authorization') || '';
-  const match = auth.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() || '';
 }
 
 type SlidePreviewItem = {
@@ -28,28 +22,22 @@ function getErrorMessage(error: unknown): string {
 // GET: 获取用户历史记录
 export async function GET(request: NextRequest) {
   const ip = getClientIP(request);
-  const { allowed } = rateLimit(`history:${ip}`, { windowMs: 60000, maxRequests: 30 });
+  const { allowed } = await distributedRateLimit(`history:${ip}`, { windowMs: 60000, maxRequests: 30 });
   if (!allowed) return NextResponse.json({ error: '请求过于频繁' }, { status: 429 });
 
   const sb = getSupabase();
   if (!sb) return NextResponse.json({ error: '服务未配置' }, { status: 503 });
 
   const session = await getSession();
-  let sessionUserId = session.user?.id || '';
-  if (!session.isLoggedIn || !sessionUserId) {
-    const hintedUserId = readBearerUserId(request);
-    if (hintedUserId) {
-      const { data: user } = await sb.from('users').select('id').eq('id', hintedUserId).single();
-      if (user?.id) sessionUserId = hintedUserId;
-    }
-  }
+  const sessionUserId = session.isLoggedIn ? (session.user?.id || '') : '';
   if (!sessionUserId) {
     return NextResponse.json({ error: '请先登录' }, { status: 401 });
   }
 
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get('userId') || sessionUserId;
-  const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50);
+  const requestedLimit = Number.parseInt(searchParams.get('limit') || '20', 10);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 50) : 20;
 
   if (userId !== sessionUserId) return NextResponse.json({ error: '无权限访问该记录' }, { status: 403 });
 
@@ -77,7 +65,7 @@ export async function GET(request: NextRequest) {
 // POST: 创建/保存历史记录
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request);
-  const { allowed } = rateLimit(`history:${ip}`, { windowMs: 60000, maxRequests: 20 });
+  const { allowed } = await distributedRateLimit(`history:${ip}`, { windowMs: 60000, maxRequests: 20 });
   if (!allowed) return NextResponse.json({ error: '请求过于频繁' }, { status: 429 });
 
   const sb = getSupabase();
@@ -85,14 +73,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const session = await getSession();
-    let sessionUserId = session.user?.id || '';
-    if (!session.isLoggedIn || !sessionUserId) {
-      const hintedUserId = readBearerUserId(request);
-      if (hintedUserId) {
-        const { data: user } = await sb.from('users').select('id').eq('id', hintedUserId).single();
-        if (user?.id) sessionUserId = hintedUserId;
-      }
-    }
+    const sessionUserId = session.isLoggedIn ? (session.user?.id || '') : '';
     if (!sessionUserId) {
       return NextResponse.json({ error: '请先登录' }, { status: 401 });
     }

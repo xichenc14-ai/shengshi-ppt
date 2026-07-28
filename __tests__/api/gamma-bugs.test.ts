@@ -42,6 +42,7 @@ vi.mock('@/lib/gamma-theme-mapping', () => ({
 
 vi.mock('@/lib/rate-limit', () => ({
   rateLimit: vi.fn().mockReturnValue({ allowed: true }),
+  distributedRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
   getRateLimitConfig: vi.fn().mockReturnValue({ windowMs: 60000, max: 10 }),
   getClientIP: vi.fn().mockReturnValue('127.0.0.1'),
   isIPBlocked: vi.fn().mockReturnValue(false),

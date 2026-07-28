@@ -50,6 +50,11 @@ function parseCsv(value) {
     .filter(Boolean);
 }
 
+function recentEnough(value, maxAgeDays) {
+  const timestamp = new Date(String(value || '')).getTime();
+  return Number.isFinite(timestamp) && Date.now() - timestamp <= maxAgeDays * 24 * 60 * 60 * 1000;
+}
+
 function isValidIpToken(token) {
   if (token === 'localhost') return true;
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(token)) {
@@ -99,10 +104,25 @@ const invalidCallbackIpTokens = callbackIpTokens.filter((token) => !isValidIpTok
 const templateUrlProblems = getTemplateUrlProblems();
 const templateUrlsHttps = templateUrlProblems.length === 0;
 const r2Keys = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'];
+const downloadAccelerationEnabled = process.env.DOWNLOAD_ACCELERATION_ENABLED === 'true';
 const downloadAccelerationConfigured = allPresent(r2Keys);
-const downloadAccelerationDisabled = process.env.DOWNLOAD_ACCELERATION_ENABLED === 'false';
+const artifactDeliveryReady = !downloadAccelerationEnabled || downloadAccelerationConfigured;
 const providerReadiness = inspectEnabledPaymentProviders();
 const providersReady = providerReadiness.every((item) => item.ready);
+const cronSecret = process.env.CRON_SECRET || '';
+const cronSecretStrong = cronSecret.length >= 24;
+const alertWebhook = process.env.OPS_ALERT_WEBHOOK_URL || '';
+const alertWebhookReady = /^https:\/\//i.test(alertWebhook);
+const alertTelegramReady = Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
+const alertChannelReady = alertWebhookReady || alertTelegramReady;
+const alertsRequired = process.env.OPS_ALERTS_REQUIRED === 'true';
+const alertGateReady = !alertsRequired || alertChannelReady;
+const backupGateRequired = process.env.BACKUP_READINESS_REQUIRED === 'true';
+const backupVerified = recentEnough(process.env.SUPABASE_BACKUP_VERIFIED_AT, 30);
+const recoveryDrillVerified = recentEnough(process.env.RECOVERY_DRILL_VERIFIED_AT, 90);
+const backupGateReady = !backupGateRequired || (backupVerified && recoveryDrillVerified);
+const commercialBaseUrl = process.env.COMMERCIAL_BASE_URL || '';
+const commercialBaseUrlReady = /^https:\/\//i.test(commercialBaseUrl);
 
 process.stdout.write('\n=== Commercial Environment Readiness ===\n');
 printRow('Core variables', coreReady, coreReady ? '' : `missing: ${missing(coreRequired).join(', ')}`);
@@ -123,11 +143,11 @@ printRow(
   templateUrlsHttps ? '' : `invalid: ${templateUrlProblems.map((p) => p.key).join(', ')}`
 );
 printRow(
-  'R2 download acceleration',
-  true,
-  downloadAccelerationConfigured
-    ? 'configured'
-    : (downloadAccelerationDisabled ? 'disabled' : `optional; missing: ${missing(r2Keys).join(', ')}`)
+  'Download delivery configuration',
+  artifactDeliveryReady,
+  downloadAccelerationEnabled
+    ? (downloadAccelerationConfigured ? 'R2 acceleration configured' : `missing: ${missing(r2Keys).join(', ')}`)
+    : 'direct proxy delivery'
 );
 printRow(
   `Payment providers ready (${parseSupportedPaymentMethods().join(', ')})`,
@@ -141,6 +161,13 @@ printRow(
     ? 'enabled; verify provider refund parameters before production traffic'
     : 'disabled; refunds enter manual_required/refund_pending workflow'
 );
+printRow('CRON_SECRET strength', cronSecretStrong, cronSecretStrong ? '' : `length: ${cronSecret.length}`);
+printRow('Operational alert channel', alertGateReady, alertChannelReady ? (alertWebhookReady ? 'webhook' : 'telegram') : 'optional; structured platform logs remain enabled');
+printRow('Alerting gate', true, alertsRequired ? 'required' : 'optional by product decision');
+printRow('Backup / restore evidence', backupGateReady, backupGateRequired
+  ? `backup=${backupVerified ? 'current' : 'missing'}, restore=${recoveryDrillVerified ? 'current' : 'missing'}`
+  : 'optional for this release');
+printRow('Commercial deployment URL', commercialBaseUrlReady, commercialBaseUrlReady ? commercialBaseUrl : 'must be an https URL');
 
 const ok = coreReady
   && adminIdentityReady
@@ -148,8 +175,13 @@ const ok = coreReady
   && notifyHttps
   && notifySecretStrong
   && callbackIpValid
+  && artifactDeliveryReady
   && templateUrlsHttps
-  && providersReady;
+  && providersReady
+  && cronSecretStrong
+  && alertGateReady
+  && backupGateReady
+  && commercialBaseUrlReady;
 process.stdout.write(`\nOverall: ${ok ? 'READY' : 'NOT_READY'}\n`);
 
 process.exit(ok ? 0 : 1);

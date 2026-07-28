@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { selectBestKey } from '@/lib/gamma-key-pool';
 import { getGammaAdditionalExportUnsupportedMessage } from '@/lib/gamma-export';
+import { getSession } from '@/lib/session';
+import { distributedRateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 
@@ -112,6 +114,18 @@ function getMimeType(format: PreviewFormat): string {
 }
 
 export async function GET(request: NextRequest) {
+  const session = await getSession();
+  if (!session.isLoggedIn || !session.user?.id) {
+    return NextResponse.json({ error: '请先登录' }, { status: 401 });
+  }
+  const previewLimit = await distributedRateLimit(`preview_file:${session.user.id}`, {
+    windowMs: 60_000,
+    maxRequests: 20,
+  });
+  if (!previewLimit.allowed) {
+    return NextResponse.json({ error: '预览请求过于频繁，请稍后再试' }, { status: 429 });
+  }
+
   const { searchParams } = new URL(request.url);
   const generationId = searchParams.get('generationId') || searchParams.get('id');
   const format = parsePreviewFormat(searchParams.get('format'));

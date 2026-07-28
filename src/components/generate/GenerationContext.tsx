@@ -307,7 +307,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
         method: 'POST', headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ inputText, themeId: directTheme, numCards: pages, imageSource: directImgMode, tone: directTone, textMode: directTextMode, exportAs: 'pptx' }),
+        body: JSON.stringify({ clientRequestId: crypto.randomUUID(), inputText, themeId: directTheme, numCards: pages, imageSource: directImgMode, tone: directTone, textMode: directTextMode, exportAs: 'pptx' }),
       });
       if (!gRes.ok) { const d = await gRes.json(); throw new Error(d.error || 'PPT 生成失败'); }
       const gd = await gRes.json();
@@ -419,7 +419,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       const finalTone = directTone || outlineResult.tone || 'professional';
       // P0 Fix: 删除 slides 字段，Gamma API 不接受此参数，会导致 400 错误
       // P1 Fix: 当 genMode='condense' 时，Gamma 只支持 preserve 模式（已硬编码）
-      const gammaRequestBody = { inputText: md, textMode: 'preserve', format: 'presentation', numCards: editedSlides.length, exportAs: 'pptx', themeId: finalThemeId, tone: finalTone, imageMode: directImgMode, visualMetaphor };
+      const gammaRequestBody = { clientRequestId: crypto.randomUUID(), inputText: md, textMode: 'preserve', format: 'presentation', numCards: editedSlides.length, exportAs: 'pptx', themeId: finalThemeId, tone: finalTone, imageMode: directImgMode, visualMetaphor };
 
       const gRes = await fetch('/api/gamma', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },

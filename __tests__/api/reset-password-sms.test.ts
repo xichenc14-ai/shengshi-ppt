@@ -11,7 +11,7 @@ vi.mock('@/lib/sms-client', () => {
     REMOTE_SMS_CODE_MARKER: marker,
     sendSMS: vi.fn(),
     getStorableSMSCode: vi.fn((result: { code?: string; remoteVerify?: boolean }, fallbackCode: string) => (
-      result.remoteVerify === true ? marker : (result.code || fallbackCode)
+      result.remoteVerify === true ? marker : `__LOCAL_SMS_CODE_HASH__:mock:${result.code || fallbackCode}`
     )),
     verifyStoredSMSCode: vi.fn(),
   };
@@ -115,13 +115,12 @@ describe('/api/reset-password SMS verification contract', () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
   });
 
-  it('stores the remote verification marker after Aliyun sends a provider-generated reset code', async () => {
+  it('stores a local reset challenge before sending the fixed code to Aliyun', async () => {
     const supabase = createSupabaseMock();
     (createClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(supabase.client);
     (sendSMS as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       success: true,
-      code: REMOTE_SMS_CODE_MARKER,
-      remoteVerify: true,
+      code: '123456',
     });
 
     const res = await POST(mockPost({
@@ -132,10 +131,12 @@ describe('/api/reset-password SMS verification contract', () => {
 
     expect(res.status).toBe(200);
     expect(data.success).toBe(true);
-    expect(sendSMS).toHaveBeenCalledWith('13800138001', expect.stringMatching(/^\d{6}$/));
+    expect(sendSMS).toHaveBeenCalledWith('13800138001', expect.stringMatching(/^\d{6}$/), {
+      outId: expect.any(String),
+    });
     expect(supabase.insertedCodes[0]).toMatchObject({
       phone: '13800138001',
-      code: REMOTE_SMS_CODE_MARKER,
+      code: expect.stringMatching(/^__LOCAL_SMS_CODE_HASH__:/),
       type: 'reset_password',
     });
   });

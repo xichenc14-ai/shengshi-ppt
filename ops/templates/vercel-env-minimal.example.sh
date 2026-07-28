@@ -15,7 +15,7 @@ PAYMENT_NOTIFY_URL="https://your-domain.com/api/payment"
 PAYMENT_NOTIFY_SECRET="replace_with_long_random_secret"
 ALLOWED_CALLBACK_IPS="1.2.3.4,5.6.7."
 
-# 可选：Cloudflare R2 PPTX 下载加速
+# 可选：Cloudflare R2 PPTX 下载加速（保持既有业务配置）。
 DOWNLOAD_ACCELERATION_ENABLED="true"
 R2_ACCOUNT_ID=""
 R2_ACCESS_KEY_ID=""

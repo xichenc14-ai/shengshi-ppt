@@ -10,9 +10,36 @@ import {
   validateAttachmentMeta,
   type AttachmentMode,
 } from '@/lib/attachment-policy';
-import { getClientIP, rateLimit } from '@/lib/rate-limit';
+import { distributedRateLimit, getClientIP } from '@/lib/rate-limit';
+import { logOperationalEvent } from '@/lib/observability';
+import {
+  cleanupExpiredTemporaryAttachments,
+  registerTemporaryAttachment,
+  TEMPORARY_ATTACHMENT_BUCKET,
+} from '@/lib/temporary-attachments';
 
-const BUCKET = 'temporary-attachments';
+const OPPORTUNISTIC_CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
+let lastOpportunisticCleanupAt = 0;
+
+async function maybeCleanupExpiredAttachments() {
+  const now = Date.now();
+  if (now - lastOpportunisticCleanupAt < OPPORTUNISTIC_CLEANUP_INTERVAL_MS) return;
+  lastOpportunisticCleanupAt = now;
+  try {
+    const deleted = await cleanupExpiredTemporaryAttachments();
+    if (deleted > 0) {
+      logOperationalEvent('info', 'temporary_attachment_cleanup.opportunistic', {
+        route: '/api/attachments/upload-token',
+        metadata: { deleted },
+      });
+    }
+  } catch (error) {
+    logOperationalEvent('warn', 'temporary_attachment_cleanup.opportunistic_failed', {
+      route: '/api/attachments/upload-token',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
+  }
+}
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -22,9 +49,9 @@ function getSupabase() {
 }
 
 async function ensureBucket(sb: NonNullable<ReturnType<typeof getSupabase>>) {
-  const { data } = await sb.storage.getBucket(BUCKET);
+  const { data } = await sb.storage.getBucket(TEMPORARY_ATTACHMENT_BUCKET);
   if (data) return;
-  const { error } = await sb.storage.createBucket(BUCKET, {
+  const { error } = await sb.storage.createBucket(TEMPORARY_ATTACHMENT_BUCKET, {
     public: false,
     fileSizeLimit: '10MB',
     allowedMimeTypes: [
@@ -42,7 +69,7 @@ async function ensureBucket(sb: NonNullable<ReturnType<typeof getSupabase>>) {
 
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request);
-  const { allowed } = rateLimit(`attachment_token:${ip}`, { windowMs: 60_000, maxRequests: 20 });
+  const { allowed } = await distributedRateLimit(`attachment_token:${ip}`, { windowMs: 60_000, maxRequests: 20 });
   if (!allowed) return NextResponse.json({ error: '上传请求过于频繁' }, { status: 429 });
 
   const session = await getSession();
@@ -51,6 +78,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    await maybeCleanupExpiredAttachments();
     const body = await request.json();
     const mode: AttachmentMode = body?.mode === 'smart' ? 'smart' : 'direct';
     if (mode === 'smart' && !isPaidPlan(session.user.plan_type)) {
@@ -80,12 +108,13 @@ export async function POST(request: NextRequest) {
     const extension = getFileExtension(file.name);
     const path = `${session.user.id}/${Date.now()}-${randomUUID()}${extension}`;
     const { data, error: signError } = await sb.storage
-      .from(BUCKET)
+      .from(TEMPORARY_ATTACHMENT_BUCKET)
       .createSignedUploadUrl(path, { upsert: false });
     if (signError || !data) throw signError || new Error('无法创建上传令牌');
+    await registerTemporaryAttachment(session.user.id, path, data.token);
 
     return NextResponse.json({
-      bucket: BUCKET,
+      bucket: TEMPORARY_ATTACHMENT_BUCKET,
       path,
       token: data.token,
       signedUrl: data.signedUrl,

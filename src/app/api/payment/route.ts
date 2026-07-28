@@ -4,12 +4,13 @@ import { isCallbackIPAllowed } from '@/lib/payment';
 import { verifyWechatPayCallback } from '@/lib/payment/wechat-verify';
 import { verifyAlipayCallback, normalizeAlipayPublicKey } from '@/lib/payment/alipay-verify';
 import { createProviderOrderIntent } from '@/lib/payment/provider-adapter';
-import { getClientIP, rateLimit } from '@/lib/rate-limit';
+import { distributedRateLimit, getClientIP } from '@/lib/rate-limit';
 import { isPaymentFeatureEnabledServer } from '@/lib/payment-feature';
 import { canCreatePlanOrder, fulfillPaidOrder, normalizePlanId, PLAN_PRICES, reconcileUserEntitlements } from '@/lib/payment/subscription';
 import { insertOrderCompat, updateOrderCompat } from '@/lib/payment/order-storage';
 import { isXunhuPaidResult, queryXunhuOrder, xunhuStatusToOrderStatus } from '@/lib/payment/xunhu';
 import { getSession } from '@/lib/session';
+import { getRequestId, logOperationalEvent, sendOperationalAlert } from '@/lib/observability';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -91,6 +92,7 @@ async function readPaymentUser(sb: NonNullable<ReturnType<typeof getSupabase>>, 
 
 // POST: 创建订单 / 支付回调
 export async function POST(req: NextRequest) {
+  const requestId = getRequestId(req);
   const sb = getSupabase();
   if (!sb) return NextResponse.json({ error: '服务未配置' }, { status: 503 });
 
@@ -111,7 +113,7 @@ export async function POST(req: NextRequest) {
       const userId = auth.userId;
       const planId = normalizePlanId(String(body.planId || ''));
       const purchaseMode = String(body.purchaseMode || 'upgrade') === 'renew' ? 'renew' : 'upgrade';
-      const createOrderLimit = rateLimit(`payment:create_order:${clientIP}:${userId || 'anon'}`, { windowMs: 60 * 1000, maxRequests: 6 });
+      const createOrderLimit = await distributedRateLimit(`payment:create_order:${clientIP}:${userId || 'anon'}`, { windowMs: 60 * 1000, maxRequests: 6 });
       if (!createOrderLimit.allowed) {
         return NextResponse.json(
           { error: '请求过于频繁，请稍后再试' },
@@ -215,6 +217,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '创建订单失败' }, { status: 500 });
       }
       console.log(`[Payment][CreateOrder] created order=${orderNo} ip=${clientIP} user=${userId || 'anon'} plan=${planId} billing=${billing} mode=${purchaseMode}`);
+      logOperationalEvent('info', 'payment.order_created', {
+        requestId, userId, orderNo, route: '/api/payment', status: 200,
+        metadata: { planId, billing, purchaseMode, payMethod },
+      });
 
       const notifyUrl = process.env.PAYMENT_NOTIFY_URL || '';
       if (process.env.NODE_ENV === 'production' && !/^https:\/\//i.test(notifyUrl)) {
@@ -271,7 +277,7 @@ export async function POST(req: NextRequest) {
     // ===== 支付回调 webhook（已实现） =====
     if (action === 'callback') {
       const callbackOrderNo = typeof body?.order_no === 'string' ? body.order_no : 'unknown';
-      const callbackLimit = rateLimit(`payment:callback:${clientIP}:${callbackOrderNo}`, { windowMs: 60 * 1000, maxRequests: 30 });
+      const callbackLimit = await distributedRateLimit(`payment:callback:${clientIP}:${callbackOrderNo}`, { windowMs: 60 * 1000, maxRequests: 30 });
       if (!callbackLimit.allowed) {
         return NextResponse.json(
           { error: '回调请求过于频繁' },
@@ -421,13 +427,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '未知操作' }, { status: 400 });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : '操作失败';
-    console.error('[Payment] 异常:', msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    await sendOperationalAlert('payment.route_failed', {
+      requestId, route: '/api/payment', status: 500, metadata: { error: msg },
+    });
+    return NextResponse.json({ error: msg, requestId }, { status: 500 });
   }
 }
 
 // GET: 查询订单状态
 export async function GET(req: NextRequest) {
+  const requestId = getRequestId(req);
   const sb = getSupabase();
   if (!sb) return NextResponse.json({ error: '服务未配置' }, { status: 503 });
 
@@ -535,6 +544,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ order });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : '查询失败';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    await sendOperationalAlert('payment.route_failed', {
+      requestId, route: '/api/payment', status: 500, metadata: { error: msg },
+    });
+    return NextResponse.json({ error: msg, requestId }, { status: 500 });
   }
 }

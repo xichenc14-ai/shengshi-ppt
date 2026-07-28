@@ -22,7 +22,9 @@ export interface Database {
         Row: {
           id: string;
           phone: string | null;
+          username: string | null;
           nickname: string | null;
+          avatar: string | null;
           credits: number | null;
           plan_type: string | null;
           plan_started_at: string | null;
@@ -38,7 +40,9 @@ export interface Database {
         Insert: {
           id?: string;
           phone?: string | null;
+          username?: string | null;
           nickname?: string | null;
+          avatar?: string | null;
           credits?: number | null;
           plan_type?: string | null;
           plan_started_at?: string | null;
@@ -53,7 +57,9 @@ export interface Database {
         Update: {
           id?: string;
           phone?: string | null;
+          username?: string | null;
           nickname?: string | null;
+          avatar?: string | null;
           credits?: number | null;
           plan_type?: string | null;
           plan_started_at?: string | null;
@@ -143,6 +149,7 @@ export interface Database {
           id: string;
           phone: string;
           code: string;
+          type: string;
           expires_at: string;
           verified: boolean;
           created_at: string;
@@ -151,6 +158,7 @@ export interface Database {
           id?: string;
           phone: string;
           code: string;
+          type?: string;
           expires_at: string;
           verified?: boolean;
         };
@@ -158,8 +166,31 @@ export interface Database {
           id?: string;
           phone?: string;
           code?: string;
+          type?: string;
           expires_at?: string;
           verified?: boolean;
+        };
+      };
+      temporary_attachment_leases: {
+        Row: {
+          id: string;
+          user_id: string;
+          storage_path: string;
+          expires_at: string;
+          delete_after: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          storage_path: string;
+          expires_at: string;
+          delete_after: string;
+          created_at?: string;
+        };
+        Update: {
+          expires_at?: string;
+          delete_after?: string;
         };
       };
       ppt_feedback: {
@@ -212,6 +243,24 @@ export interface Database {
         Returns: {
           new_balance: number;
         };
+      };
+      consume_rate_limit: {
+        Args: {
+          p_key_hash: string;
+          p_window_seconds: number;
+          p_limit: number;
+        };
+        Returns: {
+          allowed: boolean;
+          remaining: number;
+          reset_at: string;
+        }[];
+      };
+      release_rate_limit: {
+        Args: {
+          p_key_hash: string;
+        };
+        Returns: boolean;
       };
     };
     Views: Record<string, never>;

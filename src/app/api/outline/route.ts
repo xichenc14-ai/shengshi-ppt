@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
+import { distributedRateLimit, getRateLimitConfig } from '@/lib/rate-limit';
 import { callWithFallback } from '@/lib/ai/fallback-orchestrator';
 import { getGammaThemeId, isValidGammaTheme } from '@/lib/gamma-theme-mapping';
 import { normalizeUserInput, parseMarkdownOutline } from '@/lib/ppt-param-adapter';
 import { resolveSmartThemeId } from '@/lib/smart-theme-matcher';
 import { DEFAULT_THEME_ID } from '@/lib/theme-database';
 import type { OutlineSlide, OutlineMeta, OutlineResponse } from '@/lib/types/outline-response';
-import { LIMITS } from '@/lib/input-validation';
 import { getSession } from '@/lib/session';
 import {
   getAttachmentPolicy,
@@ -45,7 +44,6 @@ const SCENE_THEME_MAP: Record<string, { themeId: string; tone: string; imageMode
   '通用': { themeId: DEFAULT_THEME_ID, tone: 'professional', imageMode: 'theme-img' },
 };
 
-const MAX_OUTLINE_INPUT_CHARS = LIMITS.MAX_TEXT_LENGTH;
 const AUTO_LONG_DOC_CONDENSE_THRESHOLD = 18000;
 const SMART_PROMPT_INPUT_CHARS = 28000;
 
@@ -762,7 +760,7 @@ export async function POST(request: NextRequest) {
 
     // Rate limiting
     const ip = request.headers.get('x-forwarded-for') || 'unknown';
-    const { allowed } = rateLimit(`outline:${ip}`, getRateLimitConfig('/api/outline'));
+    const { allowed } = await distributedRateLimit(`outline:${ip}`, getRateLimitConfig('/api/outline'));
     if (!allowed) {
       return NextResponse.json({ error: '请求过于频繁，请稍后再试' }, { status: 429 });
     }

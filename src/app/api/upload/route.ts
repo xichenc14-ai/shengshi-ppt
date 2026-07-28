@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getClientIP, rateLimit } from '@/lib/rate-limit';
+import { distributedRateLimit, getClientIP } from '@/lib/rate-limit';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_TYPES = [
@@ -57,7 +57,7 @@ async function extractText(file: File): Promise<string> {
 
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request);
-  const { allowed } = rateLimit(`upload:${ip}`, { windowMs: 60000, maxRequests: 10 });
+  const { allowed } = await distributedRateLimit(`upload:${ip}`, { windowMs: 60000, maxRequests: 10 });
   if (!allowed) return NextResponse.json({ error: '上传过于频繁，请稍后再试' }, { status: 429 });
 
   try {

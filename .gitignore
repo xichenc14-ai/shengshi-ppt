@@ -8,7 +8,12 @@ backups/theme-redo-*/
 .env.production.local
 .env.development.local
 .env.test
+.env.recovery.local
 *.tsbuildinfo
 .vercel
 __tests__/coverage/
+coverage/
+tmp/
+artifacts/restore-drills/
+artifacts/storage-cleanup/
 虎皮椒id和密钥.md

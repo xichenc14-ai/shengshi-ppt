@@ -5,6 +5,17 @@ vi.mock('@/lib/gamma-key-pool', () => ({
   selectBestKey: vi.fn(() => ({ key: 'test-key', label: 'key1' })),
 }));
 
+vi.mock('@/lib/session', () => ({
+  getSession: vi.fn().mockResolvedValue({
+    isLoggedIn: true,
+    user: { id: 'user-1' },
+  }),
+}));
+
+vi.mock('@/lib/rate-limit', () => ({
+  distributedRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+}));
+
 import { GET } from '@/app/api/preview/file/route';
 
 function mockRequest(url: string) {

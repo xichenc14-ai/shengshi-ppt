@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { understandImage } from '@/lib/image-understand';
-import { rateLimit } from '@/lib/rate-limit';
+import { distributedRateLimit, getClientIP } from '@/lib/rate-limit';
 import { createClient } from '@supabase/supabase-js';
 import { getSession } from '@/lib/session';
 import { getAttachmentPolicy, isPaidPlan, type AttachmentMode } from '@/lib/attachment-policy';
@@ -17,8 +17,8 @@ const MAX_DAILY_UPLOADS = 10; // 单用户每日上传限制
 
 export async function POST(request: NextRequest) {
   // Rate limit
-  const ip = request.headers.get('x-forwarded-for') || 'unknown';
-  const { allowed } = rateLimit(`understand:${ip}`, { windowMs: 60000, maxRequests: 10 });
+  const ip = getClientIP(request);
+  const { allowed } = await distributedRateLimit(`understand:${ip}`, { windowMs: 60000, maxRequests: 10 });
   if (!allowed) {
     return NextResponse.json({ error: '请求过于频繁，请稍后再试' }, { status: 429 });
   }
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     if (policy.maxImageBytes <= 0) {
       return NextResponse.json({ error: '图片附件为会员能力' }, { status: 403 });
     }
-    const dailyLimit = rateLimit(`understand_daily:${session.user.id}`, {
+    const dailyLimit = await distributedRateLimit(`understand_daily:${session.user.id}`, {
       windowMs: 24 * 60 * 60 * 1000,
       maxRequests: MAX_DAILY_UPLOADS,
     });

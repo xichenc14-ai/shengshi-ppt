@@ -2,6 +2,17 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "regions": ["hkg1"],
+  "functions": {
+    "src/app/api/user/route.ts": { "regions": ["hnd1"] },
+    "src/app/api/reset-password/route.ts": { "regions": ["hnd1"] },
+    "src/app/api/health/readiness/route.ts": { "regions": ["hnd1"] }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/operational-check",
+      "schedule": "0 3 * * *"
+    }
+  ],
   "redirects": [
     {
       "source": "/:path*",

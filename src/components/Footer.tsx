@@ -26,6 +26,7 @@ export default function Footer() {
               <Link href="/privacy" className="text-sm text-slate-500 hover:text-indigo-600">隐私政策</Link>
               <Link href="/terms" className="text-sm text-slate-500 hover:text-indigo-600">用户协议</Link>
               <Link href="/service-terms" className="text-sm text-slate-500 hover:text-indigo-600">服务条款</Link>
+              <Link href="/support" className="text-sm text-slate-500 hover:text-indigo-600">售后支持</Link>
             </div>
           </div>
         </div>

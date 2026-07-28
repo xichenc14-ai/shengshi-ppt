@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getClientIP, rateLimit } from '@/lib/rate-limit';
+import { distributedRateLimit, getClientIP } from '@/lib/rate-limit';
 import { getSession } from '@/lib/session';
 
 type MutableUserCounters = {
@@ -37,7 +37,7 @@ async function requireOwnedUser(requestedUserId: string | null | undefined) {
 // GET: 检查下载能力（当前下载不再单独计费）
 export async function GET(request: NextRequest) {
   const ip = getClientIP(request);
-  const { allowed } = rateLimit(`download:${ip}`, { windowMs: 60000, maxRequests: 30 });
+  const { allowed } = await distributedRateLimit(`download:${ip}`, { windowMs: 60000, maxRequests: 30 });
   if (!allowed) return NextResponse.json({ error: '请求过于频繁' }, { status: 429 });
 
   const sb = getSupabase();
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
 // POST: 更新下载计数（实际下载时调用）
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request);
-  const { allowed } = rateLimit(`download_post:${ip}`, { windowMs: 60000, maxRequests: 20 });
+  const { allowed } = await distributedRateLimit(`download_post:${ip}`, { windowMs: 60000, maxRequests: 20 });
   if (!allowed) return NextResponse.json({ error: '请求过于频繁' }, { status: 429 });
 
   const sb = getSupabase();

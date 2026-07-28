@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSession, type SessionData } from '@/lib/session';
 import { verifyAuthProof } from '@/lib/auth-proof';
-import { getClientIP, rateLimit } from '@/lib/rate-limit';
+import { distributedRateLimit, getClientIP } from '@/lib/rate-limit';
 import { isAdminIdentity } from '@/lib/admin-auth';
 import { reconcileUserEntitlements } from '@/lib/payment/subscription';
 
@@ -165,7 +165,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const ip = getClientIP(req);
-    const { allowed } = rateLimit(`api_session:${ip}`, { windowMs: 60 * 1000, maxRequests: 20 });
+    const { allowed } = await distributedRateLimit(`api_session:${ip}`, { windowMs: 60 * 1000, maxRequests: 20 });
     if (!allowed) {
       return NextResponse.json({ error: '请求过于频繁' }, { status: 429 });
     }

@@ -31,6 +31,10 @@ async function runWithMissingColumnRetry(
     if (!missing || !(missing in nextPayload)) {
       return { ...result, payload: nextPayload, stripped };
     }
+    if (process.env.NODE_ENV === 'production') {
+      console.error(`[Payment] production schema mismatch, refusing to strip orders.${missing}`);
+      return { ...result, payload: nextPayload, stripped };
+    }
     stripped.push(missing);
     delete nextPayload[missing];
   }

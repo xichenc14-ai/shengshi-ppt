@@ -1,5 +1,18 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
+
+const { storageDownload, storageRemove } = vi.hoisted(() => ({
+  storageDownload: vi.fn(),
+  storageRemove: vi.fn(),
+}));
+
+vi.mock('@supabase/supabase-js', () => ({
+  createClient: vi.fn(() => ({
+    storage: {
+      from: vi.fn(() => ({ download: storageDownload, remove: storageRemove })),
+    },
+  })),
+}));
 
 vi.mock('@/lib/session', () => ({
   getSession: vi.fn().mockResolvedValue({
@@ -26,6 +39,16 @@ function asNextRequest(request: Request): NextRequest {
 }
 
 describe('POST /api/parse-file', () => {
+  beforeEach(() => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://database.example.com');
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'service-role-test-key');
+    storageDownload.mockReset();
+    storageRemove.mockReset();
+    storageRemove.mockResolvedValue({ error: null });
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
   it('should return 400 when no file is provided', async () => {
     const formData = new FormData();
     const req = new Request('http://localhost/api/parse-file', {
@@ -106,5 +129,43 @@ describe('POST /api/parse-file', () => {
     expect(data.fileName).toBe('report.txt');
     expect(data.fileSize).toBeGreaterThan(0);
     expect(data.charCount).toBe(content.length);
+  });
+
+  it('deletes a temporary uploaded object immediately after reading it', async () => {
+    storageDownload.mockResolvedValue({ data: new Blob(['临时附件内容']), error: null });
+    const req = new Request('http://localhost/api/parse-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName: 'temporary.txt',
+        fileSize: 18,
+        storagePath: 'test-user/temporary.txt',
+        mode: 'direct',
+      }),
+    });
+    const res = await POST(asNextRequest(req));
+    expect(res.status).toBe(200);
+    expect(storageRemove).toHaveBeenCalledWith(['test-user/temporary.txt']);
+  });
+
+  it('still attempts deletion when reading the downloaded object fails', async () => {
+    storageDownload.mockResolvedValue({
+      data: { arrayBuffer: vi.fn().mockRejectedValue(new Error('read failed')) },
+      error: null,
+    });
+    const req = new Request('http://localhost/api/parse-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName: 'temporary.txt',
+        fileSize: 18,
+        storagePath: 'test-user/temporary.txt',
+        mode: 'direct',
+      }),
+    });
+    const res = await POST(asNextRequest(req));
+    expect(res.status).toBe(200);
+    expect((await res.json()).failed).toBe(true);
+    expect(storageRemove).toHaveBeenCalledWith(['test-user/temporary.txt']);
   });
 });

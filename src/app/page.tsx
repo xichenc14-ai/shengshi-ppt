@@ -1444,6 +1444,7 @@ export default function Home() {
       }
       // 🚨 V10.4: 传 originalTextMode 让 gamma/route.ts 选择对应渲染指令
       const gammaRequestBody: any = {
+        clientRequestId: crypto.randomUUID(),
         inputText: md,
         textMode: tm,
         auto: mode === 'smart',
@@ -1551,7 +1552,7 @@ export default function Home() {
       setPhase('result');
       clearPersistedResumeState();
 
-      // 🆕 保存生成历史
+      // 保存生成历史（保持现有业务流程不变）。
       try {
         await fetch('/api/history', {
           method: 'POST',
@@ -1561,6 +1562,7 @@ export default function Home() {
           body: JSON.stringify({ action: 'save', title: outlineResult.title, slides: slidesForRender, themeId: finalThemeId, downloadUrl: pptxDownloadPath, pageCount: renderPageCount, imageMode: imgSrc }),
         });
       } catch (e) { console.warn('[History] 保存失败:', e); }
+
     } catch (e: any) {
       if (!isLikelyNavigatingAway()) {
         setError(e.message);
@@ -1575,6 +1577,7 @@ export default function Home() {
     editedSlides,
     pageCount,
     result?.generationId,
+    result?.renderSignature,
     files,
     mode,
     smartGammaPayload,
@@ -1587,8 +1590,8 @@ export default function Home() {
     directTone,
     directTextMode,
     openPayment,
-    updateCredits,
     estimateGenerationCredits,
+    holdGenerationCredits,
     settleGenerationCredits,
     openInsufficientCreditsPayment,
     hasUserEditedSlides,

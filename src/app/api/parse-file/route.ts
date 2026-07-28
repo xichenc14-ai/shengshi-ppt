@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getClientIP, rateLimit } from '@/lib/rate-limit';
+import { distributedRateLimit, getClientIP } from '@/lib/rate-limit';
+import { getRequestId, logOperationalEvent } from '@/lib/observability';
+import { releaseTemporaryAttachment, TEMPORARY_ATTACHMENT_BUCKET } from '@/lib/temporary-attachments';
 import { getSession } from '@/lib/session';
 import {
   getAttachmentPolicy,
@@ -15,7 +17,6 @@ export const runtime = 'nodejs';
 type PdfParseResult = { text?: string };
 type PdfTextItem = { str?: string; transform?: number[] };
 type JsZipLike = { loadAsync: (input: Buffer) => Promise<{ files: Record<string, unknown>; file: (path: string) => { async: (format: 'text') => Promise<string> } | null }> };
-const ATTACHMENT_BUCKET = 'temporary-attachments';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -136,8 +137,9 @@ async function parsePdf(buffer: Buffer): Promise<string> {
 }
 
 export async function POST(request: NextRequest) {
+  const requestId = getRequestId(request);
   const ip = getClientIP(request);
-  const { allowed } = rateLimit(`parse:${ip}`, { windowMs: 60000, maxRequests: 20 });
+  const { allowed } = await distributedRateLimit(`parse:${ip}`, { windowMs: 60000, maxRequests: 20 });
   if (!allowed) return NextResponse.json({ error: '请求过于频繁' }, { status: 429 });
 
   const session = await getSession();
@@ -166,12 +168,34 @@ export async function POST(request: NextRequest) {
       }
       const sb = getSupabase();
       if (!sb) return NextResponse.json({ error: '附件存储服务未配置' }, { status: 503 });
-      const { data, error } = await sb.storage.from(ATTACHMENT_BUCKET).download(storagePath);
+      const { data, error } = await sb.storage.from(TEMPORARY_ATTACHMENT_BUCKET).download(storagePath);
       if (error || !data) return NextResponse.json({ error: '附件读取失败或已过期' }, { status: 400 });
-      buffer = Buffer.from(await data.arrayBuffer());
-      fileSize = buffer.length;
-      await sb.storage.from(ATTACHMENT_BUCKET).remove([storagePath]);
-      storagePath = '';
+      try {
+        buffer = Buffer.from(await data.arrayBuffer());
+        fileSize = buffer.length;
+      } finally {
+        const { error: removeError } = await sb.storage.from(TEMPORARY_ATTACHMENT_BUCKET).remove([storagePath]);
+        if (removeError) {
+          logOperationalEvent('warn', 'temporary_attachment.immediate_delete_failed', {
+            requestId,
+            userId: session.user.id,
+            route: '/api/parse-file',
+            metadata: { error: removeError.message },
+          });
+        } else {
+          try {
+            await releaseTemporaryAttachment(storagePath);
+          } catch (leaseError) {
+            logOperationalEvent('warn', 'temporary_attachment.lease_release_failed', {
+              requestId,
+              userId: session.user.id,
+              route: '/api/parse-file',
+              metadata: { error: leaseError instanceof Error ? leaseError.message : String(leaseError) },
+            });
+          }
+        }
+        storagePath = '';
+      }
     } else {
       const formData = await request.formData();
       const file = formData.get('file') as File | null;
