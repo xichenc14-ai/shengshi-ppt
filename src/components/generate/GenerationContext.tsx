@@ -22,7 +22,7 @@ export type SlideItem = {
   imageIntent?: string;
 };
 type OutlineResultPayload = { title: string; slides: SlideItem[]; themeId?: string; tone?: string; imageMode?: string };
-type GenerationResultPayload = { title: string; slides: SlideItem[]; dlUrl: string; actualPages?: number };
+type GenerationResultPayload = { title: string; slides: SlideItem[]; dlUrl: string; generationId?: string; gammaId?: string; actualPages?: number };
 type SmartGammaPayloadState = Record<string, unknown> | null;
 
 interface GenerationState {
@@ -122,7 +122,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   
-  const [result, setResult] = useState<{ title: string; slides: SlideItem[]; dlUrl: string; actualPages?: number } | null>(null);
+  const [result, setResult] = useState<GenerationResultPayload | null>(null);
 
   const collectText = useCallback(() => {
     const p: string[] = [];
@@ -307,7 +307,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
         method: 'POST', headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ clientRequestId: crypto.randomUUID(), inputText, themeId: directTheme, numCards: pages, imageSource: directImgMode, tone: directTone, textMode: directTextMode, exportAs: 'pptx' }),
+        body: JSON.stringify({ clientRequestId: crypto.randomUUID(), inputText, themeId: directTheme, numCards: pages, imageSource: directImgMode, tone: directTone, textMode: directTextMode }),
       });
       if (!gRes.ok) { const d = await gRes.json(); throw new Error(d.error || 'PPT 生成失败'); }
       const gd = await gRes.json();
@@ -325,7 +325,6 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
           const elapsed = Math.floor((Date.now() - startTime) / 1000);
           setStepText(`AI 渲染中... ${elapsed}秒`);
         }
-        if (!finalExportUrl) throw new Error('生成超时（3分钟），PPT内容较复杂，请稍后重试');
         await settleGenerationCredits({
           generationId: gd.generationId,
           numPages: effectivePages,
@@ -334,7 +333,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
         });
         await new Promise(r => setTimeout(r, 500));
         const topicText = inputText.split('\n')[0].replace(/^#\s*/, '').trim();
-        setResult({ title: topicText || 'PPT', slides: [], dlUrl: finalExportUrl, actualPages: pages });
+        setResult({ title: topicText || 'PPT', slides: [], dlUrl: finalExportUrl, generationId: gd.generationId, actualPages: pages });
         setGenProgress(100); setPhase('result');
       }
     } catch (e: unknown) {
@@ -419,7 +418,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       const finalTone = directTone || outlineResult.tone || 'professional';
       // P0 Fix: 删除 slides 字段，Gamma API 不接受此参数，会导致 400 错误
       // P1 Fix: 当 genMode='condense' 时，Gamma 只支持 preserve 模式（已硬编码）
-      const gammaRequestBody = { clientRequestId: crypto.randomUUID(), inputText: md, textMode: 'preserve', format: 'presentation', numCards: editedSlides.length, exportAs: 'pptx', themeId: finalThemeId, tone: finalTone, imageMode: directImgMode, visualMetaphor };
+      const gammaRequestBody = { clientRequestId: crypto.randomUUID(), inputText: md, textMode: 'preserve', format: 'presentation', numCards: editedSlides.length, themeId: finalThemeId, tone: finalTone, imageMode: directImgMode, visualMetaphor };
 
       const gRes = await fetch('/api/gamma', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -440,7 +439,6 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
           const elapsed = Math.floor((Date.now() - startTime) / 1000);
           setStepText(`AI 渲染中... ${elapsed}秒`);
         }
-        if (!finalExportUrl) throw new Error('生成超时（3分钟），PPT内容较复杂，请稍后重试');
         await settleGenerationCredits({
           generationId: gd.generationId,
           numPages: editedSlides.length,
@@ -448,7 +446,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
           imageModel,
         });
         await new Promise(r => setTimeout(r, 500));
-        setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalExportUrl, actualPages: editedSlides.length });
+        setResult({ title: outlineResult.title, slides: editedSlides, dlUrl: finalExportUrl, generationId: gd.generationId, actualPages: editedSlides.length });
         setGenProgress(100); setPhase('result');
       }
     } catch (e: unknown) {

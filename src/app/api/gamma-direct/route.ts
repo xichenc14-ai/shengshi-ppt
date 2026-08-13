@@ -215,7 +215,6 @@ export async function POST(request: NextRequest) {
       themeId,
       tone = 'professional',
       imageSource = 'themeAccent',
-      exportAs = 'pptx',
       visualMetaphor,
       strictPreserve = false,
       uploadedFiles,
@@ -401,7 +400,6 @@ export async function POST(request: NextRequest) {
       textMode: 'preserve', // 🚨 V8.2：固定使用 preserve
       format: 'presentation',
       numCards: pageCount,
-      exportAs,
       themeId: finalThemeId,
       cardSplit: undefined, // removed inputTextBreaks to avoid blank pages
       additionalInstructions: finalInstructions + buildUploadedFilesInstruction(uploadedFiles) + criticalInstruction + strictPreserveInstruction,
@@ -443,7 +441,7 @@ export async function POST(request: NextRequest) {
       await markGenerationFailed(claimedRequestId, 'missing_generation_id');
       throw new Error('生成服务未返回任务ID');
     }
-    await markGenerationStarted(claimedRequestId, generationId);
+    await markGenerationStarted(claimedRequestId, generationId, selectedKey.id ? `db:${selectedKey.id}` : `env:${selectedKey.label || 'gamma-key'}:${selectedKey.last4 || ''}`);
     logOperationalEvent('info', 'generation.created', {
       requestId, userId, taskId: generationId, route: '/api/gamma-direct', status: 200,
       metadata: { pageCount, mode: 'direct' },

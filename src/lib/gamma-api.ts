@@ -1,14 +1,37 @@
 // Gamma API 客户端
 // 文档: https://developers.gamma.app
 
-const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
+import type { GammaExportFormat } from '@/lib/gamma-export';
+
+export const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
+
+export type GammaGenerationStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+export type GammaGenerationResult = {
+  generationId: string;
+  gammaId?: string;
+  status: GammaGenerationStatus;
+  gammaUrl?: string;
+  credits?: Record<string, unknown>;
+  error?: string;
+};
+
+export type GammaExportResult = {
+  exportId: string;
+  gammaId: string;
+  exportAs: GammaExportFormat;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  exportUrl?: string;
+  error?: { reason?: string; message?: string };
+};
 
 export interface GammaGenerationRequest {
   inputText: string;
   textMode: 'generate' | 'condense' | 'preserve';
   format: 'presentation' | 'document' | 'webpage' | 'social';
   numCards?: number;
-  exportAs?: 'pdf' | 'pptx' | 'png';
+  // Deprecated for generation. Formats are exported through /gammas/{gammaId}/export.
+  exportAs?: GammaExportFormat;
   themeId?: string;
   imageOptions?: {
     source: 'aiGenerated' | 'pexels' | 'themeAccent' | 'noImages';
@@ -26,7 +49,9 @@ export interface GammaGenerationRequest {
 
 export interface GammaGeneration {
   id: string;
-  status: 'processing' | 'completed' | 'failed';
+  generationId?: string;
+  gammaId?: string;
+  status: GammaGenerationStatus;
   gammaUrl?: string;
   exportUrl?: string;
   title?: string;

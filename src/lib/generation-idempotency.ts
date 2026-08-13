@@ -6,6 +6,7 @@ type GenerationRequestRow = {
   idempotency_key: string;
   route: string;
   provider_generation_id: string | null;
+  gamma_id: string | null;
   status: 'creating' | 'processing' | 'failed';
   attempts: number;
   created_at: string;
@@ -83,12 +84,17 @@ export async function claimGenerationRequest(
   return { kind: 'claimed', id: row.id, key };
 }
 
-export async function markGenerationStarted(id: string | undefined, generationId: string): Promise<void> {
+export async function markGenerationStarted(
+  id: string | undefined,
+  generationId: string,
+  providerKeyRef?: string,
+): Promise<void> {
   if (!id) return;
   const sb = getSupabase();
   if (!sb) return;
   const { error } = await sb.from('generation_requests').update({
     provider_generation_id: generationId,
+    ...(providerKeyRef ? { provider_key_ref: providerKeyRef } : {}),
     status: 'processing',
     updated_at: new Date().toISOString(),
   }).eq('id', id);

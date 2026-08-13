@@ -57,6 +57,18 @@ const HOT_SCENES = [
 ];
 
 type GammaImageSource = 'noImages' | 'themeAccent' | 'pexels' | 'aiGenerated';
+type ExportFormat = 'pdf' | 'pptx' | 'png';
+type ExportStatus = 'idle' | 'pending' | 'ready' | 'failed';
+type ExportState = {
+  status: ExportStatus;
+  artifactId?: string;
+  error?: string;
+};
+const EXPORT_META: Record<ExportFormat, { label: string; description: string; extension: string }> = {
+  pdf: { label: 'PDF', description: '适合预览、审批与分享', extension: '.pdf' },
+  pptx: { label: 'PPTX', description: '可在 PowerPoint 中继续编辑', extension: '.pptx' },
+  png: { label: 'PNG 图片包', description: '逐页图片，打包为 ZIP 下载', extension: '.zip' },
+};
 type UploadedFile = { name: string; type: string; size: number; content?: string; passthrough?: boolean };
 type AttachmentTaskStatus = 'validating' | 'uploading' | 'parsing' | 'recognizing' | 'ready' | 'error';
 type AttachmentTask = {
@@ -146,8 +158,7 @@ const TABLE_INTENT_RE = /(处理表格|解析表格|表格数据|数据表|明�
 const CHAT_SCREENSHOT_RE = /(聊天|微信|群聊|对话|聊天记录|截图|截屏|screenshot|chat|wechat)/i;
 const RESUME_STATE_KEY = 'sx_generation_resume_v1';
 const RESUME_STATE_TTL_MS = 90 * 60 * 1000;
-// 预览模块保留代码与组件，当前策略关闭预览，生成后直接下载 PPTX。
-const RESULT_PREVIEW_ENABLED = false;
+const RESULT_PREVIEW_ENABLED = true;
 
 function shouldProcessTables(text: string): boolean {
   return TABLE_INTENT_RE.test(text || '');
@@ -334,21 +345,6 @@ function isTransientLoadFailError(message?: string): boolean {
   const normalized = String(message || '').toLowerCase();
   if (!normalized) return false;
   return /load[\s_-]*fail|failed to load|loading failed|network|timeout|timed out|temporar|temporary|502|503|504|gateway|连接失败|加载失败/.test(normalized);
-}
-
-function buildPreviewApiPath(
-  generationId: string,
-  format: 'pdf' | 'pptx',
-  filename: string,
-  inline = true
-): string {
-  const params = new URLSearchParams({
-    generationId,
-    format,
-    name: filename,
-    inline: inline ? '1' : '0',
-  });
-  return `/api/preview/file?${params.toString()}`;
 }
 
 function buildPptxDownloadPath(generationId: string, filename: string): string {
@@ -540,6 +536,7 @@ export default function Home() {
     pptxUrl: string;
     themeId?: string;
     gammaUrl?: string;
+    gammaId?: string;
     actualPages?: number;
     generationId?: string;
     renderSignature?: string;
@@ -547,21 +544,21 @@ export default function Home() {
     pptxSeedEndpoint?: 'gamma' | 'gamma-direct';
     pptxGenerationId?: string;
   } | null>(null);
-  const [exporting, setExporting] = useState(false); // 导出中
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
   const [previewPdfUrl, setPreviewPdfUrl] = useState('');
   const [previewPdfFetchUrl, setPreviewPdfFetchUrl] = useState('');
-  const [autoDownloadMessage, setAutoDownloadMessage] = useState('');
+  const [exportStates, setExportStates] = useState<Record<ExportFormat, ExportState>>({
+    pdf: { status: 'idle' },
+    pptx: { status: 'idle' },
+    png: { status: 'idle' },
+  });
 
   const fileRef = useRef<HTMLInputElement>(null);
   const topicInputRef = useRef<HTMLTextAreaElement>(null);
-  const previewLoadedGenerationRef = useRef('');
-  const previewBlobUrlRef = useRef<string>('');
-  const autoDownloadedGenerationRef = useRef('');
   const downloadLockRef = useRef(false);
-  const pptxWarmupPromiseRef = useRef<Promise<string> | null>(null);
-  const pptxWarmupGenerationRef = useRef('');
+  const exportPromisesRef = useRef<Partial<Record<ExportFormat, Promise<string>>>>({});
+  const preparedPdfGenerationRef = useRef('');
   const restoringResumeRef = useRef(false);
   const triedResumeRef = useRef(false);
   const navigatingAwayRef = useRef(false);
@@ -1357,7 +1354,6 @@ export default function Home() {
     // 🚨 v10.6+: 仅在内容和渲染参数都未变化时复用已有结果
     const userEdited = hasUserEditedSlides();
     if (!userEdited && result?.generationId && result.renderSignature === currentRenderSignature) {
-      autoDownloadedGenerationRef.current = '';
       setPhase('result');
       return;
     }
@@ -1451,7 +1447,6 @@ export default function Home() {
         strictPreserve: strictPreserveEnabled,
         format: 'presentation',
         numCards: renderPageCount,
-        exportAs: 'pptx',
         themeId: finalThemeId,
         scene: outlineResult.scene || outlineResult.meta?.scene || undefined,
         tone: finalTone,
@@ -1499,9 +1494,6 @@ export default function Home() {
 
         const lastStatusData = await waitForGammaCompletion(gd.generationId);
         const finalExportUrl = lastStatusData.exportUrl || '';
-        if (!finalExportUrl && !lastStatusData?.gammaUrl) {
-          throw new Error('生成超时（3分钟），PPT内容较复杂，请稍后重试');
-        }
         await settleGenerationCredits({
           generationId: gd.generationId,
           numPages: renderPageCount,
@@ -1536,12 +1528,19 @@ export default function Home() {
 
       await new Promise(r => setTimeout(r, 500));
       const pptxDownloadPath = buildPptxDownloadPath(renderResult.gd.generationId, `${outlineResult.title || '省心PPT'}.pptx`);
+      setExportStates({ pdf: { status: 'idle' }, pptx: { status: 'idle' }, png: { status: 'idle' } });
+      setPreviewPdfUrl('');
+      setPreviewPdfFetchUrl('');
+      setPreviewError('');
+      preparedPdfGenerationRef.current = '';
+      exportPromisesRef.current = {};
       setResult({
         title: outlineResult.title,
         slides: slidesForRender,
         pptxUrl: pptxDownloadPath,
         themeId: finalThemeId,
         gammaUrl: renderResult.lastStatusData?.gammaUrl || '',
+        gammaId: renderResult.lastStatusData?.gammaId || '',
         actualPages: renderPageCount,
         generationId: renderResult.gd.generationId,
         renderSignature: currentRenderSignature,
@@ -1559,7 +1558,7 @@ export default function Home() {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ action: 'save', title: outlineResult.title, slides: slidesForRender, themeId: finalThemeId, downloadUrl: pptxDownloadPath, pageCount: renderPageCount, imageMode: imgSrc }),
+          body: JSON.stringify({ action: 'save', title: outlineResult.title, slides: slidesForRender, themeId: finalThemeId, downloadUrl: pptxDownloadPath, generationId: renderResult.gd.generationId, gammaId: renderResult.lastStatusData?.gammaId || null, pageCount: renderPageCount, imageMode: imgSrc }),
         });
       } catch (e) { console.warn('[History] 保存失败:', e); }
 
@@ -1619,8 +1618,6 @@ export default function Home() {
   const reset = () => {
     setLoading(false);
     setError('');
-    setAutoDownloadMessage('');
-    autoDownloadedGenerationRef.current = '';
     setResult(null);
     setOutlineResult(null);
     setSmartGammaPayload(null);
@@ -1849,10 +1846,6 @@ export default function Home() {
           setStepText('检测到未完成PPT任务，正在自动恢复...');
 
           const statusData = await waitForGammaCompletion(cached.gamma.generationId);
-          const finalExportUrl = statusData.exportUrl || '';
-          if (!finalExportUrl && !statusData?.gammaUrl) {
-            throw new Error('恢复完成但未拿到导出链接，请重新生成');
-          }
 
           await settleGenerationCredits({
             generationId: cached.gamma.generationId,
@@ -1862,12 +1855,19 @@ export default function Home() {
           });
 
           const pptxDownloadPath = buildPptxDownloadPath(cached.gamma.generationId, `${cached.gamma.title || '省心PPT'}.pptx`);
+          setExportStates({ pdf: { status: 'idle' }, pptx: { status: 'idle' }, png: { status: 'idle' } });
+          setPreviewPdfUrl('');
+          setPreviewPdfFetchUrl('');
+          setPreviewError('');
+          preparedPdfGenerationRef.current = '';
+          exportPromisesRef.current = {};
           setResult({
             title: cached.gamma.title || '省心PPT',
             slides: cached.gamma.slides || [],
             pptxUrl: pptxDownloadPath,
             themeId: cached.gamma.themeId || DEFAULT_THEME_ID,
             gammaUrl: statusData?.gammaUrl || '',
+            gammaId: statusData?.gammaId || '',
             actualPages: Array.isArray(cached.gamma.slides) ? cached.gamma.slides.length : undefined,
             generationId: cached.gamma.generationId,
             renderSignature: cached.gamma.renderSignature,
@@ -1929,221 +1929,6 @@ export default function Home() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
-  const pollGammaUntilComplete = useCallback(async (generationId: string) => {
-    const startTime = Date.now();
-    let retry429Count = 0;
-    while (Date.now() - startTime < 180000) {
-      await new Promise(r => setTimeout(r, 3200));
-      const statusRes = await fetch(`/api/gamma?id=${generationId}`);
-      if (!statusRes.ok) {
-        if (statusRes.status === 429) {
-          retry429Count += 1;
-          await new Promise((r) => setTimeout(r, Math.min(12000, 3500 + retry429Count * 1200)));
-        }
-        continue;
-      }
-      retry429Count = 0;
-      const statusData = await statusRes.json();
-      if (statusData.status === 'completed') return statusData;
-      if (statusData.status === 'failed') {
-        throw new Error(statusData.error || 'PPTX 生成失败');
-      }
-    }
-    throw new Error('PPTX 生成超时（3分钟），请稍后重试');
-  }, []);
-
-  const ensurePptxGenerationId = useCallback(async () => {
-    if (!result?.generationId) throw new Error('缺少 generationId');
-    if (result.pptxGenerationId) return result.pptxGenerationId;
-    if (!result.pptxSeedBody) return result.generationId;
-    const seedEndpoint = result.pptxSeedEndpoint || 'gamma';
-
-    const createRes = await fetch(`/api/${seedEndpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(result.pptxSeedBody),
-    });
-    const createText = await createRes.text();
-    if (!createRes.ok) {
-      let err = 'PPTX 任务创建失败';
-      try { const d = JSON.parse(createText); err = d.error || err; } catch {}
-      throw new Error(err);
-    }
-    let created: any;
-    try {
-      created = JSON.parse(createText);
-    } catch {
-      throw new Error('PPTX 任务创建响应异常');
-    }
-    const newGenerationId = created.generationId;
-    if (!newGenerationId) throw new Error('未获取到PPTX任务ID');
-
-    await pollGammaUntilComplete(newGenerationId);
-    setResult((prev) => {
-      if (!prev || prev.generationId !== result.generationId) return prev;
-      return { ...prev, pptxGenerationId: newGenerationId };
-    });
-    return newGenerationId;
-  }, [pollGammaUntilComplete, result?.generationId, result?.pptxGenerationId, result?.pptxSeedBody, result?.pptxSeedEndpoint]);
-
-  const warmupPptxGenerationId = useCallback(() => {
-    if (!result?.generationId || !result.pptxSeedBody || result.pptxGenerationId) return null;
-    if (
-      pptxWarmupGenerationRef.current === result.generationId
-      && pptxWarmupPromiseRef.current
-    ) {
-      return pptxWarmupPromiseRef.current;
-    }
-
-    pptxWarmupGenerationRef.current = result.generationId;
-    const warmupPromise = ensurePptxGenerationId()
-      .catch((error) => {
-        console.warn('[Export] PPTX 预热失败:', error);
-        throw error;
-      })
-      .finally(() => {
-        if (pptxWarmupGenerationRef.current === result.generationId) {
-          pptxWarmupPromiseRef.current = null;
-        }
-      });
-    pptxWarmupPromiseRef.current = warmupPromise;
-    return warmupPromise;
-  }, [ensurePptxGenerationId, result?.generationId, result?.pptxGenerationId, result?.pptxSeedBody]);
-
-  // 当前主任务直接生成 PPTX；旧的补跑兼容逻辑仅用于历史缓存结果。
-  const handleExportPPT = async (): Promise<boolean> => {
-    if (!user) { openLogin(); return false; }
-    if (!result?.generationId) return false;
-    if (downloadLockRef.current) return false;
-
-    downloadLockRef.current = true;
-    setExporting(true);
-    setAutoDownloadMessage('downloading');
-    try {
-      const totalPages = result.actualPages || pageCount;
-      const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
-      const fallbackFilename = `${safeTitle}.pptx`;
-      let exportGenerationId = result.pptxGenerationId || result.generationId;
-      if (!result.pptxGenerationId && result.pptxSeedBody) {
-        try {
-          const warmedGenerationId = await warmupPptxGenerationId();
-          if (warmedGenerationId) exportGenerationId = warmedGenerationId;
-        } catch {
-          exportGenerationId = result.generationId;
-        }
-      }
-
-      const downloadPath = buildPptxDownloadPath(exportGenerationId, fallbackFilename);
-      triggerBrowserDownload(downloadPath);
-      setAutoDownloadMessage('started');
-      window.setTimeout(() => {
-        setAutoDownloadMessage('completed');
-      }, 1600);
-
-      try {
-        await fetch('/api/download', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'record',
-            userId: user.id,
-            pageCount: totalPages,
-            format: 'pptx',
-          }),
-        });
-      } catch (recordErr) {
-        console.warn('[Download] 记录下载次数失败:', recordErr);
-      }
-      return true;
-    } catch (downloadError) {
-      setError(downloadError instanceof Error ? downloadError.message : '下载失败，请稍后重试');
-      setAutoDownloadMessage('failed');
-      return false;
-    } finally {
-      downloadLockRef.current = false;
-      setExporting(false);
-    }
-  };
-
-  const handleExportPPTRef = useRef(handleExportPPT);
-  handleExportPPTRef.current = handleExportPPT;
-
-  useEffect(() => {
-    if (RESULT_PREVIEW_ENABLED || phase !== 'result' || loading || !result?.generationId) return;
-    if (autoDownloadedGenerationRef.current === result.generationId) return;
-    autoDownloadedGenerationRef.current = result.generationId;
-    setAutoDownloadMessage('downloading');
-    void handleExportPPTRef.current();
-  }, [phase, loading, result?.generationId]);
-
-  const loadInlinePreview = useCallback(async () => {
-    if (!result?.generationId) return;
-
-    setPreviewLoading(true);
-    setPreviewError('');
-
-    try {
-      if (previewBlobUrlRef.current) {
-        URL.revokeObjectURL(previewBlobUrlRef.current);
-        previewBlobUrlRef.current = '';
-      }
-
-      const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
-      const generationId = result.generationId;
-      if (!generationId) throw new Error('缺少生成任务ID，无法预览');
-
-      const pdfFilename = `${safeTitle}.pdf`;
-      const pdfPath = buildPreviewApiPath(generationId, 'pdf', pdfFilename, true);
-      setPreviewPdfFetchUrl(pdfPath);
-      const pdfRes = await fetch(pdfPath);
-      const contentType = (pdfRes.headers.get('Content-Type') || '').toLowerCase();
-      if (!pdfRes.ok || contentType.includes('application/json')) {
-        const errData = await pdfRes.json().catch(() => ({ error: 'PDF 预览文件获取失败' }));
-        throw new Error(errData.error || 'PDF 预览文件获取失败');
-      }
-
-      const blob = await pdfRes.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      previewBlobUrlRef.current = blobUrl;
-      setPreviewPdfUrl(blobUrl);
-    } catch (e: unknown) {
-      setPreviewError(e instanceof Error ? e.message : '在线预览加载失败');
-    } finally {
-      setPreviewLoading(false);
-    }
-  }, [result?.generationId, result?.title]);
-
-  useEffect(() => {
-    return () => {
-      if (previewBlobUrlRef.current) {
-        URL.revokeObjectURL(previewBlobUrlRef.current);
-        previewBlobUrlRef.current = '';
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!RESULT_PREVIEW_ENABLED) return;
-    if (phase !== 'result') return;
-    if (!result?.generationId) return;
-    if (previewLoadedGenerationRef.current === result.generationId) return;
-    previewLoadedGenerationRef.current = result.generationId;
-    void loadInlinePreview();
-  }, [phase, result?.generationId, loadInlinePreview]);
-
-  useEffect(() => {
-    if (!RESULT_PREVIEW_ENABLED) return;
-    if (phase !== 'result') return;
-    if (!result?.generationId || !result.pptxSeedBody || result.pptxGenerationId) return;
-    void warmupPptxGenerationId();
-  }, [phase, result?.generationId, result?.pptxGenerationId, result?.pptxSeedBody, warmupPptxGenerationId]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!['outline', 'generating', 'result'].includes(phase)) return;
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-  }, [phase]);
-
   const triggerBrowserDownload = (href: string) => {
     const link = document.createElement('a');
     link.href = href;
@@ -2152,6 +1937,120 @@ export default function Home() {
     link.click();
     document.body.removeChild(link);
   };
+
+  const updateExportState = useCallback((format: ExportFormat, next: ExportState) => {
+    setExportStates((previous) => ({ ...previous, [format]: next }));
+  }, []);
+
+  const waitForArtifact = useCallback(async (artifactId: string, format: ExportFormat): Promise<string> => {
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      const response = await fetch(`/api/gamma/export?artifactId=${encodeURIComponent(artifactId)}`, { cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      if (data.status === 'ready' && data.artifactId) {
+        updateExportState(format, { status: 'ready', artifactId: data.artifactId });
+        return String(data.artifactId);
+      }
+      if (data.status === 'failed' || !response.ok && response.status !== 202) {
+        const message = data.error?.message || data.error || `${format.toUpperCase()} 导出失败`;
+        updateExportState(format, { status: 'failed', artifactId, error: String(message) });
+        throw new Error(String(message));
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 4000));
+    }
+    const message = `${format.toUpperCase()} 导出超时，请稍后重试`;
+    updateExportState(format, { status: 'failed', artifactId, error: message });
+    throw new Error(message);
+  }, [updateExportState]);
+
+  const ensureArtifact = useCallback(async (format: ExportFormat): Promise<string> => {
+    if (!result?.generationId) throw new Error('缺少生成任务ID');
+    if (!user) { openLogin(); throw new Error('请先登录'); }
+    const current = exportStates[format];
+    if (current.status === 'ready' && current.artifactId) return current.artifactId;
+    if (exportPromisesRef.current[format]) return exportPromisesRef.current[format] as Promise<string>;
+
+    const promise = (async () => {
+      updateExportState(format, { status: 'pending', error: undefined });
+      const safeTitle = (result.title || '省心PPT').trim() || '省心PPT';
+      const response = await fetch('/api/gamma/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          generationId: result.generationId,
+          format,
+          filename: `${safeTitle}.${format === 'png' ? 'zip' : format}`,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.artifactId) {
+        const message = data.error?.message || data.error || `${format.toUpperCase()} 导出任务创建失败`;
+        updateExportState(format, { status: 'failed', error: String(message) });
+        throw new Error(String(message));
+      }
+      updateExportState(format, { status: data.status === 'ready' ? 'ready' : 'pending', artifactId: data.artifactId });
+      if (data.status === 'ready') return String(data.artifactId);
+      return waitForArtifact(String(data.artifactId), format);
+    })().finally(() => {
+      delete exportPromisesRef.current[format];
+    });
+    exportPromisesRef.current[format] = promise;
+    return promise;
+  }, [exportStates, openLogin, result?.generationId, result?.title, updateExportState, user, waitForArtifact]);
+
+  const loadInlinePreview = useCallback(async () => {
+    setPreviewLoading(true);
+    setPreviewError('');
+    try {
+      const artifactId = await ensureArtifact('pdf');
+      const previewPath = `/api/artifacts/${encodeURIComponent(artifactId)}/preview`;
+      setPreviewPdfFetchUrl(previewPath);
+      setPreviewPdfUrl(previewPath);
+    } catch (error: unknown) {
+      setPreviewError(error instanceof Error ? error.message : '在线预览加载失败');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [ensureArtifact]);
+
+  const handleExportFormat = useCallback(async (format: ExportFormat) => {
+    const current = exportStates[format];
+    if (current.status !== 'ready' || !current.artifactId) {
+      try {
+        await ensureArtifact(format);
+      } catch (error: unknown) {
+        setError(error instanceof Error ? error.message : '导出失败，请稍后重试');
+      }
+      return;
+    }
+    if (downloadLockRef.current) return;
+    downloadLockRef.current = true;
+    try {
+      triggerBrowserDownload(`/api/artifacts/${encodeURIComponent(current.artifactId)}/download`);
+      if (user?.id) {
+        void fetch('/api/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'record', userId: user.id, pageCount: result?.actualPages || pageCount, format }),
+        }).catch((error) => console.warn('[Download] 记录下载次数失败:', error));
+      }
+    } finally {
+      downloadLockRef.current = false;
+    }
+  }, [ensureArtifact, exportStates, pageCount, result?.actualPages, user?.id]);
+
+  useEffect(() => {
+    if (!RESULT_PREVIEW_ENABLED || phase !== 'result' || loading || !result?.generationId) return;
+    if (preparedPdfGenerationRef.current === result.generationId) return;
+    preparedPdfGenerationRef.current = result.generationId;
+    void loadInlinePreview();
+  }, [loading, loadInlinePreview, phase, result?.generationId]);
+
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!['outline', 'generating', 'result'].includes(phase)) return;
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [phase]);
 
   // Outline editing helpers
   const updateSlide = (idx: number, field: 'title' | 'content', val: string) => {
@@ -2485,10 +2384,6 @@ export default function Home() {
   };
 
   const fmtSize = (b: number) => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
-  const downloadCompleted = autoDownloadMessage === 'completed';
-  const downloadFailed = autoDownloadMessage === 'failed';
-  const downloadStarted = autoDownloadMessage === 'started';
-  const downloadInProgress = exporting || downloadStarted;
 
   return (
       <div className="min-h-screen premium-shell flex flex-col overflow-x-clip">
@@ -3467,125 +3362,40 @@ export default function Home() {
         <GenerationProgress currentStep={genStep} progress={genProgress} subtext={stepText} />
       )}
 
-      {/* 当前策略：结果生成后自动下载，按钮保留为手动补点入口。 */}
-      {!RESULT_PREVIEW_ENABLED && phase === 'result' && result && !loading && (
-        <div className="flex-1 sx-shell">
-          <div className="mx-auto max-w-xl px-4 pb-16 pt-8 text-center md:pt-12">
-            <div className="sx-glass-strong relative overflow-hidden rounded-[30px] border border-indigo-100/70 px-6 py-8 shadow-[0_24px_70px_rgba(84,68,190,0.16)] md:px-9">
-              <div className="pointer-events-none absolute -left-20 -top-24 h-56 w-56 rounded-full bg-blue-300/20 blur-3xl" />
-              <div className="pointer-events-none absolute -bottom-28 -right-20 h-64 w-64 rounded-full bg-fuchsia-300/20 blur-3xl" />
-
-              <div className="relative mx-auto flex h-28 w-28 items-center justify-center">
-                <div className={`absolute inset-2 rounded-[30px] border border-violet-200/70 bg-white/55 shadow-[0_16px_38px_rgba(91,79,233,0.16)] backdrop-blur-xl ${downloadInProgress ? 'sx-download-float' : ''}`} />
-                {downloadInProgress && (
-                  <>
-                    <span className="absolute inset-0 rounded-[36px] border border-violet-300/25 sx-download-ring" />
-                    <span className="absolute inset-4 rounded-[28px] border border-blue-300/30 sx-download-ring sx-download-ring-delay" />
-                  </>
-                )}
-                <div className={`relative z-10 flex h-16 w-16 items-center justify-center rounded-[22px] text-white shadow-[0_14px_30px_rgba(91,79,233,0.28)] ${
-                  downloadFailed
-                    ? 'bg-gradient-to-br from-rose-400 to-orange-400'
-                    : downloadCompleted
-                      ? 'bg-gradient-to-br from-emerald-400 to-teal-500 sx-download-success'
-                      : 'bg-gradient-to-br from-[#4388ff] via-[#6c5cff] to-[#a43cf0]'
-                }`}>
-                  {downloadFailed
-                    ? <Download size={28} strokeWidth={2.1} aria-hidden="true" />
-                    : downloadCompleted
-                      ? <CheckCircle2 size={30} strokeWidth={2.2} aria-hidden="true" />
-                      : <FileDown size={29} strokeWidth={2.1} className="sx-download-icon" aria-hidden="true" />}
-                </div>
-              </div>
-
-              <div className="relative mt-4">
-                <div className="mx-auto inline-flex items-center gap-1.5 rounded-full border border-violet-100/80 bg-white/60 px-3 py-1 text-[10px] font-bold tracking-[0.08em] text-violet-600">
-                  {downloadFailed
-                    ? '下载待重试'
-                    : downloadCompleted
-                      ? '下载完成'
-                      : downloadStarted
-                        ? '浏览器下载中'
-                      : downloadInProgress
-                        ? '正在准备文件'
-                        : '下载就绪'}
-                </div>
-                <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-900 md:text-3xl">
-                  {downloadFailed
-                    ? '下载失败'
-                    : downloadCompleted
-                      ? 'PPTX 下载完成'
-                      : downloadStarted
-                        ? '导出完成🎉'
-                      : downloadInProgress
-                        ? '正在下载 PPTX'
-                        : 'PPT 已生成'}
-                </h2>
-                <p className="mt-1 text-[11px] text-slate-400">
-                  {result.title || '演示文稿'} · {result.actualPages || pageCount} 页
-                </p>
-              </div>
-
-              <button
-                onClick={() => void handleExportPPT()}
-                disabled={!result.generationId || exporting}
-                className="relative mt-7 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#477eff] via-[#7658f2] to-[#aa4bec] px-7 py-3.5 text-sm font-black text-white shadow-[0_14px_34px_rgba(104,78,235,0.30)] transition active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-55"
-              >
-                {exporting
-                  ? <LoaderCircle size={17} strokeWidth={2.2} className="animate-spin" aria-hidden="true" />
-                  : <Download size={17} strokeWidth={2.2} aria-hidden="true" />}
-                导出 PPTX
-              </button>
-              <div className="relative mt-4 flex items-center justify-center gap-2">
-                <button onClick={backToOutline} className="rounded-full px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-white/55 hover:text-slate-700">修改大纲</button>
-                <span className="h-3 w-px bg-violet-100" />
-                <button onClick={reset} className="rounded-full px-4 py-2 text-sm font-semibold text-indigo-600 transition hover:bg-white/55">继续创建</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===== RESULT PREVIEW — 模块保留，当前关闭 ===== */}
+      {/* ===== RESULT PREVIEW + INDEPENDENT EXPORTS ===== */}
       {RESULT_PREVIEW_ENABLED && phase === 'result' && result && !loading && (
         <div className="flex-1 sx-shell">
           <div className="max-w-[1400px] mx-auto px-4 md:px-7 pt-5 md:pt-7 pb-14">
-            {/* 成功提示 */}
-            <div className="text-center mb-4">
-              <div className="text-5xl mb-2">🎉</div>
-              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-1">PPT 已生成</h2>
-              <p className="text-sm text-slate-500">{result.title || '演示文稿'} · {result.actualPages || pageCount} 页</p>
+            <div className="mb-5 flex flex-col gap-1 text-center md:text-left">
+              <div className="inline-flex items-center justify-center gap-2 text-xs font-bold text-emerald-600 md:justify-start">
+                <CheckCircle2 size={16} aria-hidden="true" /> 内容已生成，文件按需导出
+              </div>
+              <h2 className="text-2xl font-black tracking-tight text-slate-900 md:text-3xl">{result.title || '演示文稿'}</h2>
+              <p className="text-sm text-slate-500">{result.actualPages || pageCount} 页 · 先预览，再手动下载所需格式</p>
             </div>
 
-            {/* 导出与预览 */}
-            <div className="sx-glass-strong rounded-[28px] shadow-xl border border-indigo-100/70 overflow-hidden mb-5">
-              <div className="p-4 md:p-5">
-                <div className="mb-4 flex items-center justify-center sm:justify-end">
-                  <div className="w-full sm:w-auto">
-                    <button
-                      onClick={handleExportPPT}
-                      disabled={!result.generationId || exporting}
-                      className="w-full sm:w-auto px-7 py-3 bg-gradient-to-r from-[#477eff] via-[#7658f2] to-[#aa4bec] text-white rounded-2xl text-sm font-black shadow-[0_14px_34px_rgba(104,78,235,0.30)] hover:shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {exporting ? (
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      ) : null}
-                      导出 PPTX
-                    </button>
+            <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="sx-glass-strong overflow-hidden rounded-[28px] border border-indigo-100/70 p-3 shadow-xl md:p-5">
+                <div className="mb-3 flex items-center justify-between px-1">
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">PDF 预览</h3>
+                    <p className="mt-0.5 text-xs text-slate-500">预览文件已准备，不会自动下载</p>
                   </div>
+                  {exportStates.pdf.status === 'ready' ? (
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-600">预览已就绪</span>
+                  ) : null}
                 </div>
-
-                <div className="relative rounded-[24px] overflow-hidden border border-violet-200/60 bg-white/38 shadow-[0_20px_55px_rgba(91,78,210,0.11)] backdrop-blur-xl md:min-h-[78vh]">
+                <div className="relative min-h-[62vh] overflow-hidden rounded-[24px] border border-violet-200/60 bg-white/38 shadow-[0_20px_55px_rgba(91,78,210,0.11)] backdrop-blur-xl md:min-h-[78vh]">
                   {previewLoading ? (
-                    <div className="w-full min-h-[62vh] md:min-h-[78vh] flex items-center justify-center text-violet-500 text-sm">
-                      正在加载 PDF 预览...
+                    <div className="flex min-h-[62vh] flex-col items-center justify-center gap-3 px-6 text-center text-violet-500 md:min-h-[78vh]">
+                      <LoaderCircle size={24} className="animate-spin" aria-hidden="true" />
+                      <span className="text-sm">正在准备 PDF 预览...</span>
                     </div>
                   ) : previewError ? (
-                    <div className="w-full min-h-[62vh] md:min-h-[78vh] flex flex-col items-center justify-center gap-4 px-6 text-center">
-                      <p className="text-sm text-rose-500">{previewError}</p>
+                    <div className="flex min-h-[62vh] flex-col items-center justify-center gap-4 px-6 text-center md:min-h-[78vh]">
+                      <p className="text-sm text-rose-500">PDF 预览暂不可用：{previewError}</p>
                       <button
                         onClick={() => {
-                          previewLoadedGenerationRef.current = '';
                           void loadInlinePreview();
                         }}
                         className="px-4 py-2 rounded-xl border border-violet-200 bg-white/70 text-sm text-violet-600 hover:bg-white"
@@ -3600,28 +3410,60 @@ export default function Home() {
                       title={result?.title || 'PDF 预览'}
                     />
                   ) : (
-                    <div className="w-full min-h-[62vh] md:min-h-[78vh] flex items-center justify-center text-violet-400 text-sm">
+                    <div className="flex min-h-[62vh] items-center justify-center text-sm text-violet-400 md:min-h-[78vh]">
                       暂无可预览内容
                     </div>
                   )}
                 </div>
               </div>
-            </div>
 
-            {/* 底部操作按钮 */}
-            <div className="flex items-center justify-center gap-4">
-              <button
-                onClick={backToOutline}
-                className="px-6 py-2.5 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-xl text-sm font-medium transition-all"
-              >
-                ✏️ 修改大纲
-              </button>
-              <button
-                onClick={reset}
-                className="px-6 py-2.5 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-xl text-sm font-medium transition-all"
-              >
-                ➕ 继续创建
-              </button>
+              <aside className="sx-glass-strong rounded-[28px] border border-indigo-100/70 p-4 shadow-xl lg:sticky lg:top-5">
+                <div className="mb-3">
+                  <h3 className="text-base font-black text-slate-900">导出文件</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">三种格式独立准备，点击“下载”才会保存到设备。</p>
+                </div>
+                <div className="space-y-3">
+                  {(['pdf', 'pptx', 'png'] as ExportFormat[]).map((format) => {
+                    const state = exportStates[format];
+                    const meta = EXPORT_META[format];
+                    const isReady = state.status === 'ready';
+                    const isPending = state.status === 'pending';
+                    return (
+                      <div key={format} className="rounded-2xl border border-indigo-100 bg-white/70 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2 text-sm font-black text-slate-800">
+                              <span className="inline-flex h-8 min-w-8 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-violet-500 px-2 text-[10px] font-black text-white">{format.toUpperCase()}</span>
+                              {meta.label}
+                            </div>
+                            <p className="mt-2 text-xs leading-5 text-slate-500">{meta.description} {meta.extension}</p>
+                          </div>
+                          <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${
+                            state.status === 'failed' ? 'bg-rose-50 text-rose-600' : isReady ? 'bg-emerald-50 text-emerald-600' : isPending ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'
+                          }`}>
+                            {state.status === 'failed' ? '失败' : isReady ? '已就绪' : isPending ? '准备中' : '未准备'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void handleExportFormat(format)}
+                          disabled={isPending}
+                          className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-black transition active:scale-[0.985] disabled:cursor-wait disabled:opacity-60 ${isReady ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'bg-gradient-to-r from-[#477eff] via-[#7658f2] to-[#aa4bec] text-white shadow-[0_10px_22px_rgba(104,78,235,0.22)]'}`}
+                        >
+                          {isPending ? <LoaderCircle size={15} className="animate-spin" aria-hidden="true" /> : isReady ? <Download size={15} aria-hidden="true" /> : <FileDown size={15} aria-hidden="true" />}
+                          {state.status === 'failed' ? '重试准备' : isReady ? `下载 ${meta.label}` : `准备 ${meta.label}`}
+                        </button>
+                        {state.error ? <p className="mt-2 text-xs leading-5 text-rose-500">{state.error}</p> : null}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-4 flex items-center justify-center gap-2 border-t border-indigo-100 pt-4">
+                  <button onClick={backToOutline} className="rounded-full px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-white hover:text-slate-700">修改大纲</button>
+                  <span className="h-3 w-px bg-violet-100" />
+                  <button onClick={reset} className="rounded-full px-3 py-2 text-sm font-semibold text-indigo-600 transition hover:bg-white">继续创建</button>
+                </div>
+              </aside>
             </div>
           </div>
         </div>

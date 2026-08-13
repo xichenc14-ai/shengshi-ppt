@@ -20,6 +20,8 @@ interface GammaPollOptions {
 interface GenerationResult {
   title: string;
   dlUrl: string;
+  generationId: string;
+  gammaId?: string;
   gammaUrl: string;
   actualPages: number;
   slides: unknown[];
@@ -111,7 +113,6 @@ export function useGammaGeneration(): UseGammaGenerationReturn {
             imageSource,
             tone,
             textMode,
-            exportAs: 'pptx',
           }),
         });
       }
@@ -162,16 +163,14 @@ export function useGammaGeneration(): UseGammaGenerationReturn {
         setProgress(50 + Math.min(35, Math.floor(elapsed / 5)));
       }
 
-      if (!finalExportUrl) {
-        throw new Error('生成超时（3分钟），请重试');
-      }
-
       const title = inputText.split('\n')[0].replace(/^#\s*/, '').trim();
       setProgress(100);
 
       return {
         title: title || 'PPT',
         dlUrl: finalExportUrl,
+        generationId: gd.generationId,
+        gammaId: undefined,
         gammaUrl: finalGammaUrl,
         actualPages: pages,
         slides: [],

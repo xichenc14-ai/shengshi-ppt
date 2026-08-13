@@ -20,6 +20,13 @@ export interface KeyInfo {
   last4: string;
 }
 
+/** Stable, non-secret reference for a key used to create a provider task. */
+export function getGammaKeyReference(key: Pick<KeyInfo, 'source' | 'id' | 'label' | 'last4'>): string {
+  return key.source === 'db' && key.id
+    ? `db:${key.id}`
+    : `env:${key.label}:${key.last4}`;
+}
+
 export interface GammaQuotaGroup {
   tag: string;
   remaining: number;

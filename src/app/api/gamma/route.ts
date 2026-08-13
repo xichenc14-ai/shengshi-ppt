@@ -419,7 +419,6 @@ export async function POST(request: NextRequest) {
       // 用户选的扩充/缩减/保持，只影响 outline API，不影响 Gamma
       format = 'presentation',
       numCards,
-      exportAs = 'pptx',
       themeId,
       scene = 'biz',
       tone,
@@ -630,7 +629,6 @@ export async function POST(request: NextRequest) {
       inputText: finalInputText,
       textMode: 'preserve', // 固定值！Gamma只负责排版渲染
       format,
-      exportAs,
       themeId: finalThemeId,
       additionalInstructions: finalAdditionalInstructions,
       cardSplit: cardSplit || 'inputTextBreaks',
@@ -682,7 +680,7 @@ export async function POST(request: NextRequest) {
       await markGenerationFailed(claimedRequestId, 'missing_generation_id');
       throw new Error('生成服务未返回任务ID');
     }
-    await markGenerationStarted(claimedRequestId, generationId);
+    await markGenerationStarted(claimedRequestId, generationId, selectedKey.id ? `db:${selectedKey.id}` : `env:${selectedKey.label || 'gamma-key'}:${selectedKey.last4 || ''}`);
     logOperationalEvent('info', 'generation.created', {
       requestId, userId, taskId: generationId, route: '/api/gamma', status: 200,
       metadata: { pageCount, mode: isSmartFlow ? 'smart' : 'direct' },
@@ -731,7 +729,8 @@ export async function POST(request: NextRequest) {
 
 // GET: 查询 Gamma 生成状态(前端轮询)
 export async function GET(request: NextRequest) {
-  if (!(await getLoggedInUserId())) {
+  const userId = await getLoggedInUserId();
+  if (!userId) {
     return NextResponse.json({ error: '请先登录' }, { status: 401 });
   }
 
@@ -785,6 +784,25 @@ export async function GET(request: NextRequest) {
       const data = await response.json();
       if (data.status === 'completed' && data.credits) {
         await updateKeyBalance(current.key, data.credits.deducted, data.credits.remaining);
+      }
+
+      // Gamma's generation response is the source of truth for gammaId. Keep it
+      // server-side so subsequent independent exports can reuse this Gamma.
+      const returnedGammaId = typeof data.gammaId === 'string' ? data.gammaId.trim() : '';
+      if (returnedGammaId) {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (supabaseUrl && serviceRoleKey) {
+          const { createClient } = await import('@supabase/supabase-js');
+          const sb = createClient(supabaseUrl, serviceRoleKey, {
+            auth: { persistSession: false, autoRefreshToken: false },
+          });
+          await sb
+            .from('generation_requests')
+            .update({ gamma_id: returnedGammaId, updated_at: new Date().toISOString() })
+            .eq('user_id', userId)
+            .eq('provider_generation_id', generationId);
+        }
       }
       return NextResponse.json(data);
     }

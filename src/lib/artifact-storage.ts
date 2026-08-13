@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-export type ArtifactFormat = 'pptx' | 'pdf';
+export type ArtifactFormat = 'pptx' | 'pdf' | 'png';
 
 export type StoredArtifactInput = {
   key: string;
@@ -136,7 +136,8 @@ export function sanitizeDownloadFilename(filename: string, fallback: string): st
 
 export function buildArtifactObjectKey(format: ArtifactFormat, generationId: string, sha256: string): string {
   const safeGenerationId = generationId.replace(/[^\w.-]/g, '_').slice(0, 120) || 'unknown';
-  return `${format}/${safeGenerationId}/${sha256.slice(0, 16)}.${format}`;
+  const extension = format === 'png' ? 'zip' : format;
+  return `${format}/${safeGenerationId}/${sha256.slice(0, 16)}.${extension}`;
 }
 
 export async function putArtifactObject(input: StoredArtifactInput): Promise<StoredArtifactMeta> {
@@ -178,6 +179,7 @@ export async function createArtifactSignedDownloadUrl(args: {
   key: string;
   filename: string;
   contentType: string;
+  disposition?: 'attachment' | 'inline';
   expiresIn?: number;
 }): Promise<string> {
   const safeFilename = sanitizeDownloadFilename(args.filename, 'shengxin-ppt.pptx');
@@ -185,7 +187,7 @@ export async function createArtifactSignedDownloadUrl(args: {
     Bucket: getR2Bucket(),
     Key: args.key,
     ResponseContentType: args.contentType,
-    ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(safeFilename)}`,
+    ResponseContentDisposition: `${args.disposition || 'attachment'}; filename*=UTF-8''${encodeURIComponent(safeFilename)}`,
   });
 
   return getSignedUrl(getR2Client(), command, {
