@@ -126,6 +126,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
+    if (action === 'update') {
+      if (!id) return NextResponse.json({ error: '缺少记录ID' }, { status: 400 });
+      const updatePayload: Record<string, unknown> = {};
+      if (artifactId !== undefined) updatePayload.artifact_id = artifactId || null;
+      if (downloadUrl !== undefined) updatePayload.download_url = downloadUrl || null;
+      if (generationId !== undefined) updatePayload.generation_id = generationId || null;
+      if (gammaId !== undefined) updatePayload.gamma_id = gammaId || null;
+      if (Object.keys(updatePayload).length === 0) return NextResponse.json({ error: '没有可更新的字段' }, { status: 400 });
+      const { data: record, error } = await sb
+        .from('generation_history')
+        .update(updatePayload)
+        .eq('id', id)
+        .eq('user_id', effectiveUserId)
+        .select()
+        .single();
+      if (error) throw error;
+      return NextResponse.json({ success: true, record });
+    }
+
     return NextResponse.json({ error: '未知操作' }, { status: 400 });
   } catch (e: unknown) {
     return NextResponse.json({ error: getErrorMessage(e) }, { status: 500 });

@@ -559,6 +559,7 @@ export default function Home() {
   const downloadLockRef = useRef(false);
   const exportPromisesRef = useRef<Partial<Record<ExportFormat, Promise<string>>>>({});
   const preparedPdfGenerationRef = useRef('');
+  const historyRecordIdRef = useRef('');
   const restoringResumeRef = useRef(false);
   const triedResumeRef = useRef(false);
   const navigatingAwayRef = useRef(false);
@@ -1534,6 +1535,7 @@ export default function Home() {
       setPreviewError('');
       preparedPdfGenerationRef.current = '';
       exportPromisesRef.current = {};
+      historyRecordIdRef.current = '';
       setResult({
         title: outlineResult.title,
         slides: slidesForRender,
@@ -1553,13 +1555,15 @@ export default function Home() {
 
       // 保存生成历史（保持现有业务流程不变）。
       try {
-        await fetch('/api/history', {
+        const historyResponse = await fetch('/api/history', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ action: 'save', title: outlineResult.title, slides: slidesForRender, themeId: finalThemeId, downloadUrl: pptxDownloadPath, generationId: renderResult.gd.generationId, gammaId: renderResult.lastStatusData?.gammaId || null, pageCount: renderPageCount, imageMode: imgSrc }),
         });
+        const historyData = await historyResponse.json().catch(() => ({}));
+        historyRecordIdRef.current = String(historyData.record?.id || '');
       } catch (e) { console.warn('[History] 保存失败:', e); }
 
     } catch (e: any) {
@@ -1861,6 +1865,7 @@ export default function Home() {
           setPreviewError('');
           preparedPdfGenerationRef.current = '';
           exportPromisesRef.current = {};
+          historyRecordIdRef.current = '';
           setResult({
             title: cached.gamma.title || '省心PPT',
             slides: cached.gamma.slides || [],
@@ -2005,6 +2010,13 @@ export default function Home() {
       const previewPath = `/api/artifacts/${encodeURIComponent(artifactId)}/preview`;
       setPreviewPdfFetchUrl(previewPath);
       setPreviewPdfUrl(previewPath);
+      if (historyRecordIdRef.current) {
+        void fetch('/api/history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'update', id: historyRecordIdRef.current, artifactId }),
+        }).catch((error) => console.warn('[History] PDF artifact 回写失败:', error));
+      }
     } catch (error: unknown) {
       setPreviewError(error instanceof Error ? error.message : '在线预览加载失败');
     } finally {
