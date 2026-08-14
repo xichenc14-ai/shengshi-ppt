@@ -64,6 +64,15 @@ function errorResponse(generationId: string, code: string, message: string, stat
   }, { status });
 }
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = String((error as { message?: unknown }).message || '').trim();
+    if (message) return message;
+  }
+  return fallback;
+}
+
 function getFilename(raw: unknown, format: GammaExportFormat): string {
   const base = sanitizeDownloadFilename(String(raw || '省心PPT'), '省心PPT');
   const extension = getArtifactExtension(format);
@@ -305,7 +314,7 @@ export async function POST(request: NextRequest) {
     if (updateError || !updated) throw updateError || new Error('导出任务状态保存失败');
     return NextResponse.json(artifactResponse(updated as ArtifactRow));
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : '导出任务创建失败';
+    const message = getErrorMessage(error, '导出任务创建失败');
     return errorResponse(generationId, 'EXPORT_CREATE_FAILED', message, 502);
   }
 }
@@ -352,7 +361,7 @@ export async function GET(request: NextRequest) {
     const ready = await materializeArtifact(sb, artifact, keyInfo.key, status.exportUrl);
     return NextResponse.json(artifactResponse(ready));
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : '导出状态查询失败';
+    const message = getErrorMessage(error, '导出状态查询失败');
     console.error('[GammaExport] status failed:', message);
     try {
       const { data } = await sb.from('generation_artifacts').select('id,generation_id').eq('id', artifactId).eq('user_id', userId).maybeSingle();

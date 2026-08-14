@@ -5,6 +5,23 @@ ALTER TABLE public.generation_requests
   ADD COLUMN IF NOT EXISTS gamma_id TEXT,
   ADD COLUMN IF NOT EXISTS provider_key_ref TEXT;
 
+-- The application owns authentication in public.users rather than auth.users.
+-- The original artifact/history tables were created with auth.users foreign keys,
+-- which rejects otherwise valid logged-in application users at export/save time.
+ALTER TABLE public.generation_artifacts
+  DROP CONSTRAINT IF EXISTS generation_artifacts_user_id_fkey;
+
+ALTER TABLE public.generation_artifacts
+  ADD CONSTRAINT generation_artifacts_user_id_fkey
+  FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+ALTER TABLE public.generation_history
+  DROP CONSTRAINT IF EXISTS generation_history_user_id_fkey;
+
+ALTER TABLE public.generation_history
+  ADD CONSTRAINT generation_history_user_id_fkey
+  FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
 CREATE INDEX IF NOT EXISTS idx_generation_requests_gamma_id
   ON public.generation_requests(gamma_id)
   WHERE gamma_id IS NOT NULL;
