@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { createArtifactSignedDownloadUrl } from '@/lib/artifact-storage';
+import { createArtifactSignedDownloadUrl, sanitizeDownloadFilename } from '@/lib/artifact-storage';
 import { distributedRateLimit, getClientIP } from '@/lib/rate-limit';
 import { getSession } from '@/lib/session';
 
@@ -13,6 +13,10 @@ type ArtifactRow = {
   format: string;
   status: string;
 };
+
+export const runtime = 'nodejs';
+export const preferredRegion = 'hkg1';
+export const maxDuration = 60;
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -57,7 +61,26 @@ export async function GET(
       contentType: artifact.mime_type || 'application/pdf',
       disposition: 'inline',
     });
-    return NextResponse.redirect(signedUrl, { status: 307 });
+    // Keep PDF.js on the same origin. Redirecting to the R2 signed URL makes
+    // the browser fetch cross-origin and fails before PDF.js can read bytes.
+    const upstream = await fetch(signedUrl, {
+      cache: 'no-store',
+      redirect: 'follow',
+      signal: AbortSignal.timeout(45_000),
+    });
+    if (!upstream.ok || !upstream.body) {
+      return NextResponse.json({ error: `预览文件读取失败：${upstream.status}` }, { status: 502 });
+    }
+
+    const filename = sanitizeDownloadFilename(artifact.filename, 'shengxin-ppt.pdf');
+    return new NextResponse(upstream.body, {
+      status: 200,
+      headers: {
+        'Cache-Control': 'private, max-age=0, no-store',
+        'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        'Content-Type': artifact.mime_type || 'application/pdf',
+      },
+    });
   } catch (error: unknown) {
     return NextResponse.json({ error: error instanceof Error ? error.message : '预览失败' }, { status: 500 });
   }
