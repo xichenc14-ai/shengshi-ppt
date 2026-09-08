@@ -230,6 +230,33 @@ export function buildGammaImageOptions(
   return merged;
 }
 
+/**
+ * Keep compatibility with models that were accepted by older Gamma API
+ * versions. Gamma now selects a supported model when `model` is omitted;
+ * sending the retired model ids is rejected as a 400 by the upstream API.
+ */
+export function sanitizeGammaImageOptionsForApi(
+  options: Record<string, unknown>,
+): Record<string, unknown> {
+  const sanitized = { ...options };
+  if (sanitized.source === 'aiGenerated') {
+    const model = typeof sanitized.model === 'string' ? sanitized.model.trim() : '';
+    if (model === 'imagen-3-flash' || model === 'imagen-3-pro') {
+      delete sanitized.model;
+    }
+  }
+  return sanitized;
+}
+
+/** Gamma documents a hard 5,000-character limit for additionalInstructions. */
+export function clampGammaInstructions(instructions: string, maxChars = 5000): string {
+  const value = String(instructions || '').trim();
+  if (value.length <= maxChars) return value;
+  const marker = '\n\n【其余系统规则已省略】';
+  const keep = Math.max(0, maxChars - marker.length);
+  return `${value.slice(0, keep).trimEnd()}${marker}`;
+}
+
 // ─────────────────────────────────────────────
 // C. buildGammaPayload
 // ─────────────────────────────────────────────

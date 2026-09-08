@@ -158,7 +158,7 @@ async function run() {
   await startButton.click();
 
   await page.getByRole('heading', { name: 'AI企业级自动化转型路线图' }).waitFor({ timeout: 15000 });
-  const confirmBtn = page.getByRole('button', { name: /下一步：生成PPT|确认生成 PPT|确认并生成PPT/ });
+  const confirmBtn = page.getByRole('button', { name: /下一步：生成PPT|确认生成 PPT|确认并生成PPT|确认大纲并生成 PPT/ }).first();
   await confirmBtn.click();
 
   try {

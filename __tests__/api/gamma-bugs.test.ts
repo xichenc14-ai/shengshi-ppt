@@ -410,6 +410,35 @@ describe('POST /api/gamma - Bug Verification Tests', () => {
     expect(calledBody.cardSplit).toBe('inputTextBreaks');
   });
 
+  it('BUG-7: smart mode drops retired image model ids and clamps instructions', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ generationId: 'test-gen-smart' }),
+    });
+
+    const res = await POST(mockPostRequest({
+      inputText: '# Smart mode\n\n---\n\n## Slide 2\n\n- Keep this content',
+      auto: true,
+      imageMode: 'ai',
+      imageOptions: {
+        source: 'aiGenerated',
+        model: 'imagen-3-flash',
+        style: 'clean illustration',
+      },
+      additionalInstructions: 'x'.repeat(7000),
+    }));
+
+    expect(res.status).toBe(200);
+    const fetchCall = mockFetch.mock.calls[0];
+    const calledBody = JSON.parse(fetchCall[1].body as string);
+    expect(calledBody.imageOptions).toEqual({
+      source: 'aiGenerated',
+      style: 'clean illustration',
+    });
+    expect(String(calledBody.additionalInstructions).length).toBeLessThanOrEqual(5000);
+  });
+
   // ===== GET endpoint tests =====
   describe('GET /api/gamma', () => {
     it('Should return 400 when generationId is missing', async () => {

@@ -117,7 +117,7 @@ async function run() {
   await page.getByText('检测到未完成大纲任务，正在自动恢复...').waitFor({ timeout: 4000 }).catch(() => {});
   try {
     await page.getByRole('heading', { name: 'AI企业级自动化转型路线图' }).waitFor({ timeout: 15000 });
-    await page.getByRole('button', { name: /下一步：生成PPT|确认生成 PPT|确认并生成PPT/ }).waitFor({ timeout: 15000 });
+    await page.getByRole('button', { name: /下一步：生成PPT|确认生成 PPT|确认并生成PPT|确认大纲并生成 PPT/ }).first().waitFor({ timeout: 15000 });
   } catch (err) {
     const resumeRaw = await page.evaluate((k) => sessionStorage.getItem(k), RESUME_KEY);
     const bodyText = await page.locator('body').innerText().catch(() => '');

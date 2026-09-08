@@ -20,6 +20,8 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
         'x-forwarded-for': forwardIp,
         'x-legacy-route': 'smart-outline',
+        ...(request.headers.get('cookie') ? { cookie: request.headers.get('cookie') as string } : {}),
+        ...(request.headers.get('authorization') ? { authorization: request.headers.get('authorization') as string } : {}),
       },
       body: JSON.stringify({
         ...body,

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildGammaImageOptions, normalizeUserInput } from '@/lib/adapters/ppt-param-adapter';
+import {
+  buildGammaImageOptions,
+  clampGammaInstructions,
+  normalizeUserInput,
+  sanitizeGammaImageOptionsForApi,
+} from '@/lib/adapters/ppt-param-adapter';
 
 describe('ppt-param-adapter', () => {
   it('keeps canonical aliases from being overwritten by raw fields', () => {
@@ -67,5 +72,23 @@ describe('ppt-param-adapter', () => {
     expect(buildGammaImageOptions('web').source).toBe('pexels');
     expect(buildGammaImageOptions('noImages').source).toBe('noImages');
     expect(buildGammaImageOptions('ai').source).toBe('aiGenerated');
+  });
+
+  it('removes retired Gamma image model ids before sending an API request', () => {
+    expect(sanitizeGammaImageOptionsForApi({
+      source: 'aiGenerated',
+      model: 'imagen-3-flash',
+      style: 'clean illustration',
+    })).toEqual({ source: 'aiGenerated', style: 'clean illustration' });
+    expect(sanitizeGammaImageOptionsForApi({
+      source: 'aiGenerated',
+      model: 'flux-1-pro',
+    })).toEqual({ source: 'aiGenerated', model: 'flux-1-pro' });
+  });
+
+  it('keeps Gamma additionalInstructions within the documented limit', () => {
+    const value = clampGammaInstructions('x'.repeat(5200));
+    expect(value.length).toBeLessThanOrEqual(5000);
+    expect(value).toContain('其余系统规则已省略');
   });
 });

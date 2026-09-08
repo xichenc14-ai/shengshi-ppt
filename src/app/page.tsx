@@ -331,6 +331,13 @@ const OUTLINE_STAGE_META: Record<OutlineStageKey, { label: string; title: string
   polishing: { label: '细节优化', title: '正在做最终结构校验', hint: '统一术语、压缩冗余并提升可讲述性', icon: 'M12 3l2.6 5.2L20 9l-4 3.9.9 5.6L12 16l-4.9 2.5.9-5.6L3 9l5.4-.8z' },
 };
 
+const OUTLINE_STAGE_ORDER: Record<OutlineStageKey, number> = {
+  analyzing: 0,
+  planning: 1,
+  generating: 2,
+  polishing: 3,
+};
+
 function resolveOutlineStage(stepText: string, slideCount: number, targetCount: number): OutlineStageKey {
   const normalized = (stepText || '').toLowerCase();
   if (normalized.includes('识别') || normalized.includes('分析')) return 'analyzing';
@@ -805,9 +812,14 @@ export default function Home() {
   );
   const outlineTargetPages = Math.max(1, outlineResult?.slides?.length || pageCount);
   const outlineGeneratedPages = streamingSlides.length;
-  const outlineStage = resolveOutlineStage(stepText, outlineGeneratedPages, outlineTargetPages);
+  const resolvedOutlineStage = resolveOutlineStage(stepText, outlineGeneratedPages, outlineTargetPages);
+  // 阶段和百分比都遵循“同一任务只前进不后退”。流式事件偶尔会乱序，不能让
+  // 一个较早阶段的心跳把用户已经看到的阶段/进度拉回去。
+  const outlineStage = phase === 'streaming' && OUTLINE_STAGE_ORDER[resolvedOutlineStage] < OUTLINE_STAGE_ORDER[outlineStageRef.current]
+    ? outlineStageRef.current
+    : resolvedOutlineStage;
   const outlineProgressTarget = Math.min(
-    97,
+    mode === 'smart' ? 55 : 97,
     Math.max(
       10,
       Math.round((outlineGeneratedPages / outlineTargetPages) * 72) + (outlineStage === 'analyzing' ? 8 : outlineStage === 'planning' ? 18 : outlineStage === 'generating' ? 28 : 40)
@@ -1078,6 +1090,9 @@ export default function Home() {
     setPhase('streaming');
     navigatingAwayRef.current = false;
     setGenStep(0);
+    outlineStageRef.current = 'analyzing';
+    outlineStageEnteredAtRef.current = Date.now();
+    setOutlineDisplayProgress(10);
     setGenProgress(10);
     setStepText('AI 正在分析你的需求...');
 
@@ -1218,6 +1233,9 @@ export default function Home() {
     setError('');
     setForceRequestedModeOnce(false);
     setGenStep(0);
+    outlineStageRef.current = 'analyzing';
+    outlineStageEnteredAtRef.current = Date.now();
+    setOutlineDisplayProgress(10);
     setGenProgress(5);
     setStepText('正在准备生成...');
 
@@ -1709,27 +1727,20 @@ export default function Home() {
       setOutlineDisplayProgress(10);
       return;
     }
-    const target = Math.max(10, Math.min(97, outlineProgressTarget));
-    setOutlineDisplayProgress((prev) => (target < prev ? target : prev));
+    const progressCeiling = mode === 'smart' ? 55 : 97;
+    const target = Math.max(10, Math.min(progressCeiling, outlineProgressTarget));
+    // 进度是用户对任务完成度的承诺：同一任务内永远不回退。
+    setOutlineDisplayProgress((prev) => Math.max(prev, target));
 
-    const stageSoftCaps: Record<OutlineStageKey, number> = {
-      analyzing: 24,
-      planning: 52,
-      generating: 84,
-      polishing: 94,
-    };
-    const stageSoftRates: Record<OutlineStageKey, number> = {
-      analyzing: 1.1,
-      planning: 0.95,
-      generating: 0.75,
-      polishing: 0.45,
-    };
-    const stageFloor: Record<OutlineStageKey, number> = {
-      analyzing: 12,
-      planning: 24,
-      generating: 50,
-      polishing: 80,
-    };
+    const stageSoftCaps: Record<OutlineStageKey, number> = mode === 'smart'
+      ? { analyzing: 18, planning: 34, generating: 48, polishing: 55 }
+      : { analyzing: 24, planning: 52, generating: 84, polishing: 94 };
+    const stageSoftRates: Record<OutlineStageKey, number> = mode === 'smart'
+      ? { analyzing: 0.8, planning: 0.7, generating: 0.55, polishing: 0.35 }
+      : { analyzing: 1.1, planning: 0.95, generating: 0.75, polishing: 0.45 };
+    const stageFloor: Record<OutlineStageKey, number> = mode === 'smart'
+      ? { analyzing: 12, planning: 20, generating: 34, polishing: 46 }
+      : { analyzing: 12, planning: 24, generating: 50, polishing: 80 };
 
     const timer = window.setInterval(() => {
       setOutlineDisplayProgress((prev) => {
@@ -1740,7 +1751,7 @@ export default function Home() {
           stageFloor[stage] + elapsedSec * stageSoftRates[stage]
         );
         const mergedTarget = Math.max(target, softTarget);
-        if (prev >= mergedTarget) return mergedTarget;
+        if (prev >= mergedTarget) return prev;
         const remaining = mergedTarget - prev;
         const step = remaining > 30 ? 1.8 : remaining > 16 ? 1.2 : 0.7;
         return Math.min(mergedTarget, prev + step);
@@ -1748,7 +1759,7 @@ export default function Home() {
     }, 110);
 
     return () => window.clearInterval(timer);
-  }, [phase, outlineProgressTarget]);
+  }, [phase, mode, outlineProgressTarget]);
 
   useEffect(() => {
     if (phase !== 'generating' || !loading) return;
@@ -3003,13 +3014,22 @@ export default function Home() {
                         共 {editedSlides.length} 页 · 长按卡片拖动排序 · 点击编辑修改内容
                       </p>
                     </div>
-                    <button
-                      onClick={() => { setPhase('input'); setOutlineResult(null); setEditedSlides([]); }}
-                      className="inline-flex flex-none items-center gap-1 rounded-full border border-violet-100/80 bg-white/65 px-3 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:border-violet-200 hover:text-violet-600"
-                    >
-                      <ArrowLeft size={12} strokeWidth={2} aria-hidden="true" />
-                      修改需求
-                    </button>
+                    <div className="flex flex-none flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+                      <button
+                        onClick={handleConfirmGenerate}
+                        disabled={loading}
+                        className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] px-4 py-2 text-xs font-black text-white shadow-md shadow-purple-200/50 transition hover:shadow-lg hover:shadow-purple-300/50 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
+                      >
+                        {loading ? '处理中…' : '确认大纲并生成 PPT'}
+                      </button>
+                      <button
+                        onClick={() => { setPhase('input'); setOutlineResult(null); setEditedSlides([]); }}
+                        className="inline-flex min-h-9 items-center justify-center gap-1 rounded-full border border-violet-100/80 bg-white/65 px-3 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:border-violet-200 hover:text-violet-600"
+                      >
+                        <ArrowLeft size={12} strokeWidth={2} aria-hidden="true" />
+                        修改需求
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -3257,7 +3277,7 @@ export default function Home() {
                   })()}
 
                   {/* Outline 下一步按钮：始终显示，加载时禁用，避免偶发“按钮消失” */}
-                  <div className="mt-4 sticky bottom-3 z-10">
+                  <div className="mt-6 sticky bottom-3 z-10 rounded-2xl border border-violet-100/80 bg-white/90 p-2 shadow-[0_14px_36px_rgba(79,70,168,0.16)] backdrop-blur-xl">
                     <button
                       onClick={handleConfirmGenerate}
                       disabled={loading}
@@ -3267,7 +3287,7 @@ export default function Home() {
                           : 'bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white shadow-purple-200/50 hover:shadow-lg hover:shadow-purple-300/50 active:scale-[0.98]'
                       }`}
                     >
-                      {loading ? '处理中，请稍候...' : '下一步：生成PPT'}
+                      {loading ? '处理中，请稍候...' : '确认大纲并生成 PPT'}
                     </button>
                   </div>
                 </div>

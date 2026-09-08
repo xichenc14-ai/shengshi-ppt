@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { distributedRateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
 import { selectBestKey, updateKeyBalance, recordKeyFailure, getAllKeys } from '@/lib/gamma-key-pool';
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
-import { buildGammaImageOptions, normalizeUserInput } from '@/lib/adapters/ppt-param-adapter';
+import {
+  buildGammaImageOptions,
+  clampGammaInstructions,
+  normalizeUserInput,
+  sanitizeGammaImageOptionsForApi,
+} from '@/lib/adapters/ppt-param-adapter';
 import { resolveSmartThemeId } from '@/lib/smart-theme-matcher';
 import { getSession } from '@/lib/session';
 import { claimGenerationRequest, markGenerationFailed, markGenerationStarted } from '@/lib/generation-idempotency';
@@ -565,13 +570,13 @@ export async function POST(request: NextRequest) {
 
     // 🚨 P0 Fix: 统一使用 mapImageSource 处理 imageOptions
     // 如果已传入完整的 imageOptions(省心模式)直接使用；否则从 imageMode 映射
-    const finalImageOptions = buildGammaImageOptions(
+    const finalImageOptions = sanitizeGammaImageOptionsForApi(buildGammaImageOptions(
       normalized.imageSource || imageMode,
       finalThemeId,
       imageOptions && typeof imageOptions === 'object'
         ? (imageOptions as Record<string, unknown>)
         : undefined
-    );
+    ));
     const instructions = INSTRUCTION_TEMPLATES[finalTone] || INSTRUCTION_TEMPLATES.professional;
     // P0修复：追加全局视觉隐喻（如果提供）
     const metaphorAppend = visualMetaphor
@@ -630,7 +635,7 @@ export async function POST(request: NextRequest) {
       textMode: 'preserve', // 固定值！Gamma只负责排版渲染
       format,
       themeId: finalThemeId,
-      additionalInstructions: finalAdditionalInstructions,
+      additionalInstructions: clampGammaInstructions(finalAdditionalInstructions),
       cardSplit: cardSplit || 'inputTextBreaks',
       textOptions: textOptions || {
         amount: 'medium',

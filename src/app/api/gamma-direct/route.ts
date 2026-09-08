@@ -3,7 +3,12 @@ import { getSession } from '@/lib/session';
 import { distributedRateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
 import { selectBestKey, updateKeyBalance, recordKeyFailure } from '@/lib/gamma-key-pool';
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
-import { buildGammaImageOptions, normalizeUserInput } from '@/lib/adapters/ppt-param-adapter';
+import {
+  buildGammaImageOptions,
+  clampGammaInstructions,
+  normalizeUserInput,
+  sanitizeGammaImageOptionsForApi,
+} from '@/lib/adapters/ppt-param-adapter';
 import { checkPermission } from '@/lib/membership';
 import { estimateGenerationCredits } from '@/lib/generation-credits';
 import { claimGenerationRequest, markGenerationFailed, markGenerationStarted } from '@/lib/generation-idempotency';
@@ -269,7 +274,7 @@ export async function POST(request: NextRequest) {
       console.warn(`[Gamma Direct] ThemeId mapped: "${rawThemeId}" → "${finalThemeId}"`);
     }
 
-    const imageOptions = buildGammaImageOptions(requestedImageSource, finalThemeId);
+    const imageOptions = sanitizeGammaImageOptionsForApi(buildGammaImageOptions(requestedImageSource, finalThemeId));
     const finalImageSource = String(imageOptions.source || 'themeAccent');
 
     // ===== Layer 4: Membership/Permission Check =====
@@ -402,7 +407,9 @@ export async function POST(request: NextRequest) {
       numCards: pageCount,
       themeId: finalThemeId,
       cardSplit: undefined, // removed inputTextBreaks to avoid blank pages
-      additionalInstructions: finalInstructions + buildUploadedFilesInstruction(uploadedFiles) + criticalInstruction + strictPreserveInstruction,
+      additionalInstructions: clampGammaInstructions(
+        finalInstructions + buildUploadedFilesInstruction(uploadedFiles) + criticalInstruction + strictPreserveInstruction,
+      ),
       textOptions: { amount: 'medium', tone: finalTone, language: 'zh-cn' },
       imageOptions,
       cardOptions: { dimensions: '16x9' },
