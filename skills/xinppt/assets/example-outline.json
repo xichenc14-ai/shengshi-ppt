@@ -1,0 +1,59 @@
+{
+  "title": "XinPPT 示例",
+  "subtitle": "从主题到可交付演示文稿",
+  "slides": [
+    {
+      "kind": "cover",
+      "title": "XinPPT 示例",
+      "subtitle": "从主题到可交付演示文稿",
+      "content": [],
+      "visualType": "imageHero",
+      "layoutIntent": "以清晰标题和主题视觉作为封面",
+      "iconHints": []
+    },
+    {
+      "title": "自动完成内容规划",
+      "content": [
+        "根据主题和资料建立清晰叙事",
+        "将每一页聚焦在一个核心信息",
+        "尊重用户指定的页数、风格和受众"
+      ],
+      "visualType": "iconGrid",
+      "layoutIntent": "用三张原生视觉卡片呈现规划、聚焦和受众",
+      "iconHints": ["叙事规划", "要点聚焦", "受众需求"]
+    },
+    {
+      "title": "自动选择展示参数",
+      "content": [
+        "根据场景选择主题、语气和图像来源",
+        "使用 16:9 演示比例",
+        "保留用户明确提出的视觉要求"
+      ],
+      "visualType": "iconGrid",
+      "layoutIntent": "按场景适配、画面比例和用户要求呈现三个要点",
+      "iconHints": ["场景适配", "画幅比例", "用户要求"]
+    },
+    {
+      "title": "本机直接执行",
+      "content": [
+        "本机 Agent 准备完整逐页内容",
+        "脚本直接调用 Gamma API",
+        "本地保存任务状态并支持恢复"
+      ],
+      "visualType": "process",
+      "layoutIntent": "用三步本机工作流呈现准备、调用和状态管理",
+      "iconHints": ["工作流准备", "API 集成", "状态管理"]
+    },
+    {
+      "title": "输出与检查",
+      "content": [
+        "下载 PPTX 到本地任务目录",
+        "验证文件结构和大小",
+        "交付最终参数与已知限制"
+      ],
+      "visualType": "timeline",
+      "layoutIntent": "用下载、核验和交付三个步骤收尾",
+      "iconHints": ["文件下载", "结构核验", "成果交付"]
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+interface:
+  display_name: "XinPPT"
+  short_description: "用本机 Agent 和 Gamma 自动生成并下载省心 PPT"
+  default_prompt: "Use $xinppt to turn my topic or source materials into a polished PowerPoint."
+
+policy:
+  allow_implicit_invocation: true
