@@ -1,0 +1,22 @@
+{
+  "productionCommit": "3b914e42a6f27c434d46701c7e1d1b2d60fc31e3",
+  "requests": [
+    {
+      "timestampUTC": "2026-10-08T15:25:21.186000+00:00",
+      "requestId": "4txpz-1791473121186-6d55888b34f3",
+      "deploymentId": "dpl_Cv6vZ19N73y5huzaigQR9TdALFPq",
+      "route": "/api/user",
+      "status": 500,
+      "providerAccepted": true,
+      "databaseTransportError": "getaddrinfo ENOTFOUND unqixnlxmpfpetsrmjpc.supabase.co"
+    }
+  ],
+  "publicDNS": {
+    "name": "unqixnlxmpfpetsrmjpc.supabase.co",
+    "googleStatus": 3,
+    "cloudflareStatus": 3,
+    "meaning": "NXDOMAIN"
+  },
+  "managementStatus": "unverified; CLI has no access token",
+  "databaseReadOnlyProbe": "failed before schema retrieval; local TLS reset / pooler SSL EOF"
+}

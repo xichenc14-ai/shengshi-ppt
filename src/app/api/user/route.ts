@@ -1,6 +1,7 @@
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
+import { randomInt, randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import {
   checkSMSRateLimit,
@@ -27,7 +28,7 @@ function getSupabase() {
 }
 
 function genCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  return String(randomInt(100000, 1000000));
 }
 
 type UserLite = {
@@ -229,6 +230,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '请输入正确的手机号' }, { status: 400 });
       }
 
+      const requestId = randomUUID();
+
       // 🔒 短信频率限制（IP + 手机号双重限制）
       const smsCheck = await checkSMSRateLimit(ip, phone);
       if (!smsCheck.allowed) {
@@ -238,44 +241,82 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // 清理过期验证码
-      await sb.from('verification_codes').delete().eq('phone', phone).lt('expires_at', new Date().toISOString());
-
       const localCode = genCode();
-      let finalCode = localCode;
-      try {
-        const { sendSMS } = await import('@/lib/sms-client');
-        const result = await sendSMS(phone, localCode);
-        if (!result.success) {
-          console.error('[SMS] 发送失败:', result.error || 'unknown');
-          if (process.env.NODE_ENV === 'production') {
-            return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
-          }
-          console.warn('[SMS] 发送失败，开发环境使用本地验证码:', result.error);
-        } else {
-          finalCode = normalizeSMSCode(result.code) || localCode;
-        }
-      } catch (e) {
-        console.error('[SMS] 模块异常:', e);
-        if (process.env.NODE_ENV === 'production') {
-          return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
-        }
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      const { getStorableSMSCode, sendSMS } = await import('@/lib/sms-client');
+      const finalCode = getStorableSMSCode({ success: true, code: localCode }, localCode, phone);
+
+      // 数据库必须先写入新挑战；任一数据库操作失败时不得调用短信供应商。
+      const { error: expiredErr } = await sb.from('verification_codes')
+        .delete().eq('phone', phone).lt('expires_at', new Date().toISOString());
+      if (expiredErr) {
+        console.error('[SMS] challenge_cleanup_failed', JSON.stringify({ requestId, dbCode: expiredErr.code || 'unknown' }));
+        return NextResponse.json({ error: '验证码服务暂时不可用，请稍后重试', requestId }, { status: 503 });
       }
 
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-      await sb.from('verification_codes').delete().eq('phone', phone).eq('verified', false);
-      const { error: insertErr } = await sb
-        .from('verification_codes')
-        .insert({ phone, code: finalCode, expires_at: expiresAt, verified: false });
-      if (insertErr) {
-        console.error('[SMS] 验证码写入失败:', insertErr);
-        return NextResponse.json({ error: '验证码写入失败，请稍后重试' }, { status: 500 });
+      const { error: clearErr } = await sb.from('verification_codes')
+        .delete().eq('phone', phone).eq('verified', false).eq('type', 'login');
+      if (clearErr) {
+        console.error('[SMS] challenge_replace_failed', JSON.stringify({ requestId, dbCode: clearErr.code || 'unknown' }));
+        return NextResponse.json({ error: '验证码服务暂时不可用，请稍后重试', requestId }, { status: 503 });
       }
+
+      const { error: insertErr } = await sb.from('verification_codes').insert({
+        phone,
+        code: finalCode,
+        type: 'login',
+        expires_at: expiresAt,
+        verified: false,
+      });
+      if (insertErr) {
+        console.error('[SMS] challenge_create_failed', JSON.stringify({ requestId, dbCode: insertErr.code || 'unknown' }));
+        return NextResponse.json({ error: '验证码服务暂时不可用，请稍后重试', requestId }, { status: 503 });
+      }
+
+      let result: { success: boolean; errorCode?: string; providerRequestId?: string };
+      try {
+        result = await sendSMS(phone, localCode, { outId: requestId });
+      } catch {
+        // 网络异常可能发生在供应商受理后，保留挑战，避免收到短信却无法验证。
+        result = { success: false, errorCode: 'PROVIDER_TRANSPORT_ERROR' };
+      }
+
+      if (!result.success && result.errorCode === 'PROVIDER_TRANSPORT_ERROR') {
+        console.warn('[SMS] send_status_unknown', JSON.stringify({ requestId, provider: process.env.SMS_PROVIDER || 'aliyun_auth' }));
+        return NextResponse.json({
+          success: true,
+          deliveryState: 'unknown',
+          message: '发送状态暂未确认；如果已收到短信，可直接输入验证码。',
+          requestId,
+          retryAfter: 60,
+        }, { status: 202 });
+      }
+
+      if (!result.success) {
+        const { error: cleanupErr } = await sb.from('verification_codes').delete()
+          .eq('phone', phone).eq('code', finalCode).eq('type', 'login');
+        console.warn('[SMS] send_rejected', JSON.stringify({
+          requestId,
+          provider: process.env.SMS_PROVIDER || 'aliyun_auth',
+          providerCode: result.errorCode || 'unknown',
+          cleanupFailed: Boolean(cleanupErr),
+        }));
+        return NextResponse.json({ error: '短信发送失败，请稍后重试', requestId }, { status: 503 });
+      }
+
+      console.info('[SMS] send_accepted', JSON.stringify({
+        requestId,
+        provider: process.env.SMS_PROVIDER || 'aliyun_auth',
+        providerRequestId: result.providerRequestId || null,
+      }));
 
       return NextResponse.json({
         success: true,
+        deliveryState: 'accepted',
         message: '验证码已发送',
-        devCode: process.env.NODE_ENV === 'production' ? undefined : finalCode,
+        requestId,
+        retryAfter: 60,
+        devCode: process.env.NODE_ENV === 'production' ? undefined : localCode,
       });
     }
 
@@ -286,6 +327,7 @@ export async function POST(req: NextRequest) {
         .from('verification_codes')
         .select('id,code,expires_at,verified')
         .eq('phone', phone)
+        .eq('type', 'login')
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false })
         .limit(1);
@@ -294,7 +336,9 @@ export async function POST(req: NextRequest) {
       if (!records || records.length === 0) return { valid: false, error: '验证码错误或已过期' };
 
       const record = records[0] as { id: string; code: string; verified?: boolean };
-      if (record.code !== code) return { valid: false, error: '验证码错误或已过期' };
+      const { verifyStoredSMSCode } = await import('@/lib/sms-client');
+      const codeResult = await verifyStoredSMSCode(phone, record.code, code);
+      if (!codeResult.valid) return { valid: false, error: codeResult.error || '验证码错误或已过期' };
 
       if (markVerified && !record.verified) {
         await sb.from('verification_codes').update({ verified: true }).eq('id', record.id);
@@ -336,6 +380,7 @@ export async function POST(req: NextRequest) {
         .from('verification_codes')
         .select('id')
         .eq('phone', phone)
+        .eq('type', 'login')
         .eq('verified', true)
         .gt('expires_at', new Date().toISOString())
         .limit(1);
@@ -628,42 +673,52 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '该手机号已被绑定' }, { status: 409 });
       }
 
+      const requestId = randomUUID();
       const code = genCode();
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      const { getStorableSMSCode, sendSMS } = await import('@/lib/sms-client');
+      const storedCode = getStorableSMSCode({ success: true, code }, code, newPhone);
 
       const insertPayload: Record<string, unknown> = {
         phone: newPhone,
-        code,
+        code: storedCode,
         expires_at: expiresAt,
         type: 'change_phone',
+        verified: false,
       };
-      let insertErr: { message?: string } | null = null;
-      ({ error: insertErr } = await sb.from('verification_codes').insert(insertPayload));
-      if (insertErr && String(insertErr.message || '').includes('type')) {
-        const fallbackPayload = { ...insertPayload };
-        delete fallbackPayload.type;
-        ({ error: insertErr } = await sb.from('verification_codes').insert(fallbackPayload));
+      const { error: clearErr } = await sb.from('verification_codes').delete()
+        .eq('phone', newPhone).eq('type', 'change_phone');
+      if (clearErr) {
+        console.error('[SMS] change_phone_challenge_cleanup_failed', JSON.stringify({ requestId, dbCode: clearErr.code || 'unknown' }));
+        return NextResponse.json({ error: '验证码服务暂时不可用，请稍后重试', requestId }, { status: 503 });
       }
-      if (insertErr) return NextResponse.json({ error: '验证码写入失败' }, { status: 500 });
+      const { error: insertErr } = await sb.from('verification_codes').insert(insertPayload);
+      if (insertErr) {
+        console.error('[SMS] change_phone_challenge_create_failed', JSON.stringify({ requestId, dbCode: insertErr.code || 'unknown' }));
+        return NextResponse.json({ error: '验证码服务暂时不可用，请稍后重试', requestId }, { status: 503 });
+      }
 
+      let result: { success: boolean; errorCode?: string; providerRequestId?: string };
       try {
-        const { sendSMS } = await import('@/lib/sms-client');
-        const result = await sendSMS(newPhone, code);
-        if (!result.success && process.env.NODE_ENV === 'production') {
-          return NextResponse.json({ error: '验证码发送失败，请稍后重试' }, { status: 500 });
-        }
-      } catch (e) {
-        if (process.env.NODE_ENV === 'production') {
-          return NextResponse.json({ error: '验证码发送失败，请稍后重试' }, { status: 500 });
-        }
-        console.warn('[ChangePhone] 发送验证码降级:', e);
+        result = await sendSMS(newPhone, code, { outId: requestId });
+      } catch {
+        result = { success: false, errorCode: 'PROVIDER_TRANSPORT_ERROR' };
+      }
+      if (!result.success && result.errorCode !== 'PROVIDER_TRANSPORT_ERROR') {
+        const { error: cleanupError } = await sb.from('verification_codes').delete()
+          .eq('phone', newPhone).eq('code', storedCode).eq('type', 'change_phone');
+        console.warn('[SMS] change_phone_send_rejected', JSON.stringify({ requestId, providerCode: result.errorCode || 'unknown', cleanupFailed: Boolean(cleanupError) }));
+        return NextResponse.json({ error: '验证码发送失败，请稍后重试', requestId }, { status: 503 });
       }
 
       return NextResponse.json({
         success: true,
-        message: '验证码已发送',
+        deliveryState: result.success ? 'accepted' : 'unknown',
+        message: result.success ? '验证码已发送' : '发送状态暂未确认；如果已收到短信，可直接输入验证码。',
+        requestId,
+        retryAfter: 60,
         devCode: process.env.NODE_ENV === 'production' ? undefined : code,
-      });
+      }, { status: result.success ? 200 : 202 });
     }
 
     // ===== 更换绑定手机号 =====
@@ -683,19 +738,13 @@ export async function POST(req: NextRequest) {
         .eq('type', 'change_phone')
         .order('created_at', { ascending: false })
         .limit(1));
-      if (codeErr && String(codeErr.message || '').includes('type')) {
-        ({ data: codeRows, error: codeErr } = await sb
-          .from('verification_codes')
-          .select('id,code,expires_at')
-          .eq('phone', newPhone)
-          .order('created_at', { ascending: false })
-          .limit(1));
-      }
       if (codeErr || !codeRows || codeRows.length === 0) {
         return NextResponse.json({ error: '请先获取验证码' }, { status: 400 });
       }
       const record = codeRows[0];
-      if (record.code !== code) return NextResponse.json({ error: '验证码错误' }, { status: 400 });
+      const { verifyStoredSMSCode } = await import('@/lib/sms-client');
+      const codeResult = await verifyStoredSMSCode(newPhone, record.code, code);
+      if (!codeResult.valid) return NextResponse.json({ error: codeResult.error || '验证码错误' }, { status: 400 });
       if (new Date(record.expires_at) < new Date()) return NextResponse.json({ error: '验证码已过期' }, { status: 400 });
 
       const { data: exists } = await sb.from('users').select('id').eq('phone', newPhone).neq('id', userId).limit(1);

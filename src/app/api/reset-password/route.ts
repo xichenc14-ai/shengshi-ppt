@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomInt, randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { getClientIP, rateLimit } from '@/lib/rate-limit';
 import { hashPasswordSecure } from '@/lib/password-utils';
@@ -40,42 +41,52 @@ export async function POST(request: NextRequest) {
       }
 
       // 生成验证码（6位）
-      const code = String(Math.floor(100000 + Math.random() * 900000));
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const requestId = randomUUID();
+      const code = String(randomInt(100000, 1000000));
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      const { getStorableSMSCode, sendSMS } = await import('@/lib/sms-client');
+      const storedCode = getStorableSMSCode({ success: true, code }, code, phone);
 
-      // 存储验证码
-      await sb.from('verification_codes').upsert({
+      // 密码重置也必须先确认验证码挑战落库，再请求短信供应商。
+      const { error: clearErr } = await sb.from('verification_codes').delete()
+        .eq('phone', phone).eq('type', 'reset_password');
+      if (clearErr) {
+        console.error('[ResetPassword] challenge_cleanup_failed', JSON.stringify({ requestId, dbCode: clearErr.code || 'unknown' }));
+        return NextResponse.json({ error: '验证码服务暂时不可用，请稍后重试', requestId }, { status: 503 });
+      }
+      const { error: insertErr } = await sb.from('verification_codes').insert({
         phone,
-        code,
+        code: storedCode,
         type: 'reset_password',
         expires_at: expiresAt,
-        created_at: new Date().toISOString(),
+        verified: false,
       });
+      if (insertErr) {
+        console.error('[ResetPassword] challenge_create_failed', JSON.stringify({ requestId, dbCode: insertErr.code || 'unknown' }));
+        return NextResponse.json({ error: '验证码服务暂时不可用，请稍后重试', requestId }, { status: 503 });
+      }
 
-      // 短信发送（与登录注册保持一致）
+      let result: { success: boolean; errorCode?: string; providerRequestId?: string };
       try {
-        const { sendSMS } = await import('@/lib/sms-client');
-        const result = await sendSMS(phone, code);
-        if (!result.success && process.env.NODE_ENV === 'production') {
-          return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
-        }
-      } catch (e) {
-        if (process.env.NODE_ENV === 'production') {
-          return NextResponse.json({ error: '短信发送失败，请稍后重试' }, { status: 500 });
-        }
-        console.warn('[ResetPassword] 短信发送失败，开发模式降级:', e);
+        result = await sendSMS(phone, code, { outId: requestId });
+      } catch {
+        result = { success: false, errorCode: 'PROVIDER_TRANSPORT_ERROR' };
+      }
+      if (!result.success && result.errorCode !== 'PROVIDER_TRANSPORT_ERROR') {
+        const { error: cleanupError } = await sb.from('verification_codes').delete()
+          .eq('phone', phone).eq('code', storedCode).eq('type', 'reset_password');
+        console.warn('[ResetPassword] send_rejected', JSON.stringify({ requestId, providerCode: result.errorCode || 'unknown', cleanupFailed: Boolean(cleanupError) }));
+        return NextResponse.json({ error: '短信发送失败，请稍后重试', requestId }, { status: 503 });
       }
 
-      // 在开发环境直接返回验证码方便测试
-      if (process.env.NODE_ENV !== 'production') {
-        return NextResponse.json({ 
-          success: true, 
-          message: '验证码已发送（开发模式：验证码将打印在控制台）',
-          devCode: code // 仅开发环境
-        });
-      }
-
-      return NextResponse.json({ success: true, message: '验证码已发送' });
+      return NextResponse.json({
+        success: true,
+        deliveryState: result.success ? 'accepted' : 'unknown',
+        message: result.success ? '验证码已发送' : '发送状态暂未确认；如果已收到短信，可直接输入验证码。',
+        requestId,
+        retryAfter: 60,
+        devCode: process.env.NODE_ENV === 'production' ? undefined : code,
+      }, { status: result.success ? 200 : 202 });
     }
 
     if (action === 'reset_password') {
@@ -93,16 +104,20 @@ export async function POST(request: NextRequest) {
       // 验证验证码
       const { data: codeRecord } = await sb
         .from('verification_codes')
-        .select('*')
+        .select('id,code,expires_at')
         .eq('phone', phone)
         .eq('type', 'reset_password')
-        .single();
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
       if (!codeRecord) {
         return NextResponse.json({ error: '请先获取验证码' }, { status: 400 });
       }
 
-      if (codeRecord.code !== code) {
+      const { verifyStoredSMSCode } = await import('@/lib/sms-client');
+      const codeResult = await verifyStoredSMSCode(phone, codeRecord.code, code);
+      if (!codeResult.valid) {
         return NextResponse.json({ error: '验证码错误' }, { status: 400 });
       }
 
@@ -119,7 +134,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 删除验证码
-      await sb.from('verification_codes').delete().eq('phone', phone).eq('type', 'reset_password');
+      await sb.from('verification_codes').delete().eq('id', codeRecord.id);
 
       return NextResponse.json({ success: true, message: '密码重置成功，请使用新密码登录' });
     }

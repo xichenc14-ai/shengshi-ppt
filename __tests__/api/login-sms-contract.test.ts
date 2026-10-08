@@ -6,6 +6,7 @@ vi.mock('@/lib/rate-limit', () => ({
   checkSMSRateLimit: vi.fn(async () => ({ allowed: true })),
   distributedRateLimit: vi.fn(async () => ({ allowed: true })),
   rollbackSMSRateLimit: vi.fn(),
+  rateLimit: vi.fn(() => ({ allowed: true })),
   getClientIP: () => '127.0.0.1', isIPBlocked: () => false,
   checkRegisterRateLimit: vi.fn(), isDevCleanupAllowed: () => false,
 }));
@@ -23,6 +24,7 @@ import { classifySMSSend } from '@/lib/login-request';
 
 let rows: Array<Record<string, unknown>>;
 let deleted: Array<Record<string, unknown>>;
+let insertError: { message: string; code?: string } | null;
 const request = () => new Request('http://localhost/api/user', {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ action: 'send_code', phone: '13800138000' }),
@@ -34,13 +36,17 @@ beforeEach(() => {
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://example.supabase.co');
   vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-secret');
   vi.stubEnv('SMS_CODE_HASH_SECRET', 'test-code-secret');
-  rows = []; deleted = [];
+  rows = []; deleted = []; insertError = null;
   vi.mocked(checkSMSRateLimit).mockResolvedValue({ allowed: true });
   vi.mocked(createClient).mockReturnValue({ from(table: string) {
     if (table === 'sms_send_attempts') return { upsert: async () => ({ error: null }) };
     if (table !== 'verification_codes') throw new Error(`Unexpected table ${table}`);
     return {
-      insert: async (row: Record<string, unknown>) => { rows.push(row); return { error: null }; },
+      insert: async (row: Record<string, unknown>) => {
+        if (insertError) return { error: insertError };
+        rows.push(row);
+        return { error: null };
+      },
       delete: () => {
         const filters: Record<string, unknown> = {};
         const builder = {
@@ -82,6 +88,15 @@ describe('登录短信前后端状态契约', () => {
     vi.mocked(sendSMS).mockResolvedValue({ success: true });
     const response = await POST(request());
     expect(classifySMSSend(response, await response.json())).toBe('accepted');
+  });
+
+  it('验证码写入失败时不调用短信供应商', async () => {
+    insertError = { message: 'database unavailable', code: '08006' };
+    const response = await POST(request());
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: '验证码服务暂时不可用，请稍后重试' });
+    expect(sendSMS).not.toHaveBeenCalled();
+    expect(rows).toHaveLength(0);
   });
 
   it('明确拒绝清除本次挑战，返回真实失败', async () => {
