@@ -1,6 +1,13 @@
 # 短信登录/注册输入恢复修复
 
-日期：2026-10-08。状态：本地修复和验收完成，尚未部署。
+日期：2026-10-08。状态：已部署到 Vercel Production，GitHub 发布分支已同步。
+
+- GitHub 分支：`codex/sms-login-recovery-2026-10-08`。
+- 部署提交：`3b914e42a6f27c434d46701c7e1d1b2d60fc31e3`。
+- Vercel 部署：`dpl_Cv6vZ19N73y5huzaigQR9TdALFPq`，状态 `READY`。
+- 部署地址：[独立部署](https://shengshi-1bv2trtb6-xichenc14-6690s-projects.vercel.app)；已绑定正式域名 [xinppt.cn](https://xinppt.cn)。
+- 上线后 `https://xinppt.cn/api/health` 返回 HTTP 200，版本 `v10.95.25`，生产环境正常。
+- 该 GitHub 基线没有 `/api/health/readiness` 路由；该地址返回 HTTP 404。它不参与本次短信界面流程。
 
 ## 问题与结果
 
@@ -28,6 +35,7 @@
 - 4 项 API 契约测试调用真实 user 路由，模拟数据库和供应商；确认超时前已预存挑战、202 后正确码仍可通过共享校验、错误码被拒绝、明确拒绝清除本次挑战、限流不调用供应商。
 - 修改的 TypeScript/TSX 与测试文件 ESLint 无错误；`npx tsc --noEmit --incremental false` 通过；最终 `npm run build` 通过，71 个页面生成完成。
 - 构建后用本地生产服务器运行 `node scripts/login-ui-check.mjs`，320/390/1280px 三个尺寸均能在 202 后键盘输入并完成模拟登录，无浏览器异常。弹窗 clientWidth/scrollWidth 分别为 294/294、359/359、400/400，无横向溢出。
+- 生产首页及版本接口通过线上 curl 检查；由于生产页面的 Chromium 会话未能稳定完成客户端水合，本次不把线上浏览器交互报告为已验收。短信交互以 Vercel 云端构建、本地浏览器回归和 API 契约验证为据。
 - 截图及结构化结果：`docs/releases/sms-login-20261008-evidence/`。
 
 ## 尚待线上验收
