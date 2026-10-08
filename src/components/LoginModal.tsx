@@ -2,7 +2,8 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, type UserInfo } from '@/lib/auth-context';
+import { classifySMSSend, requestLogin, retrySeconds, SMS_UNCONFIRMED_MESSAGE } from '@/lib/login-request';
 
 // 现代登录方式：手机号验证码 | 手机号密码
 type TabType = 'phone' | 'account';
@@ -48,48 +49,84 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
   const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
   const codeRefs = useRef<(HTMLInputElement | null)[]>([]);
   const pageScrollYRef = useRef(0);
-  const sendingCodeRef = useRef(false);
-  const verifyingCodeRef = useRef(false);
+  const activeRequestRef = useRef<AbortController | null>(null);
+  const autoVerifyRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 只在当前组件内保留手机号与时间，不把密码或验证码写入浏览器存储。
+  const attemptsRef = useRef(new Map<string, { retryAt: number; expiresAt: number }>());
+  const [notice, setNotice] = useState('');
+  const [pendingLogin, setPendingLogin] = useState<{ user: UserInfo; authToken?: string } | null>(null);
 
-  // ===== 重置 =====
-  const handleClose = useCallback(() => {
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
+  const cancelAutoVerify = useCallback(() => {
+    if (autoVerifyRef.current) clearTimeout(autoVerifyRef.current);
+    autoVerifyRef.current = null;
+  }, []);
+
+  const cancelRequest = useCallback(() => {
+    activeRequestRef.current?.abort();
+    activeRequestRef.current = null;
+    cancelAutoVerify();
+  }, [cancelAutoVerify]);
+
+  const closeModal = useCallback((completed = false) => {
+    cancelRequest();
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    setLoading(false);
+    setCode(['', '', '', '', '', '']);
+    setRegPassword(''); setRegConfirmPwd(''); setShowPassword(false);
+    setPassword(''); setShowPwdLogin(false);
+    setError(''); setAttemptsLeft(null);
+    if (completed) {
+      attemptsRef.current.clear();
+      setPhone(''); setAccount(''); setCountdown(0); setPhoneStep('input');
+      setRegUsername(''); setPendingLogin(null); setNotice('');
     }
     onClose();
-    setPhone(''); setCode(['', '', '', '', '', '']); setCountdown(0);
-    setPhoneStep('input');
-    setRegUsername(''); setRegPassword(''); setRegConfirmPwd(''); setShowPassword(false);
-    setAccount(''); setPassword(''); setShowPwdLogin(false);
-    setError(''); setAttemptsLeft(null);
-  }, [onClose]);
+  }, [cancelRequest, onClose]);
+
+  // 遮罩与 Escape 不打断正在提交的请求；显式关闭按钮仍允许退出。
+  const handleClose = useCallback(() => {
+    if (!activeRequestRef.current) closeModal();
+  }, [closeModal]);
 
   useEffect(() => {
     if (!open) return;
     pageScrollYRef.current = window.scrollY;
     document.documentElement.classList.add('modal-open');
     document.body.classList.add('modal-open');
-
     return () => {
+      cancelRequest();
       document.documentElement.classList.remove('modal-open');
       document.body.classList.remove('modal-open');
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       window.requestAnimationFrame(() => {
         window.scrollTo({ top: pageScrollYRef.current, left: 0, behavior: 'instant' });
       });
     };
+  }, [open, cancelRequest]);
+
+  useEffect(() => {
+    if (!open) {
+      setLoading(false);
+      setCode(['', '', '', '', '', '']);
+      setRegPassword(''); setRegConfirmPwd(''); setPassword('');
+    }
   }, [open]);
 
-  // 倒计时
+  // 根据绝对截止时间恢复倒计时，切后台、关闭重开不会延长冷却。
   useEffect(() => {
-    if (countdown <= 0) return;
-    const t = setTimeout(() => setCountdown(c => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [countdown]);
+    if (!open) return;
+    const update = () => setCountdown(Math.max(0, Math.ceil(((attemptsRef.current.get(phone)?.retryAt || 0) - Date.now()) / 1000)));
+    update();
+    const timer = setInterval(update, 1000);
+    window.addEventListener('focus', update);
+    document.addEventListener('visibilitychange', update);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', update);
+      document.removeEventListener('visibilitychange', update);
+    };
+  }, [open, phone]);
 
-  // ESC 关闭
   useEffect(() => {
     if (!open) return;
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
@@ -97,187 +134,163 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
     return () => document.removeEventListener('keydown', h);
   }, [open, handleClose]);
 
-  // 打开时聚焦手机号输入框
   useEffect(() => {
-    if (open && tab === 'phone' && phoneStep === 'input') {
-      setTimeout(() => {
-        document.getElementById('login-phone-input')?.focus();
-      }, 100);
-    }
+    if (!open || tab !== 'phone') return;
+    const timer = setTimeout(() => {
+      if (phoneStep === 'verify') codeRefs.current[0]?.focus();
+      else document.getElementById(phoneStep === 'input' ? 'login-phone-input' : 'reg-username-input')?.focus();
+    }, 100);
+    return () => clearTimeout(timer);
   }, [open, tab, phoneStep]);
 
-  // 手机号格式化
-  const formatPhone = (value: string) => {
-    const digits = value.replace(/\D/g, '').slice(0, 11);
-    return digits;
-  };
-
+  const formatPhone = (value: string) => value.replace(/\D/g, '').slice(0, 11);
   const isValidPhone = (p: string) => /^1[3-9]\d{9}$/.test(p);
 
-  const applyRetryAfter = (value: unknown) => {
-    const seconds = Number(value);
-    if (Number.isFinite(seconds) && seconds > 0) {
-      setCountdown(Math.max(1, Math.ceil(seconds)));
-    }
+  const beginRequest = () => {
+    if (activeRequestRef.current) return null;
+    cancelAutoVerify();
+    const controller = new AbortController();
+    activeRequestRef.current = controller;
+    setLoading(true); setError(''); setAttemptsLeft(null);
+    return controller;
+  };
+  const isCurrent = (controller: AbortController) => activeRequestRef.current === controller && !controller.signal.aborted;
+  const finishRequest = (controller: AbortController) => {
+    if (activeRequestRef.current !== controller) return;
+    activeRequestRef.current = null;
+    setLoading(false);
   };
 
-  // ===== 手机号：输入手机号 → 自动获取验证码 =====
-  const goToVerify = useCallback(async () => {
-    if (!phone || !isValidPhone(phone)) { setError('请输入正确的手机号'); return; }
-    if (sendingCodeRef.current) return;
-    sendingCodeRef.current = true;
-    setLoading(true); setError(''); setAttemptsLeft(null);
+  const changePhone = (value: string) => {
+    cancelRequest();
+    setPhone(formatPhone(value)); setPhoneStep('input');
+    setCode(['', '', '', '', '', '']); setRegUsername('');
+    setRegPassword(''); setRegConfirmPwd(''); setPendingLogin(null);
+    setNotice(''); setError(''); setAttemptsLeft(null); setLoading(false);
+  };
 
-    // 发送验证码
+  // 首次发送与重发使用同一状态契约。
+  const goToVerify = async () => {
+    if (!isValidPhone(phone)) { setError('请输入正确的手机号'); return; }
+    if ((attemptsRef.current.get(phone)?.retryAt || 0) > Date.now()) return;
+    const controller = beginRequest();
+    if (!controller) return;
+    const startedAt = Date.now();
+    const previous = attemptsRef.current.get(phone);
+    attemptsRef.current.set(phone, { retryAt: startedAt + 60_000, expiresAt: startedAt + 300_000 });
+    setCountdown(60); setNotice(''); setPendingLogin(null);
+    const enterVerification = (message: string, seconds = 60) => {
+      attemptsRef.current.set(phone, { retryAt: Date.now() + seconds * 1000, expiresAt: startedAt + 300_000 });
+      setCountdown(seconds); setNotice(message);
+      setCode(['', '', '', '', '', '']); setPhoneStep('verify');
+    };
     try {
-      const res = await fetch('/api/user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'send_code', phone }),
-      });
-      const data = await res.json();
-      if (data.error) {
-        setError(data.error);
-        applyRetryAfter(data.retryAfter);
-        setLoading(false);
+      const { response, data } = await requestLogin({ action: 'send_code', phone }, controller.signal);
+      if (!isCurrent(controller)) return;
+      const outcome = classifySMSSend(response, data);
+      if (outcome === 'rejected') {
+        const seconds = retrySeconds(data.retryAfter, response.status === 429 ? 60 : 0);
+        // 限流可能来自先前一次发送；继续输入不会绕过服务端校验。
+        attemptsRef.current.set(phone, {
+          retryAt: Date.now() + seconds * 1000,
+          expiresAt: previous?.expiresAt || (response.status === 429 ? startedAt + 300_000 : 0),
+        });
+        setCountdown(seconds);
+        setError(data.error || '短信服务暂时不可用，请稍后重试');
         return;
       }
-      setCountdown(Number(data.retryAfter) > 0 ? Math.ceil(Number(data.retryAfter)) : 60);
-      setPhoneStep('verify');
-      // 自动聚焦第一个验证码输入框
-      setTimeout(() => codeRefs.current[0]?.focus(), 150);
-    } catch { setError('发送失败，请检查网络'); }
-    finally {
-      sendingCodeRef.current = false;
-      setLoading(false);
+      enterVerification(outcome === 'unknown' ? SMS_UNCONFIRMED_MESSAGE : '', retrySeconds(data.retryAfter, 60));
+    } catch {
+      if (isCurrent(controller)) enterVerification(SMS_UNCONFIRMED_MESSAGE);
+    } finally {
+      finishRequest(controller);
     }
-  }, [phone]);
+  };
+  const resendCode = goToVerify;
 
-  // ===== 重新发送验证码 =====
-  const resendCode = useCallback(async () => {
-    if (countdown > 0 || !phone) return;
-    if (sendingCodeRef.current) return;
-    sendingCodeRef.current = true;
-    setLoading(true); setError('');
-    try {
-      const res = await fetch('/api/user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'send_code', phone }),
-      });
-      const data = await res.json();
-      if (data.error) {
-        setError(data.error);
-        applyRetryAfter(data.retryAfter);
-        setLoading(false);
-        return;
-      }
-      setCountdown(Number(data.retryAfter) > 0 ? Math.ceil(Number(data.retryAfter)) : 60);
-      setCode(['', '', '', '', '', '']);
-      setTimeout(() => codeRefs.current[0]?.focus(), 100);
-    } catch { setError('发送失败'); }
-    finally {
-      sendingCodeRef.current = false;
-      setLoading(false);
-    }
-  }, [phone, countdown]);
+  const syncLogin = async (result: { user: UserInfo; authToken?: string }, controller: AbortController) => {
+    setPendingLogin(result);
+    const synced = await login(result.user, result.authToken, controller.signal);
+    if (!isCurrent(controller)) return;
+    if (synced) closeModal(true);
+    else setError('账号已验证，但登录状态同步失败。请点击“重试登录状态同步”，无需重新发送验证码。');
+  };
 
-  // ===== 验证码登录/注册分流 =====
-  const handleVerifyLogin = async (fullCode?: string) => {
-    const fc = fullCode || code.join('');
-    if (fc.length !== 6) { setError('请输入6位验证码'); return; }
-    if (verifyingCodeRef.current) return;
-    verifyingCodeRef.current = true;
-    setLoading(true); setError(''); setAttemptsLeft(null);
+  const retryLogin = async () => {
+    if (!pendingLogin) return;
+    const controller = beginRequest();
+    if (!controller) return;
+    try { await syncLogin(pendingLogin, controller); }
+    finally { finishRequest(controller); }
+  };
+
+  const submitCredentials = async (body: Record<string, unknown>) => {
+    const controller = beginRequest();
+    if (!controller) return;
     try {
-      const res = await fetch('/api/user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'verify_code', phone, code: fc }),
-      });
-      const data = await res.json();
-      if (data.error === 'NOT_REGISTERED') {
-        setPhoneStep('set_profile');
-        setTimeout(() => document.getElementById('reg-username-input')?.focus(), 150);
+      const { response, data } = await requestLogin(body, controller.signal);
+      if (!isCurrent(controller)) return;
+      if (body.action === 'verify_code' && (data.error === 'NOT_REGISTERED' || data.error === 'NEED_SET_PASSWORD')) {
+        setRegUsername(data.nickname || ''); setNotice(''); setPhoneStep('set_profile');
         return;
       }
-      if (data.error === 'NEED_SET_PASSWORD') {
-        // 账号未设置密码，引导设置
-        setPhone(phone);
-        setRegUsername(data.nickname || '');
-        setPhoneStep('set_profile');
-        setTimeout(() => document.getElementById('reg-username-input')?.focus(), 150);
-        return;
-      }
-      if (data.error) {
-        setError(data.error);
+      if (data.error || !response.ok) {
+        setError(data.error === 'NEED_SET_PASSWORD' ? '此账号尚未设置密码，请切换验证码登录后设置。' : data.error || '登录服务暂时不可用，请稍后重试');
         if (data.attemptsLeft !== undefined) setAttemptsLeft(data.attemptsLeft);
         return;
       }
-      if (data.user) {
-        const synced = await login(data.user, data.authToken);
-        if (!synced) throw new Error('登录状态同步失败，请重试');
-        handleClose();
+      if (!data.user) {
+        setError('登录服务返回异常，请稍后重试');
+        return;
       }
-    } catch { setError('验证失败，请检查网络'); }
-    finally {
-      verifyingCodeRef.current = false;
-      setLoading(false);
+      await syncLogin({ user: data.user, authToken: data.authToken }, controller);
+    } catch {
+      if (isCurrent(controller)) setError('未能确认登录结果，请检查网络后重试。当前输入已保留。');
+    } finally {
+      finishRequest(controller);
     }
   };
 
-  // ===== 注册：提交资料 =====
-  const handleRegister = useCallback(async () => {
+  const handleVerifyLogin = async (fullCode?: string) => {
+    cancelAutoVerify();
+    if (pendingLogin) return retryLogin();
+    const fc = fullCode || code.join('');
+    if (fc.length !== 6) { setError('请输入6位验证码'); return; }
+    await submitCredentials({ action: 'verify_code', phone, code: fc });
+  };
+
+  const updateCode = (value: string) => {
+    cancelAutoVerify();
+    const val = value.replace(/\D/g, '').slice(0, 6);
+    setCode(Array.from({ length: 6 }, (_, i) => val[i] || ''));
+    setError('');
+    if (val.length === 6 && !pendingLogin) autoVerifyRef.current = setTimeout(() => void handleVerifyLogin(val), 200);
+  };
+
+  const handleRegister = async () => {
+    if (pendingLogin) return retryLogin();
     if (!regUsername.trim()) { setError('请输入用户名'); return; }
     if (regUsername.trim().length < 2 || regUsername.trim().length > 20) { setError('用户名需要2-20个字符'); return; }
     if (/[<>"'&]/.test(regUsername)) { setError('用户名包含非法字符'); return; }
     if (regPassword.length < 8) { setError('密码至少8位'); return; }
     if (!/[A-Za-z]/.test(regPassword) || !/\d/.test(regPassword)) { setError('密码需包含字母和数字'); return; }
     if (regPassword !== regConfirmPwd) { setError('两次密码不一致'); return; }
-    setLoading(true); setError('');
-    try {
-      const res = await fetch('/api/user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'register', phone, username: regUsername.trim(), password: regPassword }),
-      });
-      const data = await res.json();
-      if (data.error) { setError(data.error); setLoading(false); return; }
-      if (data.user) {
-        const synced = await login(data.user, data.authToken);
-        if (!synced) throw new Error('登录状态同步失败，请重试');
-        handleClose();
-      }
-    } catch { setError('注册失败，请检查网络'); }
-    setLoading(false);
-  }, [phone, regUsername, regPassword, regConfirmPwd, login, handleClose]);
+    await submitCredentials({ action: 'register', phone, username: regUsername.trim(), password: regPassword });
+  };
 
-  // ===== 手机号密码登录 =====
-  const handleAccountLogin = useCallback(async () => {
+  const handleAccountLogin = async () => {
+    if (pendingLogin) return retryLogin();
     const loginPhone = formatPhone(account);
-    if (!loginPhone) { setError('请输入手机号'); return; }
     if (!isValidPhone(loginPhone)) { setError('请输入正确的手机号'); return; }
     if (!password) { setError('请输入密码'); return; }
-    setLoading(true); setError('');
-    try {
-      const res = await fetch('/api/user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'password_login', account: loginPhone, password }),
-      });
-      const data = await res.json();
-      if (data.error) { setError(data.error); setLoading(false); return; }
-      if (data.user) {
-        const synced = await login(data.user, data.authToken);
-        if (!synced) throw new Error('登录状态同步失败，请重试');
-        handleClose();
-      }
-    } catch { setError('登录失败，请检查网络'); }
-    setLoading(false);
-  }, [account, password, login, handleClose]);
+    await submitCredentials({ action: 'password_login', account: loginPhone, password });
+  };
 
   const switchTab = (t: TabType) => {
-    setTab(t); setError(''); setAttemptsLeft(null);
+    if (activeRequestRef.current) return;
+    cancelAutoVerify();
+    setTab(t); setError(''); setAttemptsLeft(null); setPendingLogin(null);
+    setPassword('');
   };
 
   if (!open) return null;
@@ -286,9 +299,10 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
   const maskedPhone = phone.length === 11 ? `${phone.slice(0,3)}****${phone.slice(7)}` : phone;
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50" onClick={handleClose}>
-      <div className="bg-white rounded-3xl shadow-2xl w-[400px] max-w-[92vw] animate-modal-in overflow-hidden" onClick={e => e.stopPropagation()}>
+    <div data-testid="login-backdrop" className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50" onClick={handleClose}>
+      <div role="dialog" aria-modal="true" aria-label="登录或注册" className="relative bg-white rounded-3xl shadow-2xl w-[400px] max-w-[92vw] max-h-[90dvh] overflow-y-auto animate-modal-in" onClick={e => e.stopPropagation()}>
 
+        <button type="button" aria-label="关闭登录" onClick={() => closeModal()} className="absolute right-3 top-3 z-20 rounded-lg p-2 text-gray-400 hover:text-gray-700">✕</button>
         {/* 顶部渐变装饰条 */}
         <div className="h-1.5 bg-gradient-to-r from-[#5B4FE9] via-[#7C3AED] to-[#8B5CF6]" />
 
@@ -312,6 +326,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
               {TABS.map(t => (
                 <button
                   key={t.key}
+                  disabled={loading}
                   onClick={() => switchTab(t.key)}
                   className={`flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 ${
                     tab === t.key
@@ -327,6 +342,11 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
         )}
 
         <div className="px-6 pb-7">
+          {pendingLogin && (
+            <button type="button" disabled={loading} onClick={retryLogin} className="mb-4 w-full rounded-xl bg-purple-50 py-3 text-sm font-semibold text-[#5B4FE9] disabled:opacity-50">
+              {loading ? '同步中...' : '重试登录状态同步'}
+            </button>
+          )}
           {/* ==================== 手机号验证码登录 ==================== */}
           {tab === 'phone' && (
             <>
@@ -340,7 +360,8 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                       id="login-phone-input"
                       type="tel"
                       value={phone}
-                      onChange={e => { setPhone(formatPhone(e.target.value)); setError(''); }}
+                      disabled={loading}
+                      onChange={e => changePhone(e.target.value)}
                       placeholder="请输入手机号"
                       maxLength={11}
                       className="w-full pl-14 pr-4 py-3.5 rounded-2xl bg-[#FAFBFE] border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none text-base sm:text-sm transition-all"
@@ -349,16 +370,23 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                   </div>
                   <button
                     onClick={goToVerify}
-                    disabled={!isValidPhone(phone) || loading}
+                    disabled={!isValidPhone(phone) || loading || countdown > 0}
                     className="w-full py-3.5 bg-gradient-to-r from-[#5B4FE9] to-[#8B5CF6] text-white rounded-2xl text-sm font-bold hover:shadow-lg hover:shadow-purple-300/40 active:scale-[0.98] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                   >
-                    {loading ? (
+                    {countdown > 0 ? (
+                      `${countdown}s 后重试`
+                    ) : loading ? (
                       <span className="flex items-center justify-center gap-2">
                         <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
                         发送中...
                       </span>
                     ) : '获取验证码'}
                   </button>
+                  {(attemptsRef.current.get(phone)?.expiresAt || 0) > Date.now() && (
+                    <button type="button" disabled={loading} onClick={() => { cancelAutoVerify(); setPhoneStep('verify'); setError(''); }} className="mt-3 w-full text-sm font-medium text-[#5B4FE9] disabled:opacity-50">
+                      已收到验证码，继续输入
+                    </button>
+                  )}
                   {error && <p className="text-center text-xs text-red-500 mt-3 flex items-center justify-center gap-1"><span>⚠️</span>{error}</p>}
                 </div>
               )}
@@ -367,18 +395,19 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
               {phoneStep === 'verify' && (
                 <div className="animate-fade-in">
                   <div className="flex items-center justify-between mb-4">
-                    <button onClick={() => { setPhoneStep('input'); setError(''); }} className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1">
+                    <button disabled={loading} onClick={() => { cancelAutoVerify(); setPhoneStep('input'); setError(''); }} className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1">
                       <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                       返回
                     </button>
-                    <span className="text-xs text-gray-400">验证码发送至 {maskedPhone}</span>
+                    <span className="text-xs text-gray-400">验证手机号 {maskedPhone}</span>
                   </div>
 
-                  {/*                   {/* 验证码输入区域 - 透明overlay输入框，支持所有浏览器自动填充 */}
+                  {notice && <p role="status" className="mb-4 text-xs leading-relaxed text-amber-700">{notice}</p>}
+                  {/* 验证码输入区域，支持键盘、粘贴与自动填充 */}
                   <div className="flex gap-2.5 justify-center mb-4">
-                    <div className="relative flex gap-2.5">
+                    <div className="relative flex w-full max-w-[314px] gap-2 sm:gap-2.5 rounded-xl focus-within:ring-2 focus-within:ring-purple-200">
                       {code.map((c, i) => (
-                        <div key={i} className={`w-11 h-13 text-center text-xl font-bold rounded-xl border-2 transition-all select-none ${c ? 'border-[#5B4FE9] bg-[#F5F3FF] scale-105' : 'border-gray-200 bg-gray-50'}`}>
+                        <div key={i} className={`min-w-0 flex-1 h-13 text-center text-xl font-bold rounded-xl border-2 transition-all select-none ${c ? 'border-[#5B4FE9] bg-[#F5F3FF] scale-105' : 'border-gray-200 bg-gray-50'}`}>
                           <span className="leading-[3rem]">{c}</span>
                         </div>
                       ))}
@@ -392,26 +421,15 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                         autoComplete="one-time-code"
                         enterKeyHint="done"
                         value={code.join('')}
-                        onChange={e => {
-                          const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                          const digits = val.split('');
-                          const newCode = ['', '', '', '', '', ''];
-                          for (let i = 0; i < 6; i++) newCode[i] = digits[i] || '';
-                          setCode(newCode);
-                          if (val.length === 6) setTimeout(() => handleVerifyLogin(val), 200);
-                        }}
+                        aria-label="6位短信验证码"
+                        disabled={loading || Boolean(pendingLogin)}
+                        onChange={e => updateCode(e.target.value)}
                         onKeyDown={e => {
-                          if (e.key === 'Backspace' && code.join('') === '') codeRefs.current[0]?.focus();
-                          if (e.key === 'Enter') { const full = code.join(''); if (full.length === 6) handleVerifyLogin(full); }
+                          if (e.key === 'Enter' && code.join('').length === 6) void handleVerifyLogin();
                         }}
                         onPaste={e => {
                           e.preventDefault();
-                          const paste = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-                          const digits = paste.split('');
-                          const newCode = ['', '', '', '', '', ''];
-                          for (let i = 0; i < 6; i++) newCode[i] = digits[i] || '';
-                          setCode(newCode);
-                          if (paste.length === 6) setTimeout(() => handleVerifyLogin(paste), 200);
+                          updateCode(e.clipboardData.getData('text'));
                         }}
                         className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-text"
                         style={{ fontSize: '40px', letterSpacing: '2.2rem', paddingLeft: '8px' }}
@@ -459,7 +477,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
               {phoneStep === 'set_profile' && (
                 <div className="animate-fade-in">
                   <div className="flex items-center gap-2 mb-5">
-                    <button onClick={() => setPhoneStep('verify')} className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1">
+                    <button disabled={loading} onClick={() => { cancelAutoVerify(); setPhoneStep('verify'); setError(''); }} className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1">
                       <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                       返回
                     </button>
@@ -537,7 +555,8 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                 type="tel"
                 inputMode="numeric"
                 value={account}
-                onChange={e => { setAccount(formatPhone(e.target.value)); setError(''); }}
+                disabled={loading}
+                onChange={e => { setAccount(formatPhone(e.target.value)); setPendingLogin(null); setError(''); }}
                 placeholder="请输入手机号"
                 maxLength={11}
                 className="w-full px-4 py-3.5 rounded-2xl bg-[#FAFBFE] border border-gray-200 focus:border-[#5B4FE9] focus:ring-2 focus:ring-[#EDE9FE] focus:bg-white outline-none text-base sm:text-sm transition-all mb-3"
@@ -572,7 +591,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
               </button>
 
               <div className="flex items-center justify-between mt-3">
-                <button onClick={() => setTab('phone')} className="text-xs text-[#5B4FE9] hover:underline font-medium">没有账号？验证码注册</button>
+                <button disabled={loading} onClick={() => switchTab('phone')} className="text-xs text-[#5B4FE9] hover:underline font-medium">没有账号？验证码注册</button>
                 <button onClick={() => setError('请联系 602473182@qq.com 重置密码')} className="text-xs text-gray-400 hover:text-gray-600">忘记密码？</button>
               </div>
 

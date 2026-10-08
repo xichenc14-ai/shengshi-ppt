@@ -32,7 +32,7 @@ interface AuthContextType {
   showLogin: boolean;
   showPayment: boolean;
   paymentPlan: PaymentPlan | null;
-  login: (user: UserInfo, authToken?: string) => Promise<boolean>;
+  login: (user: UserInfo, authToken?: string, signal?: AbortSignal) => Promise<boolean>;
   logout: () => void;
   updateCredits: (credits: number) => void;
   updateUser: (data: Partial<UserInfo>) => void;
@@ -91,31 +91,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, [loading, user]);
 
-  const login = useCallback((u: UserInfo, authToken?: string) => {
-    // 登录接口本身会原子写入 Session；先直接回读。保留 POST 仅兼容旧响应。
-    return fetch('/api/session', { cache: 'no-store' })
-      .then(async (syncRes) => {
-        if (!syncRes.ok) return false;
-        let syncData = await syncRes.json();
-        if (syncData?.user?.id !== u.id) {
-          const legacyRes = await fetch('/api/session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'login', user: u, authToken }),
-          });
-          if (!legacyRes.ok) return false;
-          const retryRes = await fetch('/api/session', { cache: 'no-store' });
-          if (!retryRes.ok) return false;
-          syncData = await retryRes.json();
-        }
-        if (syncData?.user?.id === u.id) {
-          setUser(syncData.user);
-          setShowLogin(false);
-          return true;
-        }
-        return false;
-      })
-      .catch(() => false);
+  const login = useCallback(async (u: UserInfo, authToken?: string, signal?: AbortSignal) => {
+    // 登录接口已写入 Session；回读失败可单独重试，不重复注册或发送验证码。
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) controller.abort();
+    const timeout = setTimeout(cancel, 15_000);
+    const fetchSession = (init?: RequestInit) => fetch('/api/session', {
+      ...init, cache: 'no-store', signal: controller.signal,
+    });
+    try {
+      const syncRes = await fetchSession();
+      if (!syncRes.ok) return false;
+      let syncData = await syncRes.json();
+      if (!syncData?.isLoggedIn || syncData?.user?.id !== u.id) {
+        const legacyRes = await fetchSession({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'login', user: u, authToken }),
+        });
+        if (!legacyRes.ok) return false;
+        const retryRes = await fetchSession();
+        if (!retryRes.ok) return false;
+        syncData = await retryRes.json();
+      }
+      if (!controller.signal.aborted && syncData?.isLoggedIn && syncData?.user?.id === u.id) {
+        setUser(syncData.user);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', cancel);
+    }
   }, []);
 
   const refreshUser = useCallback(async (options?: { force?: boolean }) => {

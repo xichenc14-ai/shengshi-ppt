@@ -1,0 +1,29 @@
+[
+  {
+    "width": 320,
+    "layout": {
+      "width": 294,
+      "scrollWidth": 294
+    },
+    "result": "202 可输入；键盘输入后登录成功；无浏览器异常",
+    "realSMS": false
+  },
+  {
+    "width": 390,
+    "layout": {
+      "width": 359,
+      "scrollWidth": 359
+    },
+    "result": "202 可输入；键盘输入后登录成功；无浏览器异常",
+    "realSMS": false
+  },
+  {
+    "width": 1280,
+    "layout": {
+      "width": 400,
+      "scrollWidth": 400
+    },
+    "result": "202 可输入；键盘输入后登录成功；无浏览器异常",
+    "realSMS": false
+  }
+]
