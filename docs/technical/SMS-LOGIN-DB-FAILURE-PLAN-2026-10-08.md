@@ -1,6 +1,6 @@
 # 验证码写入失败：二次核查与实施状态
 
-状态：方案已批准。短信后端修复已在隔离发布分支实现并通过目标测试、lint 和生产构建；Supabase 管理台仍待登录核实，数据库未恢复，暂未部署。
+状态：方案已批准。修复提交 `7b8dc15` 已部署至 Vercel Production；2026-10-13 已确认并恢复原 Supabase 项目，待用户完成真实短信收码与登录验收，GitHub main 合并仍待处理。
 
 ## 结论
 
@@ -11,11 +11,11 @@ TypeError: fetch failed
 Caused by: Error: getaddrinfo ENOTFOUND unqixnlxmpfpetsrmjpc.supabase.co
 ```
 
-请求号：`4txpz-1791473121186-6d55888b34f3`。部署：`dpl_Cv6vZ19N73y5huzaigQR9TdALFPq`，代码提交 `3b914e42a6f27c434d46701c7e1d1b2d60fc31e3`。此部署仍是最新生产部署。
+请求号：`4txpz-1791473121186-6d55888b34f3`。部署：`dpl_Cv6vZ19N73y5huzaigQR9TdALFPq`，代码提交 `3b914e42a6f27c434d46701c7e1d1b2d60fc31e3`。该部署已由生产部署 `dpl_BGvAKTPXDqJYzvYrPz12hNbPrMVf` 替代。
 
 Google DNS 和 Cloudflare DNS 对该域名的 A 记录查询均返回 Status=3（NXDOMAIN）。当前写入失败的直接原因是数据库 API 域名无法解析，请求尚未到达数据库；没有证据将它归因为字段缺失、验证码长度、RLS 或唯一约束。
 
-Supabase 2026-10-08 官方 NXDOMAIN 排障说明补充指出：暂停项目会停止提供项目 hostname，并导致 NXDOMAIN。因当前管理台会话已失效，项目是否暂停尚未确认；暂停是已证实可解释本次 DNS 现象的候选根因，仍需核对项目状态、真实 Project Ref 和删除审计记录后定案。
+Supabase 2026-10-08 官方 NXDOMAIN 排障说明补充指出：暂停项目会停止提供项目 hostname，并导致 NXDOMAIN。2026-10-13 已在 Supabase 项目控制台确认该 Project Ref 对应项目处于暂停状态；恢复原项目后，域名重新解析，控制台显示恢复完成。暂停是本次 NXDOMAIN 的根因。
 
 ## 故障链条与发布遗漏
 
@@ -30,12 +30,11 @@ Supabase 2026-10-08 官方 NXDOMAIN 排障说明补充指出：暂停项目会�
 
 上次生产 `/api/health` 仅返回静态服务状态、版本和时间，不检查 Supabase；它的 200 不能证明登录可用。部署中 /api/user、/api/session、/api/reset-password 均位于 hkg1。不过这次两个公共 DNS 都返回 NXDOMAIN，不能把切换函数区域作为域名不存在的解决办法。
 
-## 尚未确认的事项
+## 当前未确认事项
 
-- 域名失效的上游原因：项目暂停、已删除、项目引用变化或服务异常，需 Supabase 管理台项目状态确认。
-- 当前 CLI 缺少 Supabase 管理令牌，不能读取管理台项目状态。本地配置与线上日志指向相同的 Supabase 项目域名，本地 DATABASE_URL 的项目引用也相符；这不等于项目当前健康。
-- 本地 REST 只读尝试遇到 TLS reset；只读 PostgreSQL 连接遇到 SSL EOF，均未获取表结构。因此暂不提出数据库结构迁移或改动 RLS。
-- 上述公共 DNS 检查代表核查时刻，不证明域名永久失效。
+- 生产函数在数据库恢复后的真实“发出—收到—输入—登录”闭环，需由获准手机号进行验收；此前生产函数只记录到写入前清理失败（HTTP 503，未调用短信供应商）。
+- 生产库已确认所需表和字段存在，但尚未执行真实写入、供应商发送及验证码核验，因此不把只读 HTTP 200 当作完整登录成功。
+- GitHub main 合并、受控的数据库依赖就绪检查仍待完成。当前 `/api/health` 只检查应用进程是否响应。
 
 ## 执行方案与进展（已批准）
 
@@ -77,9 +76,9 @@ Supabase 2026-10-08 官方 NXDOMAIN 排障说明补充指出：暂停项目会�
 ## 当前执行进度
 
 - 已实现：登录、重置密码、更换手机号的验证码均先生成并以 HMAC 写入，再发送相同的应用验证码；数据库清理/写入失败时不会调用短信供应商。阿里云显式拒绝时删除本次挑战；网络结果未知时保留挑战并返回可输入验证码的 202 状态。验证码使用加密安全随机数；短信日志不写出验证码或原始供应商响应。
-- 已实现：验证码读取按用途过滤并兼容历史明文记录；新验证码通过统一 HMAC 校验。该实现要求 `verification_codes.type` 存在，部署此字段的迁移在仓库中，但生产数据库是否已应用仍待恢复后核验。
+- 已实现：验证码读取按用途过滤并兼容历史明文记录；新验证码通过统一 HMAC 校验。2026-10-13 已从生产数据库确认 `verification_codes.type` 为 text，`code` 为 text，`id`/`verified`/`created_at` 的默认值与插入逻辑相符；仅 `id` 有唯一约束。
 - 已验证：发布分支中的短信契约测试 7 项通过；改动文件 ESLint 无错误；改动业务源文件的独立 TypeScript 检查通过；Next.js 生产构建通过（仅使用本地临时 `SESSION_PASSWORD` 占位值）。
-- 未完成：Supabase 项目状态、数据库 schema/只读访问、获准号码的短信到登录闭环，以及生产部署和 GitHub 主分支合并。当前 Chrome 的 Supabase 管理台显示登录页面，Supabase CLI 也没有访问令牌。用户登录后才能恢复原项目或确认另一安全路径；未确认前不更换数据源。
+- 已完成：Supabase 原项目恢复、DNS 恢复、生产配置凭证下的 `verification_codes`、`users`、`verify_attempts` 只读 REST 查询（均 HTTP 200），以及生产部署。待完成：获准号码的短信到登录闭环、GitHub 主分支合并、受控依赖就绪检查。
 
 官方参考：
 - Supabase NXDOMAIN 排障：https://supabase.com/docs/guides/troubleshooting/nxdomain-error-connecting-to-a-supabase-project
