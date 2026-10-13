@@ -23,6 +23,7 @@ if (!process.env.ADMIN_DASHBOARD_KEY && !cookie) throw new Error('Admin readines
 const paths = process.argv.includes('--matrix') ? ['/api/health/auth', '/api/health/auth-hkg', '/api/health/auth-sin'] : ['/api/health/auth'];
 const samples = Math.min(5, Math.max(1, Number(process.argv.find(arg => arg.startsWith('--samples='))?.split('=')[1] || 1)));
 const report = { origin, startedAt: new Date().toISOString(), probes: [] };
+const expectedVersion = `v${JSON.parse(await readFile(resolve('package.json'), 'utf8')).version}`;
 const output = resolve(process.env.EVIDENCE_DIR || 'docs/releases/sms-delivery-20261013-evidence');
 await mkdir(output, { recursive: true });
 
@@ -44,8 +45,19 @@ async function probe(path) {
   const status = Number(blocks[index]?.match(/^HTTP\/\S+\s+(\d+)/)?.[1]);
   return { path, httpStatus: status, ...JSON.parse(blocks.slice(index + 1).join('\n\n')) };
 }
+async function probeWithTransportRetry(path) {
+  // Only this read-only GET is retried. A real HTTP 503/provider failure is returned
+  // immediately and still blocks promotion; SMS sending never uses this helper.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try { return { ...await probe(path), clientTransportRetries: attempt }; }
+    catch (error) {
+      if (attempt === 2 || !/^probe_transport_(?:6|7|28|35)$/.test(error.message)) throw error;
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+}
 for (let sample = 0; sample < samples; sample += 1) {
-  const results = await Promise.allSettled(paths.map(probe));
+  const results = await Promise.allSettled(paths.map(probeWithTransportRetry));
   for (let i = 0; i < results.length; i += 1) {
     const result = results[i];
     const row = result.status === 'fulfilled' ? { sample: sample + 1, ...result.value } : { sample: sample + 1, path: paths[i], error: result.reason.message };
@@ -54,4 +66,4 @@ for (let sample = 0; sample < samples; sample += 1) {
   }
   await writeFile(resolve(output, process.argv.includes('--matrix') ? 'region-comparison.json' : 'auth-readiness.json'), JSON.stringify(report, null, 2));
 }
-if (!process.argv.includes('--matrix') && report.probes.some(probe => !probe.ready || probe.region !== 'hnd1')) throw new Error('Authentication readiness failed; do not promote this deployment');
+if (!process.argv.includes('--matrix') && report.probes.some(probe => probe.httpStatus !== 200 || !probe.ready || probe.region !== 'hnd1' || probe.version !== expectedVersion)) throw new Error('Authentication readiness failed; do not promote this deployment');
