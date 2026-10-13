@@ -145,6 +145,15 @@ function sanitizeAliyunErrorMessage(message: string, phone?: string): string {
   return safeMessage;
 }
 
+/** These errors occur before a connection is established, so no SMS was submitted. */
+export function isSMSConnectionFailure(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const cause = error as { code?: string; name?: string; cause?: unknown; errors?: unknown[] };
+  if (['UND_ERR_CONNECT_TIMEOUT', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ENETUNREACH'].includes(cause.code || '') || cause.name === 'ConnectTimeoutError') return true;
+  if (Array.isArray(cause.errors) && cause.errors.length) return cause.errors.every(isSMSConnectionFailure);
+  return cause.cause ? isSMSConnectionFailure(cause.cause) : false;
+}
+
 type AliyunRPCValue = string | number | boolean;
 
 function aliyunPercentEncode(value: AliyunRPCValue): string {
@@ -185,23 +194,17 @@ export async function inspectSMSProviderReadiness(): Promise<{ ready: boolean; d
       // 验证接口同时检查 DNS/TLS、RPC 请求链路、签名、AccessKey 和产品权限。
       const body = await callAliyunRPC('CheckSmsVerifyCode', {
         CountryCode: '86',
-        PhoneNumber: '13800138000',
+        PhoneNumber: '00000000000',
         VerifyCode: '000000',
         CaseAuthPolicy: 1,
       });
       const code = aliyunErrorCode(body);
       if (!code || code === 'UNKNOWN') return { ready: false, detail: 'aliyun_auth_rpc_malformed_response' };
       const normalizedCode = code.toUpperCase();
-      const accessFailure = [
-        'INVALIDACCESSKEYID',
-        'SIGNATUREDOESNOTMATCH',
-        'FORBIDDEN',
-        'FUNCTION_NOT_OPENED',
-        'UNAUTHORIZED',
-      ].some((marker) => normalizedCode.includes(marker));
-      return accessFailure
-        ? { ready: false, detail: `aliyun_auth_rpc_${code}` }
-        : { ready: true, detail: `aliyun_auth_rpc_${code}` };
+      // An intentionally invalid synthetic code has an expected business rejection.
+      // Unexpected/auth/quota errors must not become false readiness successes.
+      const expectedProbeCodes = ['OK', 'ISV.VALIDATEFAIL', 'ISV.MOBILE_NUMBER_ILLEGAL', 'ISV.INVALID_PARAMETERS'];
+      return { ready: expectedProbeCodes.includes(normalizedCode), detail: `aliyun_auth_rpc_${code}` };
     } catch {
       return { ready: false, detail: 'aliyun_auth_rpc_transport_error' };
     }
@@ -233,7 +236,7 @@ export async function inspectSMSProviderReadiness(): Promise<{ ready: boolean; d
  * 这里仍使用阿里云公开的 RPC HMAC-SHA1 签名协议，但绕过不稳定的传输层。请求不做
  * 自动重试，避免“服务端已接收、客户端超时”时重复发送验证码。验证码发送使用
  * 官方 RPC 表单 POST，把手机号、模板参数和签名放在请求体，避免 Vercel 出站链路
- * 将带敏感参数的长查询串丢弃；无副作用的校验探针仍使用 GET。
+ * 将带敏感参数的长查询串丢弃；无副作用的校验探针使用相同的 POST 传输。
  */
 async function callAliyunRPC(
   action: 'SendSmsVerifyCode' | 'CheckSmsVerifyCode',
@@ -261,7 +264,8 @@ async function callAliyunRPC(
     .sort()
     .map((key) => `${aliyunPercentEncode(key)}=${aliyunPercentEncode(parameters[key])}`)
     .join('&');
-  const httpMethod = action === 'SendSmsVerifyCode' ? 'POST' : 'GET';
+  // Probe the same signed POST path as sending; no SMS is sent by CheckSmsVerifyCode.
+  const httpMethod = 'POST';
   const stringToSign = `${httpMethod}&${aliyunPercentEncode('/')}&${aliyunPercentEncode(canonicalQuery)}`;
   const signature = createHmac('sha1', `${accessKeySecret}&`)
     .update(stringToSign, 'utf8')
@@ -355,7 +359,9 @@ async function sendViaAliyunAuth(phone: string, suppliedCode?: string, options: 
     const msg = `${e instanceof Error ? e.message : 'unknown'}${cause}`;
     const safeMsg = sanitizeAliyunErrorMessage(msg, phone);
     console.error('[SMS] 阿里云短信认证异常:', safeMsg);
-    return { success: false, errorCode: 'PROVIDER_TRANSPORT_ERROR' };
+    return isSMSConnectionFailure(e)
+      ? { success: false, errorCode: 'PROVIDER_CONNECTION_FAILED', retryAfter: 5 }
+      : { success: false, errorCode: 'PROVIDER_TRANSPORT_ERROR' };
   }
 }
 

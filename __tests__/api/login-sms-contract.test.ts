@@ -66,6 +66,17 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllEnvs(); });
 
 describe('登录短信前后端状态契约', () => {
+  it('连接建立失败明确返回未发送，释放输入按钮的长冷却', async () => {
+    vi.mocked(sendSMS).mockResolvedValue({ success: false, errorCode: 'PROVIDER_CONNECTION_FAILED', retryAfter: 5 });
+    const response = await POST(request());
+    const data = await response.json();
+    expect(response.status).toBe(503);
+    expect(data).toMatchObject({ code: 'SMS_PROVIDER_UNREACHABLE', deliveryState: 'not_submitted', retryAfter: 5 });
+    expect(data.success).not.toBe(true);
+    expect(classifySMSSend(response, data)).toBe('rejected');
+    expect(rows).toHaveLength(0);
+    expect(sendSMS).toHaveBeenCalledTimes(1);
+  });
   it('供应商超时保留预存挑战，202 在前端归为未确认，收到的验证码仍可验证', async () => {
     let sentCode = '';
     vi.mocked(sendSMS).mockImplementation(async (_phone, code) => {

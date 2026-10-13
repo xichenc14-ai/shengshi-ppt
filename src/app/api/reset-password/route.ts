@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+
+export const preferredRegion = 'hnd1';
 import { randomInt, randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { getClientIP, rateLimit } from '@/lib/rate-limit';
@@ -66,7 +68,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: '验证码服务暂时不可用，请稍后重试', requestId }, { status: 503 });
       }
 
-      let result: { success: boolean; errorCode?: string; providerRequestId?: string };
+      let result: { success: boolean; errorCode?: string; providerRequestId?: string; retryAfter?: number };
       try {
         result = await sendSMS(phone, code, { outId: requestId });
       } catch {
@@ -76,7 +78,13 @@ export async function POST(request: NextRequest) {
         const { error: cleanupError } = await sb.from('verification_codes').delete()
           .eq('phone', phone).eq('code', storedCode).eq('type', 'reset_password');
         console.warn('[ResetPassword] send_rejected', JSON.stringify({ requestId, providerCode: result.errorCode || 'unknown', cleanupFailed: Boolean(cleanupError) }));
-        return NextResponse.json({ error: '短信发送失败，请稍后重试', requestId }, { status: 503 });
+        const notSubmitted = result.errorCode === 'PROVIDER_CONNECTION_FAILED';
+        return NextResponse.json({
+          error: notSubmitted ? '短信服务连接失败，本次短信未发送，请稍后重试' : '短信发送失败，请稍后重试',
+          code: notSubmitted ? 'SMS_PROVIDER_UNREACHABLE' : 'SMS_SEND_REJECTED',
+          deliveryState: notSubmitted ? 'not_submitted' : 'rejected',
+          ...(notSubmitted ? { retryAfter: result.retryAfter || 5 } : {}), requestId,
+        }, { status: 503 });
       }
 
       return NextResponse.json({

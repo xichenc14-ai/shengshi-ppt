@@ -1,10 +1,11 @@
 {
   "name": "demo",
-  "version": "10.100.3",
+  "version": "10.100.4",
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run test:auth && next build",
+    "test:auth": "vitest run __tests__/lib/sms-client.test.ts __tests__/lib/auth-routing.test.ts __tests__/api/login-sms-contract.test.ts __tests__/api/auth-readiness.test.ts __tests__/api/gamma-400-regression.test.ts",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest",
@@ -57,6 +58,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.2",
     "msw": "^2.13.6",

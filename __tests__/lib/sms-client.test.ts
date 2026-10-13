@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getStorableSMSCode, sendSMS, verifyStoredSMSCode } from '@/lib/sms-client';
+import { getStorableSMSCode, inspectSMSProviderReadiness, isSMSConnectionFailure, sendSMS, verifyStoredSMSCode } from '@/lib/sms-client';
 
 const phone = '13800138000';
 
@@ -20,6 +20,39 @@ afterEach(() => {
 });
 
 describe('SMS challenge contract', () => {
+  it.each(['Forbidden', 'InvalidAccessKeyId.NotFound', 'isv.UnknownError'])('does not call an unexpected provider result healthy: %s', async code => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ Code: code, Success: false }), { status: 200 })));
+    expect((await inspectSMSProviderReadiness()).ready).toBe(false);
+  });
+  it('probes the same signed POST as sending without sending a message', async () => {
+    const fetchMock = vi.fn(async () => new Response('{"Code":"OK","Success":true,"Model":{"VerifyResult":"FAIL"}}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect((await inspectSMSProviderReadiness()).ready).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://dypnsapi.aliyuncs.com/');
+    expect(init.method).toBe('POST');
+    const body = new URLSearchParams(String(init.body));
+    expect(body.get('Action')).toBe('CheckSmsVerifyCode');
+    expect(body.get('PhoneNumber')).toBe('00000000000');
+    expect(body.has('TemplateParam')).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it('classifies connection timeout as definitely not submitted and never retries', async () => {
+    const error = new TypeError('fetch failed', { cause: Object.assign(new Error('connect timeout'), { code: 'UND_ERR_CONNECT_TIMEOUT' }) });
+    const fetchMock = vi.fn().mockRejectedValue(error);
+    vi.stubGlobal('fetch', fetchMock);
+    expect(isSMSConnectionFailure(error)).toBe(true);
+    expect(await sendSMS(phone, '123456')).toMatchObject({ success: false, errorCode: 'PROVIDER_CONNECTION_FAILED', retryAfter: 5 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it('keeps an ambiguous connection reset uncertain without retransmitting', async () => {
+    const error = new TypeError('fetch failed', { cause: Object.assign(new Error('reset'), { code: 'ECONNRESET' }) });
+    const fetchMock = vi.fn().mockRejectedValue(error);
+    vi.stubGlobal('fetch', fetchMock);
+    expect(isSMSConnectionFailure(error)).toBe(false);
+    expect(await sendSMS(phone, '123456')).toMatchObject({ success: false, errorCode: 'PROVIDER_TRANSPORT_ERROR' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
   it('sends the application-generated code and stores only a phone-bound HMAC', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       Code: 'OK',

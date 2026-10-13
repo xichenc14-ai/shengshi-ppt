@@ -106,6 +106,18 @@ describe('短信登录浏览器行为', () => {
     expect(await page.getByRole('button', { name: '获取验证码', exact: true }).isEnabled()).toBe(true);
   });
 
+  it('连接失败显示本次未发送，短冷却结束可重试且不会自动重发', async () => {
+    await page.clock.install();
+    send = route => json(route, { error: '短信服务连接失败，本次短信未发送，请稍后重试', code: 'SMS_PROVIDER_UNREACHABLE', deliveryState: 'not_submitted', retryAfter: 5 }, 503);
+    await sendCode();
+    await page.getByText('短信服务连接失败，本次短信未发送，请稍后重试').waitFor();
+    expect(await codeInput().count()).toBe(0);
+    expect(await dialog().isVisible()).toBe(true);
+    await page.clock.fastForward(6000);
+    expect(await page.getByRole('button', { name: '获取验证码', exact: true }).isEnabled()).toBe(true);
+    expect(calls.filter(c => c.action === 'send_code')).toHaveLength(1);
+  });
+
   it('429 有继续输入入口，服务端仍校验验证码', async () => {
     send = route => json(route, { error: '请60秒后再试', retryAfter: 60 }, 429);
     await sendCode();
