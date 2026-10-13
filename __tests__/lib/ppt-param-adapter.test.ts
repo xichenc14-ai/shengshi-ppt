@@ -38,7 +38,7 @@ describe('ppt-param-adapter', () => {
     expect(buildGammaImageOptions('noImages', 'consultant').source).toBe('noImages');
     expect(buildGammaImageOptions('ai-pro', 'consultant')).toMatchObject({
       source: 'aiGenerated',
-      model: 'imagen-3-pro',
+      model: 'flux-1-pro',
     });
   });
 

@@ -1,10 +1,12 @@
+import { GAMMA_IMAGE_MODELS } from '@/lib/gamma-image-config';
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
 import { createClient } from '@supabase/supabase-js';
 import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
 import { selectBestKey, updateKeyBalance, recordKeyFailure } from '@/lib/gamma-key-pool';
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
-import { buildGammaImageOptions, normalizeUserInput } from '@/lib/adapters/ppt-param-adapter';
+import { buildGammaImageOptions, clampGammaInstructions, normalizeUserInput } from '@/lib/adapters/ppt-param-adapter';
+import { describeGammaRequestError, isGammaKeyFailure } from '@/lib/gamma-request-errors';
 import { checkPermission } from '@/lib/membership';
 import { estimateGenerationCredits } from '@/lib/generation-credits';
 
@@ -74,15 +76,15 @@ function buildUploadedFilesInstruction(uploadedFiles: unknown): string {
 
 // 场景 → 推荐配置映射(恢复技术部验证的 pictographic)
 const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource: string; imageModel: string }> = {
-  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
-  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'pictographic', imageModel: GAMMA_IMAGE_MODELS.standard.id },
+  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'pictographic', imageModel: GAMMA_IMAGE_MODELS.standard.id },
   training: { themeId: 'cornflower', tone: 'casual', imageSource: 'themeAccent', imageModel: '' },
-  creative: { themeId: 'electric', tone: 'creative', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
-  education: { themeId: 'chisel', tone: 'casual', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  creative: { themeId: 'electric', tone: 'creative', imageSource: 'aiGenerated', imageModel: GAMMA_IMAGE_MODELS.standard.id },
+  education: { themeId: 'chisel', tone: 'casual', imageSource: 'pictographic', imageModel: GAMMA_IMAGE_MODELS.standard.id },
   data: { themeId: 'gleam', tone: 'professional', imageSource: 'themeAccent', imageModel: '' },
-  annual: { themeId: 'blues', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
-  launch: { themeId: 'aurora', tone: 'bold', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
-  traditional: { themeId: 'chisel', tone: 'traditional', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
+  annual: { themeId: 'blues', tone: 'professional', imageSource: 'pictographic', imageModel: GAMMA_IMAGE_MODELS.standard.id },
+  launch: { themeId: 'aurora', tone: 'bold', imageSource: 'aiGenerated', imageModel: GAMMA_IMAGE_MODELS.standard.id },
+  traditional: { themeId: 'chisel', tone: 'traditional', imageSource: 'aiGenerated', imageModel: GAMMA_IMAGE_MODELS.standard.id },
 };
 
 const INSTRUCTION_TEMPLATES: Record<string, string> = {
@@ -230,16 +232,6 @@ export async function POST(request: NextRequest) {
     const requestedImageSource = normalized.imageSource || imageSource;
     const finalTone = normalized.tone || tone || 'professional';
 
-    // Unified type narrowing: normalized.aiModel typed as unknown from Record cast
-    // Only use non-empty strings; filter empty/whitespace strings to undefined
-    let aiModel: string | undefined =
-      typeof normalized.aiModel === 'string' && normalized.aiModel.trim().length > 0
-        ? normalized.aiModel.trim()
-        : undefined;
-    if (!aiModel && String(requestedImageSource).toLowerCase().trim() === 'ai-pro') {
-      aiModel = 'imagen-3-pro';
-    }
-
     // ===== Layer 3: Input Validation =====
     const normalizedInputText = typeof normalized.inputText === 'string' ? normalized.inputText : '';
     const requestInputText = typeof inputText === 'string' ? inputText : '';
@@ -272,8 +264,10 @@ export async function POST(request: NextRequest) {
       console.warn(`[Gamma Direct] ThemeId mapped: "${rawThemeId}" → "${finalThemeId}"`);
     }
 
-    const imageOptions = buildGammaImageOptions(requestedImageSource, finalThemeId);
+    const imageOptions = buildGammaImageOptions(requestedImageSource, finalThemeId,
+      body.imageOptions && typeof body.imageOptions === 'object' ? body.imageOptions : undefined);
     const finalImageSource = String(imageOptions.source || 'themeAccent');
+    const aiModel = typeof imageOptions.model === 'string' ? imageOptions.model : undefined;
 
     // ===== Layer 4: Membership/Permission Check =====
     const permissionCheck = checkPermission(userPlanType, {
@@ -371,7 +365,7 @@ export async function POST(request: NextRequest) {
       exportAs,
       themeId: finalThemeId,
       cardSplit: undefined, // removed inputTextBreaks to avoid blank pages
-      additionalInstructions: finalInstructions + buildUploadedFilesInstruction(uploadedFiles) + criticalInstruction + strictPreserveInstruction,
+      additionalInstructions: clampGammaInstructions(finalInstructions + buildUploadedFilesInstruction(uploadedFiles) + criticalInstruction + strictPreserveInstruction),
       textOptions: { amount: 'medium', tone: finalTone, language: 'zh-cn' },
       imageOptions,
       cardOptions: { dimensions: '16x9' },
@@ -395,12 +389,11 @@ export async function POST(request: NextRequest) {
     if (!createRes.ok) {
       const errText = await createRes.text();
       console.error('[GammaDirect] API error:', createRes.status, errText);
-      recordKeyFailure(apiKey);
+      if (isGammaKeyFailure(createRes.status)) recordKeyFailure(apiKey);
       console.log(`[GammaDirect] ERROR reason=gamma_api_failed code=GAMMA_API_ERROR status=${createRes.status}`);
       return NextResponse.json({
-        error: `生成服务调用失败: ${createRes.status}`,
-        detail: errText.substring(0, 500)
-      }, { status: 502 });
+        ...describeGammaRequestError(createRes.status, errText, createRes.headers?.get('x-request-id')),
+      }, { status: createRes.status === 400 ? 400 : 502 });
     }
 
     const createData = await createRes.json();

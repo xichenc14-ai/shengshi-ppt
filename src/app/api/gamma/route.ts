@@ -1,8 +1,10 @@
+import { GAMMA_IMAGE_MODELS } from '@/lib/gamma-image-config';
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, getRateLimitConfig, getClientIP, isIPBlocked } from '@/lib/rate-limit';
 import { selectBestKey, updateKeyBalance, recordKeyFailure, getAllKeys } from '@/lib/gamma-key-pool';
 import { getGammaThemeId } from '@/lib/gamma-theme-mapping';
-import { buildGammaImageOptions, normalizeUserInput } from '@/lib/adapters/ppt-param-adapter';
+import { buildGammaImageOptions, clampGammaInstructions, normalizeUserInput } from '@/lib/adapters/ppt-param-adapter';
+import { describeGammaRequestError, isGammaKeyFailure } from '@/lib/gamma-request-errors';
 import { resolveSmartThemeId } from '@/lib/smart-theme-matcher';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
@@ -51,15 +53,15 @@ function buildUploadedFilesInstruction(uploadedFiles: unknown): string {
 
 // 场景 → 推荐配置映射(恢复技术部验证的 pictographic)
 const SCENE_CONFIGS: Record<string, { themeId: string; tone: string; imageSource: string; imageModel: string }> = {
-  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
-  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  biz: { themeId: 'consultant', tone: 'professional', imageSource: 'pictographic', imageModel: GAMMA_IMAGE_MODELS.standard.id },
+  pitch: { themeId: 'founder', tone: 'professional', imageSource: 'pictographic', imageModel: GAMMA_IMAGE_MODELS.standard.id },
   training: { themeId: 'cornflower', tone: 'casual', imageSource: 'themeAccent', imageModel: '' },
-  creative: { themeId: 'electric', tone: 'creative', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
-  education: { themeId: 'chisel', tone: 'casual', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
+  creative: { themeId: 'electric', tone: 'creative', imageSource: 'aiGenerated', imageModel: GAMMA_IMAGE_MODELS.standard.id },
+  education: { themeId: 'chisel', tone: 'casual', imageSource: 'pictographic', imageModel: GAMMA_IMAGE_MODELS.standard.id },
   data: { themeId: 'gleam', tone: 'professional', imageSource: 'themeAccent', imageModel: '' },
-  annual: { themeId: 'blues', tone: 'professional', imageSource: 'pictographic', imageModel: 'imagen-3-flash' },
-  launch: { themeId: 'aurora', tone: 'bold', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
-  traditional: { themeId: 'chisel', tone: 'traditional', imageSource: 'aiGenerated', imageModel: 'imagen-3-flash' },
+  annual: { themeId: 'blues', tone: 'professional', imageSource: 'pictographic', imageModel: GAMMA_IMAGE_MODELS.standard.id },
+  launch: { themeId: 'aurora', tone: 'bold', imageSource: 'aiGenerated', imageModel: GAMMA_IMAGE_MODELS.standard.id },
+  traditional: { themeId: 'chisel', tone: 'traditional', imageSource: 'aiGenerated', imageModel: GAMMA_IMAGE_MODELS.standard.id },
 };
 
 const INSTRUCTION_TEMPLATES: Record<string, string> = {
@@ -568,7 +570,7 @@ export async function POST(request: NextRequest) {
       format,
       exportAs,
       themeId: finalThemeId,
-      additionalInstructions: finalAdditionalInstructions,
+      additionalInstructions: clampGammaInstructions(finalAdditionalInstructions),
       cardSplit: cardSplit || 'inputTextBreaks',
       textOptions: textOptions || {
         amount: 'medium',
@@ -603,11 +605,10 @@ export async function POST(request: NextRequest) {
     if (!gammaResponse.ok) {
       const errText = await gammaResponse.text();
       console.error('[Gamma] API error:', gammaResponse.status, errText);
-      // 记录Key失败
-      recordKeyFailure(apiKey);
+      if (isGammaKeyFailure(gammaResponse.status)) recordKeyFailure(apiKey);
       return NextResponse.json(
-        { error: `生成服务调用失败: ${gammaResponse.status}`, detail: errText.substring(0, 500) },
-        { status: 502 }
+        describeGammaRequestError(gammaResponse.status, errText, gammaResponse.headers?.get('x-request-id')),
+        { status: gammaResponse.status === 400 ? 400 : 502 }
       );
     }
 

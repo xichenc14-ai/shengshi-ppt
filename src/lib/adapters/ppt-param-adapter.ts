@@ -15,6 +15,7 @@
  */
 
 import type { OutlineSlide } from '@/lib/types/outline-response';
+import { GAMMA_IMAGE_MODELS, normalizeGammaAiModel } from '@/lib/gamma-image-config';
 
 // ─────────────────────────────────────────────
 // A. normalizeUserInput
@@ -176,7 +177,7 @@ export function mapImageSource(
     case 'ai图':
       return {
         source: 'aiGenerated',
-        model: 'imagen-3-flash',
+        model: GAMMA_IMAGE_MODELS.standard.id,
         style: 'flat illustration, minimalist, clean background, negative space',
       };
 
@@ -184,7 +185,7 @@ export function mapImageSource(
     case 'ai尊享':
       return {
         source: 'aiGenerated',
-        model: 'imagen-3-pro',
+        model: GAMMA_IMAGE_MODELS.premium.id,
         style: 'professional, high quality, cinematic, detailed',
       };
 
@@ -212,7 +213,7 @@ export function buildGammaImageOptions(
     ? imageSource
     : (typeof existingOptions?.source === 'string' ? existingOptions.source : imageSource);
   const mapped = mapImageSource(rawSource, themeId);
-  const merged = {
+  const merged: Record<string, unknown> = {
     ...mapped,
     ...(existingOptions || {}),
     source: mapped.source,
@@ -225,9 +226,19 @@ export function buildGammaImageOptions(
     delete (merged as Record<string, unknown>).model;
     delete (merged as Record<string, unknown>).style;
     delete (merged as Record<string, unknown>).prompt;
+  } else {
+    (merged as Record<string, unknown>).model = normalizeGammaAiModel(merged.model, rawSource);
   }
 
   return merged;
+}
+
+/** Apply the limit after all rendering rules and attachments have been added. */
+export function clampGammaInstructions(instructions: string): string {
+  const value = String(instructions || '').trim();
+  if (value.length <= 5000) return value;
+  const marker = '\n\n【其余系统规则已省略】';
+  return value.slice(0, 5000 - marker.length).trimEnd() + marker;
 }
 
 // ─────────────────────────────────────────────

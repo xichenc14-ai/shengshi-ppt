@@ -1,5 +1,7 @@
 'use client';
 
+import { GAMMA_IMAGE_MODELS } from '@/lib/gamma-image-config';
+
 import '@/lib/dommatrix-polyfill';
 import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense } from 'react';
 import { useAuth } from '@/lib/auth-context';
@@ -214,27 +216,17 @@ function getAiModelFromImageMode(params: {
   userPlanType?: string;
 }): string | undefined {
   const { modeValue, tone, textMode, userPlanType } = params;
-  if (modeValue === 'ai-pro') return 'imagen-3-pro';
+  if (modeValue === 'ai-pro') return GAMMA_IMAGE_MODELS.premium.id;
   if (modeValue !== 'ai') return undefined;
 
   const plan = getPlan(userPlanType || 'free');
   const candidates = plan.allowedAiModels || [];
   if (candidates.length === 0) return undefined;
 
-  // 按用途智能选模型（仅在可用模型中路由）
-  const prefer =
-    textMode === 'condense'
-      ? 'gemini-2.5-flash-image'
-      : tone === 'creative'
-        ? 'flux-1-pro'
-        : tone === 'traditional'
-          ? 'ideogram-v3'
-          : tone === 'bold'
-            ? 'imagen-3-pro'
-            : 'imagen-3-flash';
-
-  if (candidates.includes(prefer)) return prefer;
-  if (candidates.includes('imagen-3-flash')) return 'imagen-3-flash';
+  // Standard and premium selections keep their existing product prices.
+  void tone;
+  void textMode;
+  if (candidates.includes(GAMMA_IMAGE_MODELS.standard.id)) return GAMMA_IMAGE_MODELS.standard.id;
   return candidates[0];
 }
 
@@ -242,8 +234,8 @@ function buildClientImageOptions(source: GammaImageSource, aiModel?: string): Re
   if (source !== 'aiGenerated') return { source };
   return {
     source,
-    model: aiModel || 'imagen-3-flash',
-    style: aiModel === 'imagen-3-pro'
+    model: aiModel || GAMMA_IMAGE_MODELS.standard.id,
+    style: aiModel === GAMMA_IMAGE_MODELS.premium.id
       ? 'professional, high quality, cinematic, detailed'
       : 'flat illustration, minimalist, clean background, negative space',
   };
@@ -2900,7 +2892,7 @@ export default function Home() {
                                       { value: 'theme-img', label: '主题套图', badge: '推荐' },
                                       { value: 'web', label: 'Pexels图库', badge: '' },
                                       { value: 'ai', label: 'AI定制图', badge: getPlan(user?.plan_type || 'free').allowedAiModels.length > 0 ? '✨' : '🔒✨' },
-                                      { value: 'ai-pro', label: 'AI尊享图', badge: getPlan(user?.plan_type || 'free').allowedAiModels.includes('imagen-3-pro') ? '👑' : '🔒👑' },
+                                      { value: 'ai-pro', label: 'AI尊享图', badge: getPlan(user?.plan_type || 'free').allowedAiModels.includes(GAMMA_IMAGE_MODELS.premium.id) ? '👑' : '🔒👑' },
                                     ].map(opt => (
                                       <button
                                         key={opt.value}
@@ -2911,7 +2903,7 @@ export default function Home() {
                                             const userPlan = getPlan(user?.plan_type || 'free');
                                             const needPro = val === 'ai-pro';
                                             const hasPermission = needPro
-                                              ? userPlan.allowedAiModels.includes('imagen-3-pro')
+                                              ? userPlan.allowedAiModels.includes(GAMMA_IMAGE_MODELS.premium.id)
                                               : userPlan.allowedAiModels.length > 0;
                                             if (!hasPermission) {
                                               const reqPlan = needPro ? 'advanced' : 'shengxin';

@@ -1,3 +1,4 @@
+import { GAMMA_IMAGE_MODELS } from '@/lib/gamma-image-config';
 // 会员权限体系 - v10.61（双套餐）
 
 export interface MembershipPlan {
@@ -57,7 +58,7 @@ const PLANS: Record<string, MembershipPlan> = {
     priceMonthly: 19.9,
     priceAnnual: 199,
     allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'],
-    allowedAiModels: ['imagen-3-flash'],
+    allowedAiModels: [GAMMA_IMAGE_MODELS.standard.id],
     smartMode: true,
     monthlyFreeDownloads: -1,  // 无限制（会员特权）
     monthlyPptTrial: -1,       // 无限制
@@ -73,18 +74,18 @@ const PLANS: Record<string, MembershipPlan> = {
     priceMonthly: 49.9,
     priceAnnual: 499,
     allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'],
-    allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'],
+    allowedAiModels: [GAMMA_IMAGE_MODELS.standard.id, GAMMA_IMAGE_MODELS.premium.id, 'ideogram-v3', 'gemini-2.5-flash-image'],
     smartMode: true,
     monthlyFreeDownloads: -1,
     monthlyPptTrial: -1,
     pricePerPage: 0,
   },
   // 兼容旧数据别名（旧 plan_type 自动映射到双套餐）
-  basic: { id: 'shengxin', name: '省心会员', emoji: '💎', credits: 500, maxPages: 20, priceMonthly: 19.9, priceAnnual: 199, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
-  standard: { id: 'advanced', name: '尊享会员', emoji: '👑', credits: 1500, maxPages: 40, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
-  pro: { id: 'advanced', name: '尊享会员', emoji: '👑', credits: 1500, maxPages: 40, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
-  vip: { id: 'advanced', name: '尊享会员', emoji: '👑', credits: 1500, maxPages: 40, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
-  supreme: { id: 'advanced', name: '尊享会员', emoji: '👑', credits: 1500, maxPages: 40, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: ['imagen-3-flash', 'imagen-3-pro', 'flux-1-pro', 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  basic: { id: 'shengxin', name: '省心会员', emoji: '💎', credits: 500, maxPages: 20, priceMonthly: 19.9, priceAnnual: 199, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: [GAMMA_IMAGE_MODELS.standard.id], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  standard: { id: 'advanced', name: '尊享会员', emoji: '👑', credits: 1500, maxPages: 40, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: [GAMMA_IMAGE_MODELS.standard.id, GAMMA_IMAGE_MODELS.premium.id, 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  pro: { id: 'advanced', name: '尊享会员', emoji: '👑', credits: 1500, maxPages: 40, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: [GAMMA_IMAGE_MODELS.standard.id, GAMMA_IMAGE_MODELS.premium.id, 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  vip: { id: 'advanced', name: '尊享会员', emoji: '👑', credits: 1500, maxPages: 40, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: [GAMMA_IMAGE_MODELS.standard.id, GAMMA_IMAGE_MODELS.premium.id, 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
+  supreme: { id: 'advanced', name: '尊享会员', emoji: '👑', credits: 1500, maxPages: 40, priceMonthly: 49.9, priceAnnual: 499, allowedImageSources: ['pictographic', 'pexels', 'themeAccent', 'noImages', 'aiGenerated'], allowedAiModels: [GAMMA_IMAGE_MODELS.standard.id, GAMMA_IMAGE_MODELS.premium.id, 'ideogram-v3', 'gemini-2.5-flash-image'], smartMode: true, monthlyFreeDownloads: -1, monthlyPptTrial: -1, pricePerPage: 0 },
 };
 
 export const PLAN_LIST: MembershipPlan[] = [PLANS.free, PLANS.shengxin, PLANS.advanced];
@@ -116,7 +117,7 @@ export function checkPermission(planType: string, opts: {
 
   // 2. 图片权限检查
   if (opts.imageSource === 'aiGenerated') {
-    const model = opts.aiModel || 'imagen-3-flash';
+    const model = opts.aiModel || GAMMA_IMAGE_MODELS.standard.id;
     if (!plan.allowedAiModels.includes(model)) {
       const required = PLAN_LIST.find(p => p.allowedAiModels.includes(model));
       return {
